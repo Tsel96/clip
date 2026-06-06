@@ -153,7 +153,7 @@ struct CardLightboxLayer: View {
             .overlay(alignment: .top) {
                 if let h = pickCopied {
                     Text("Copied \(h)")
-                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                        .font(.clip(10.5)).foregroundStyle(.white)
                         .padding(.horizontal, 10).padding(.vertical, 5)
                         .background(.black.opacity(0.75), in: Capsule())
                         .padding(.top, 12).allowsHitTesting(false)
@@ -228,7 +228,7 @@ struct CardLightboxLayer: View {
             toolButton("chevron.backward", "Close  (Esc)") { state.closeLightbox() }
             if let pos = state.lightboxPosition {
                 Text("\(pos.index) / \(pos.total)")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(.clip(11))
                     .foregroundStyle(.white.opacity(0.7))
             }
             Spacer()
@@ -270,7 +270,7 @@ struct CardLightboxLayer: View {
             Text("to navigate")
         }
         .buttonStyle(.hover)
-        .font(.system(size: 11, weight: .medium, design: .rounded))
+        .font(.clip(10.5))
         .foregroundStyle(.white.opacity(0.7))
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(Color.white.opacity(0.08), in: Capsule(style: .continuous))
@@ -349,7 +349,7 @@ private struct DetailsInspector: View {
 
     private var header: some View {
         HStack {
-            Text("Details").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.5))
+            Text("Details").clipLabel(10.5).foregroundStyle(.white.opacity(0.5))
             Spacer()
             Image(systemName: "info.circle").font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
         }
@@ -367,7 +367,7 @@ private struct DetailsInspector: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Text(kindBadge)
-                    .font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                    .clipLabel(8.5).foregroundStyle(.white)
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
                     .padding(8)
@@ -409,7 +409,7 @@ private struct DetailsInspector: View {
                 .overlay(alignment: .top) {
                     if let h = copiedHex {
                         Text("Copied \(h)")
-                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
+                            .font(.clip(9.5)).foregroundStyle(.white)
                             .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(.black.opacity(0.75), in: Capsule())
                             .offset(y: -24)
@@ -432,7 +432,7 @@ private struct DetailsInspector: View {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles").font(.system(size: 11, weight: .semibold))
                 Text(schemeIndex == 0 ? "Generate variation" : "Variation · \(name)")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.clip(12))
             }
             .frame(maxWidth: .infinity).padding(.vertical, 9)
             .foregroundStyle(.white.opacity(0.9))
@@ -458,9 +458,9 @@ private struct DetailsInspector: View {
     private func field(_ label: String, text: Binding<String>, placeholder: String,
                        commit: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(label.uppercased()).font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
+            Text(label.uppercased()).font(.clip(9)).foregroundStyle(.white.opacity(0.4))
             TextField(placeholder, text: text)
-                .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(.white)
+                .textFieldStyle(.plain).font(.clip(12.5)).foregroundStyle(.white)
                 .padding(.horizontal, 10).padding(.vertical, 8)
                 .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
                 .onSubmit(commit)
@@ -470,10 +470,10 @@ private struct DetailsInspector: View {
 
     private var urlField: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("URL").font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
+            Text("URL").font(.clip(9)).foregroundStyle(.white.opacity(0.4))
             HStack(spacing: 6) {
                 TextField("https://…", text: $link)
-                    .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(.white)
+                    .textFieldStyle(.plain).font(.clip(12.5)).foregroundStyle(.white)
                     .padding(.horizontal, 10).padding(.vertical, 8)
                     .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
                     .onChange(of: link) { v in
@@ -501,7 +501,7 @@ private struct DetailsInspector: View {
         } else {
             Button { showNote = true } label: {
                 Label("Add a note", systemImage: "plus")
-                    .font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+                    .font(.clip(12)).foregroundStyle(.white.opacity(0.6))
             }.buttonStyle(.hover)
         }
     }
@@ -511,14 +511,14 @@ private struct DetailsInspector: View {
     private var promptSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Image Prompt", systemImage: "sparkles")
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                .font(.clip(10.5)).foregroundStyle(.white.opacity(0.55))
             Button {
                 prompt = state.generatePrompt(for: node)
                 state.setNodeImagePrompt(node.id, prompt)
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles").font(.system(size: 11, weight: .semibold))
-                    Text("Generate prompt").font(.system(size: 12, weight: .medium))
+                    Text("Generate prompt").font(.clip(12))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 9)
                 .foregroundStyle(.white.opacity(0.9))
@@ -528,7 +528,7 @@ private struct DetailsInspector: View {
 
             if !prompt.isEmpty {
                 TextEditor(text: $prompt)
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.85))
+                    .font(.clip(12)).foregroundStyle(.white.opacity(0.85))
                     .scrollContentBackground(.hidden)
                     .frame(height: 72)
                     .padding(8)
@@ -538,7 +538,7 @@ private struct DetailsInspector: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(prompt, forType: .string)
                 } label: {
-                    Label("Copy", systemImage: "doc.on.doc").font(.system(size: 11, weight: .medium))
+                    Label("Copy", systemImage: "doc.on.doc").font(.clip(10.5))
                         .foregroundStyle(.white.opacity(0.6))
                 }.buttonStyle(.hover)
             }
@@ -552,9 +552,9 @@ private struct DetailsInspector: View {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(rows, id: \.label) { row in
                     HStack(alignment: .top, spacing: 8) {
-                        Text(row.label).font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
+                        Text(row.label).font(.clip(10.5)).foregroundStyle(.white.opacity(0.4))
                             .frame(width: 78, alignment: .leading)
-                        Text(row.value).font(.system(size: 11)).foregroundStyle(.white.opacity(0.75))
+                        Text(row.value).font(.clip(10.5)).foregroundStyle(.white.opacity(0.75))
                             .lineLimit(2).truncationMode(.middle)
                     }
                 }
@@ -564,7 +564,7 @@ private struct DetailsInspector: View {
 
     private func chipSection(icon: String, title: String, chips: [String]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: icon).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+            Label(title, systemImage: icon).font(.clip(10.5)).foregroundStyle(.white.opacity(0.55))
             HStack(spacing: 6) {
                 chip("+ Add", filled: false)
                 ForEach(chips, id: \.self) { chip($0, filled: true) }
@@ -575,7 +575,7 @@ private struct DetailsInspector: View {
     // Pages — the actual page this card lives on.
     private var pagesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Pages", systemImage: "doc").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+            Label("Pages", systemImage: "doc").font(.clip(10.5)).foregroundStyle(.white.opacity(0.55))
             HStack(spacing: 6) {
                 if let p = state.pageName(forCard: node.id) { chip(p, filled: true) }
             }
@@ -585,11 +585,11 @@ private struct DetailsInspector: View {
     // Tags — real, removable, with inline add + heuristic auto-tag.
     private var tagSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Tags", systemImage: "number").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+            Label("Tags", systemImage: "number").font(.clip(10.5)).foregroundStyle(.white.opacity(0.55))
             FlowChips {
                 ForEach(node.tags, id: \.self) { tag in
                     HStack(spacing: 4) {
-                        Text("#\(tag)").font(.system(size: 11, weight: .medium))
+                        Text("#\(tag)").font(.clip(10.5))
                         Button { state.removeTag(node.id, tag) } label: { Image(systemName: "xmark") }
                             .buttonStyle(.hover).font(.system(size: 8, weight: .bold))
                     }
@@ -598,14 +598,14 @@ private struct DetailsInspector: View {
                     .background(.white.opacity(0.10), in: Capsule(style: .continuous))
                 }
                 Button { state.autoTag(node.id) } label: {
-                    Label("Auto-tag", systemImage: "sparkles").font(.system(size: 11, weight: .medium))
+                    Label("Auto-tag", systemImage: "sparkles").font(.clip(10.5))
                         .foregroundStyle(.white.opacity(0.7))
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .background(.white.opacity(0.06), in: Capsule(style: .continuous))
                 }.buttonStyle(.hover)
             }
             TextField("Add tag…", text: $newTag)
-                .textFieldStyle(.plain).font(.system(size: 12)).foregroundStyle(.white)
+                .textFieldStyle(.plain).font(.clip(12)).foregroundStyle(.white)
                 .padding(.horizontal, 9).padding(.vertical, 6)
                 .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
                 .onSubmit { state.addTag(node.id, newTag); newTag = "" }
@@ -613,7 +613,7 @@ private struct DetailsInspector: View {
     }
 
     private func chip(_ text: String, filled: Bool) -> some View {
-        Text(text).font(.system(size: 11, weight: .medium))
+        Text(text).font(.clip(10.5))
             .foregroundStyle(.white.opacity(filled ? 0.85 : 0.55))
             .padding(.horizontal, 9).padding(.vertical, 5)
             .background(.white.opacity(filled ? 0.10 : 0.05), in: Capsule(style: .continuous))
