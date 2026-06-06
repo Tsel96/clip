@@ -35,7 +35,7 @@ struct SearchPalette: View {
                     .textFieldStyle(.plain)
                     .focused($queryFocused)
                     .onSubmit { activateHighlighted() }
-                    .font(.system(size: 14))
+                    .font(.clip(13.5))
                 if !query.isEmpty {
                     Button {
                         query = ""
@@ -55,7 +55,7 @@ struct SearchPalette: View {
                 Text(query.isEmpty
                      ? "Type to search the current page."
                      : "No matches on this page.")
-                    .font(.callout)
+                    .font(.clip(12))
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 28)
                     .frame(maxWidth: .infinity)
@@ -100,7 +100,7 @@ struct SearchPalette: View {
             Text(result.title)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .font(.callout)
+                .font(.clip(12.5))
             Spacer()
         }
         .padding(.horizontal, 14)

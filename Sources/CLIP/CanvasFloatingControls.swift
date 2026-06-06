@@ -70,8 +70,7 @@ private struct ZoomPercentMenu: View {
         } label: {
             HStack(spacing: 3) {
                 Text("\(Int(cameraStore.camera.zoom * 100)) %")
-                    .font(.system(size: 12, weight: .regular))
-                    .monospacedDigit()
+                    .font(.clip(11.5))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.secondary)

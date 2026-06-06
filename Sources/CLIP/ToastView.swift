@@ -23,7 +23,7 @@ struct ToastView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
                 Text(toast.text)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.clip(12))
                     .lineLimit(1)
                 Image(systemName: "arrow.right.circle.fill")
                     .font(.system(size: 12, weight: .semibold))

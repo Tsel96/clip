@@ -69,6 +69,9 @@ struct ContentView: View {
         .preferredColorScheme(state.themeMode.colorScheme)
         .environment(\.clipTheme, ClipTheme.resolve(effectiveScheme))
         .tint(ClipTheme.accentYellow)
+        // App-wide default typeface: ONY Semimono. Views that set an explicit
+        // font still win; everything else inherits the technical mono look.
+        .font(.clip(13))
     }
 
     @ToolbarContentBuilder
