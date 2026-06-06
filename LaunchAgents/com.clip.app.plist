@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Kiosk LaunchAgent for the exhibition Mac mini.
+  Installed to ~/Library/LaunchAgents/com.clip.app.plist by Scripts/install-kiosk.sh.
+
+  Launches CLIP at login and relaunches it if it ever quits or crashes
+  (KeepAlive). It runs `open -W CLIP.app` rather than the binary directly, so
+  launchd watches the short-lived `open` helper — never the app binary itself.
+  That's what lets the self-updater swap CLIP.app on disk without colliding
+  with launchd trying to exec a half-replaced binary; macOS keeps a single
+  app instance regardless of who calls `open`.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.clip.app</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/open</string>
+    <string>-W</string>
+    <string>/Applications/CLIP.app</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Don't hammer relaunch in a crash loop; also gives the updater's bundle
+       swap time to finish before the next launch attempt. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>

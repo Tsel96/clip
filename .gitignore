@@ -1,0 +1,11 @@
+# Build artifacts
+.build/
+CLIP.app/
+*.zip
+
+# macOS
+.DS_Store
+
+# Editor / misc
+*.swp
+*.xcuserstate
