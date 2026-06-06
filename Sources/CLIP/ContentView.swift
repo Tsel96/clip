@@ -68,9 +68,10 @@ struct ContentView: View {
         // every chrome surface reads one source of truth.
         .preferredColorScheme(state.themeMode.colorScheme)
         .environment(\.clipTheme, ClipTheme.resolve(effectiveScheme))
-        .tint(ClipTheme.accentYellow)
         // App-wide default typeface: ONY Semimono. Views that set an explicit
         // font still win; everything else inherits the technical mono look.
+        // (No global .tint — the references keep chrome monochrome; the brand
+        // yellow is applied deliberately, not to every control.)
         .font(.clip(13))
     }
 
