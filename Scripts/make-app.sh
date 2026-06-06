@@ -87,9 +87,10 @@ codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
 echo "✓ built $APP  (v$MARKETING build $BUILD${FEED_URL:+, feed set})"
 
-# Distributable archive for GitHub Releases.
+# Distributable archive for GitHub Releases. Stable name (CLIP.zip) so the
+# site's /releases/latest/download/CLIP.zip link is permanent across versions.
 if [ "${ZIP:-}" = "1" ]; then
-  ZIP_PATH="$DEST_DIR/CLIP-$MARKETING.zip"
+  ZIP_PATH="$DEST_DIR/CLIP.zip"
   rm -f "$ZIP_PATH"
   ( cd "$DEST_DIR" && /usr/bin/ditto -c -k --keepParent "CLIP.app" "$ZIP_PATH" )
   echo "✓ zipped $ZIP_PATH"

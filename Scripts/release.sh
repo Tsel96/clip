@@ -32,7 +32,7 @@ REPO="${REPO:-$(git config --get remote.origin.url 2>/dev/null | sed -E 's#(git@
 [ -n "$REPO" ] || { echo "✗ set REPO=owner/name (no git origin found)"; exit 1; }
 
 TAG="v$MARKETING"
-ZIP="CLIP-$MARKETING.zip"
+ZIP="CLIP.zip"
 RAW_FEED="https://raw.githubusercontent.com/$REPO/$BRANCH/appcast/latest.json"
 ZIP_URL="https://github.com/$REPO/releases/download/$TAG/$ZIP"
 
