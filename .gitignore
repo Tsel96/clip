@@ -9,3 +9,6 @@ CLIP.app/
 # Editor / misc
 *.swp
 *.xcuserstate
+
+# Local Netlify folder
+.netlify
