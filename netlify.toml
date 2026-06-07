@@ -1,0 +1,10 @@
+# CLIP landing page — static site, no build step.
+# Netlify serves the contents of site/ directly.
+[build]
+  publish = "site"
+
+# Long-cache the fonts (they're versioned by content rarely changing).
+[[headers]]
+  for = "/*.otf"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
