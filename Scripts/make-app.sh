@@ -12,14 +12,17 @@
 #   Scripts/make-app.sh                          # → ./CLIP.app  (dev: no feed, no update)
 #   MARKETING=1.2 BUILD=14 Scripts/make-app.sh    # stamp version (BUILD must increase per release)
 #   FEED_URL="https://raw.githubusercontent.com/<user>/clip/main/appcast/latest.json" \
-#     MARKETING=1.2 BUILD=14 ZIP=1 Scripts/make-app.sh /Applications
+#     MARKETING=1.2 BUILD=14 ZIP=1 DMG=1 Scripts/make-app.sh /Applications
 #
 # Env:
 #   CONFIG    build config dir under .build (default: release)
 #   MARKETING marketing version string  (default 1.0)
 #   BUILD     integer build number       (default 1) — the updater compares this
 #   FEED_URL  update manifest URL; omit/empty ⇒ this build never self-updates (dev)
-#   ZIP=1     also emit CLIP-<MARKETING>.zip next to the .app (for GitHub Releases)
+#   ZIP=1     also emit CLIP.zip next to the .app — used by the silent self-updater
+#             (it unzips via `ditto -x -k`); the manifest URL points here.
+#   DMG=1     also emit CLIP.dmg (drag-to-Applications) — the friendly artifact
+#             humans download from the website. Updater never touches the DMG.
 #
 set -euo pipefail
 
@@ -87,12 +90,33 @@ codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
 echo "✓ built $APP  (v$MARKETING build $BUILD${FEED_URL:+, feed set})"
 
-# Distributable archive for GitHub Releases. Stable name (CLIP.zip) so the
-# site's /releases/latest/download/CLIP.zip link is permanent across versions.
+# ZIP — the artifact the SILENT SELF-UPDATER downloads (it unzips via ditto -x -k).
+# Stable name (CLIP.zip) so the manifest's /releases/latest/download/CLIP.zip
+# URL is permanent across versions. Not the human download — that's the DMG.
 if [ "${ZIP:-}" = "1" ]; then
   ZIP_PATH="$DEST_DIR/CLIP.zip"
   rm -f "$ZIP_PATH"
   ( cd "$DEST_DIR" && /usr/bin/ditto -c -k --keepParent "CLIP.app" "$ZIP_PATH" )
-  echo "✓ zipped $ZIP_PATH"
+  echo "✓ zipped $ZIP_PATH  (self-updater artifact)"
   echo "  sha256: $(shasum -a 256 "$ZIP_PATH" | awk '{print $1}')"
+fi
+
+# DMG — the friendly artifact HUMANS download from the website. Mounts to a
+# window with CLIP.app + an Applications shortcut so visitors drag-to-install.
+# The updater never touches this (it uses the ZIP above).
+if [ "${DMG:-}" = "1" ]; then
+  DMG_PATH="$DEST_DIR/CLIP.dmg"
+  rm -f "$DMG_PATH"
+  STAGE="$(mktemp -d)/CLIP"
+  mkdir -p "$STAGE"
+  /usr/bin/ditto "$APP" "$STAGE/CLIP.app"     # copy the signed bundle in
+  ln -s /Applications "$STAGE/Applications"    # drag-target shortcut
+  /usr/bin/hdiutil create \
+    -volname "CLIP" \
+    -srcfolder "$STAGE" \
+    -fs HFS+ -format UDZO -ov \
+    "$DMG_PATH" >/dev/null
+  rm -rf "$(dirname "$STAGE")"
+  echo "✓ made $DMG_PATH  (human download — drag to Applications)"
+  echo "  sha256: $(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
 fi

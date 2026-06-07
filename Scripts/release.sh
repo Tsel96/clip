@@ -32,17 +32,18 @@ REPO="${REPO:-$(git config --get remote.origin.url 2>/dev/null | sed -E 's#(git@
 [ -n "$REPO" ] || { echo "✗ set REPO=owner/name (no git origin found)"; exit 1; }
 
 TAG="v$MARKETING"
-ZIP="CLIP.zip"
+ZIP="CLIP.zip"   # self-updater artifact (manifest points here)
+DMG="CLIP.dmg"   # human download (linked from the website)
 RAW_FEED="https://raw.githubusercontent.com/$REPO/$BRANCH/appcast/latest.json"
 ZIP_URL="https://github.com/$REPO/releases/download/$TAG/$ZIP"
 
 echo "→ building release binary"
 swift build -c release
 
-echo "→ packaging CLIP.app (feed baked in) + $ZIP"
-FEED_URL="$RAW_FEED" MARKETING="$MARKETING" BUILD="$BUILD" ZIP=1 Scripts/make-app.sh "$ROOT" >/dev/null
-SHA=$(shasum -a 256 "$ROOT/$ZIP" | awk '{print $1}')
-echo "  sha256 $SHA"
+echo "→ packaging CLIP.app (feed baked in) + $ZIP (updater) + $DMG (humans)"
+FEED_URL="$RAW_FEED" MARKETING="$MARKETING" BUILD="$BUILD" ZIP=1 DMG=1 Scripts/make-app.sh "$ROOT" >/dev/null
+SHA=$(shasum -a 256 "$ROOT/$ZIP" | awk '{print $1}')   # updater verifies the ZIP
+echo "  zip sha256 $SHA"
 
 echo "→ writing appcast/latest.json"
 cat > "$ROOT/appcast/latest.json" <<JSON

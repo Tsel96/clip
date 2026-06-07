@@ -105,11 +105,19 @@ h1 {
   color: var(--faint);
   font-size: 11px;
   letter-spacing: .04em;
-  max-width: 44ch;
-  line-height: 1.6;
+  max-width: 52ch;
+  line-height: 1.7;
   margin-top: 4px;
 }
 .note b { color: var(--dim); font-weight: 400; }
+.note code {
+  font-family: var(--mono);
+  color: var(--dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
 
 @media (max-height: 520px) {
   .stage { gap: 14px; }
