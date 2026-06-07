@@ -2605,6 +2605,17 @@ final class CanvasState: ObservableObject {
     /// card the user has zoomed in on renders fully without hesitation.
     static let livePlaybackMinScreenSide: CGFloat = 120
 
+    /// Below this projected on-screen size (pt), a card drops to its
+    /// level-of-detail proxy (see `DraggableNode.isTiny`): content + position
+    /// only, no per-card chrome/gestures. Keeps deep zoom-out cheap when the
+    /// whole board is on screen and culling can't help.
+    static let lodMinScreenSide: CGFloat = 14
+
+    /// The card's smaller side projected through the current camera zoom.
+    func projectedScreenSide(of node: CanvasNode) -> CGFloat {
+        min(node.width, renderedHeight(of: node)) * camera.zoom
+    }
+
     /// Whether the given node should render its heavy content. True iff
     /// (a) the node intersects the viewport and (b) its projected screen
     /// size meets the breakpoint. Non-media kinds always return true —

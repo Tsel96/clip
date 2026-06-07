@@ -8,6 +8,15 @@ struct DraggableNode: View {
     @EnvironmentObject var state: CanvasState
     let node: CanvasNode
 
+    /// Level-of-detail flag set by `CanvasView` when this card projects below
+    /// a few points on screen (deep zoom-out) and isn't selected. In that
+    /// state we render a stripped-down body — content + position + a tap to
+    /// select — and skip the expensive per-card chrome (shadow, overlays,
+    /// gestures, hover, the height probe). Toggling it only swaps the body
+    /// subtree; DraggableNode's own identity (and @State) is preserved, so no
+    /// creation-pop replay or hover/selection glitches.
+    var isTiny: Bool = false
+
     /// True for the entire lightbox session of THIS card (open + the close
     /// animation, since `lightboxCardID` stays set until the hero unmounts).
     /// Hidden so the full-window hero — which grows out of, and shrinks back
@@ -70,8 +79,9 @@ struct DraggableNode: View {
     /// → 1.0 bounce so picking a card has a perceptible "snap on" beat
     /// (Tier B2).
 
-    init(node: CanvasNode) {
+    init(node: CanvasNode, isTiny: Bool = false) {
         self.node = node
+        self.isTiny = isTiny
         let isFresh = Date().timeIntervalSince(node.addedAt) < 1.0
         _appearProgress = State(initialValue: isFresh ? 0 : 1)
     }
@@ -122,6 +132,23 @@ struct DraggableNode: View {
     }
 
     var body: some View {
+        if isTiny { tinyBody } else { fullBody }
+    }
+
+    /// Deep-zoom-out proxy: just the (poster-state) content, clipped and
+    /// positioned, with a single tap to select. No shadow/overlays/gestures/
+    /// hover/height-probe — the machinery that makes a full card expensive ×N.
+    private var tinyBody: some View {
+        nodeContent
+            .frame(width: effectiveSize.width, height: effectiveSize.height)
+            .clipShape(RoundedRectangle(cornerRadius: chromeCornerRadius, style: .continuous))
+            .opacity(isHiddenForLightbox ? 0 : 1)
+            .offset(x: state.effectivePosition(of: node).x,
+                    y: state.effectivePosition(of: node).y)
+            .onTapGesture { handleTap() }
+    }
+
+    private var fullBody: some View {
         VStack(alignment: .leading, spacing: 8) {
             // ZStack with the card-stack ghosts as the back layer and
             // the head card's full chrome on top. We use a ZStack peer
@@ -149,7 +176,12 @@ struct DraggableNode: View {
                             style: .continuous
                         )
                     )
-                    .background(heightProbe)
+                    // Only auto-sizing cards need measuring. Cards with an
+                    // explicit `node.height` (images, videos, anything sized)
+                    // read it directly, so the GeometryReader + its @Published
+                    // `measuredHeights` write are pure waste — and a re-render
+                    // amplifier when dozens mount at once on zoom-out.
+                    .background { if node.height == nil { heightProbe } }
                     .overlay(selectionRing)
                     .overlay(connectHighlight)
                     .overlay(phoneOriginBadge, alignment: .topLeading)

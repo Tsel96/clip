@@ -87,6 +87,33 @@ struct CanvasView: View {
         }
     }
 
+    /// True when a card projects so small (deep zoom-out) that the full
+    /// interactive card is wasted work — render `DraggableNode`'s cheap LOD
+    /// proxy instead. Selected cards always stay full so they're manipulable;
+    /// only applies on the free canvas (the view modes have their own layout).
+    private func isTinyOnScreen(_ node: CanvasNode) -> Bool {
+        guard state.canvasMode == .canvas,
+              !state.selectedNodeIDs.contains(node.id) else { return false }
+        return state.projectedScreenSide(of: node) < CanvasState.lodMinScreenSide
+    }
+
+    /// The world-space card layer: sections beneath, then the viewport-culled
+    /// nodes (each at full detail or its cheap LOD proxy). Extracted from
+    /// `body` so the big canvas expression stays type-checkable.
+    @ViewBuilder
+    private var nodeLayer: some View {
+        // Sections render BELOW everything else so they never occlude their
+        // contained cards — except in Archive, where they're hidden.
+        if state.canvasMode == .canvas || state.canvasMode == .colorform {
+            ForEach(state.nodes.filter(\.isSection)) { node in
+                DraggableNode(node: node)
+            }
+        }
+        ForEach(visibleNodes) { node in
+            DraggableNode(node: node, isTiny: isTinyOnScreen(node))
+        }
+    }
+
     /// Per-mode background tint. Colorform keeps the warm cream tied to
     /// its bulb constellation; Archive uses a deeper warm cream for the
     /// calendar level and shifts to near-black at the lightbox level;
@@ -321,19 +348,7 @@ struct CanvasView: View {
                 // "apply scale changes directly to the whole graphics
                 // context.")
                 if !(state.canvasMode == .archive && state.archiveLevel == .calendar) {
-                    Group {
-                        // Sections render BELOW everything else so they
-                        // never occlude their contained cards — except in
-                        // Archive, where they're hidden.
-                        if state.canvasMode == .canvas || state.canvasMode == .colorform {
-                            ForEach(state.nodes.filter(\.isSection)) { node in
-                                DraggableNode(node: node)
-                            }
-                        }
-                        ForEach(visibleNodes) { node in
-                            DraggableNode(node: node)
-                        }
-                    }
+                    Group { nodeLayer }
                     .scaleEffect(cameraStore.camera.zoom, anchor: .topLeading)
                     .offset(x: cameraStore.camera.x, y: cameraStore.camera.y)
                     .opacity(cardsOpacity)
