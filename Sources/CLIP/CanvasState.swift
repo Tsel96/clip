@@ -120,6 +120,7 @@ final class CanvasState: ObservableObject {
         setupAutoSave()
         setupPrefsAutoSave()
         setupZoomWatch()
+        setupTerminationFlush()
         // Wire the Smart Selection controller after everything else so
         // its Combine subscriptions on `$selectedNodeIDs` / `$pages` /
         // `$canvasMode` see the fully-hydrated state.
@@ -243,23 +244,39 @@ final class CanvasState: ObservableObject {
             }
     }
 
-    @MainActor
-    private func saveToDisk() {
-        // Flush the live camera into a LOCAL copy of `pages` before
-        // encoding — mutating `self.pages` here would fire `$pages` and
-        // re-trigger the debounced save in an infinite loop.
+    /// The full document as it should hit disk: the live camera is flushed
+    /// into a LOCAL copy of `pages` — mutating `self.pages` here would fire
+    /// `$pages` and re-trigger the debounced save in an infinite loop.
+    private var snapshotForDisk: CanvasSnapshot {
         var pagesForDisk = pages
         if let activeIdx = pagesForDisk.firstIndex(where: { $0.id == activePageID }) {
             pagesForDisk[activeIdx].camera = camera
         }
-        let snapshot = CanvasSnapshot(pages: pagesForDisk, activePageID: activePageID)
-        do {
-            try CanvasStore.save(snapshot)
-        } catch {
-            // Soft-fail: persistence is best-effort and shouldn't crash a session.
-            print("⚠️ CanvasStore save failed: \(error)")
-        }
+        return CanvasSnapshot(pages: pagesForDisk, activePageID: activePageID)
     }
+
+    @MainActor
+    private func saveToDisk() {
+        // Snapshot construction is a cheap copy-on-write value copy; the
+        // expensive part (JSON encode of every page, including embedded
+        // image bytes, plus the disk write) happens on `CanvasStore`'s
+        // background queue so it can never hitch an interaction.
+        CanvasStore.saveAsync(snapshotForDisk)
+    }
+
+    /// Last-chance synchronous write at quit. The auto-save is debounced
+    /// (0.5 s) and encodes on a background queue, so without this a
+    /// mutation made just before ⌘Q could miss the disk.
+    private func setupTerminationFlush() {
+        terminationCancellable = NotificationCenter.default
+            .publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                CanvasStore.saveSync(self.snapshotForDisk)
+            }
+    }
+
+    private var terminationCancellable: AnyCancellable?
 
     /// Index of the currently active page in `pages`. Falls back to 0 if the
     /// active id has somehow gone stale (shouldn't happen, but defensive).

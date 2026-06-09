@@ -59,7 +59,11 @@ final class UpdateChecker {
         Task { @MainActor in
             defer { inFlight = false }
             do { try await runCheck(feed) }
-            catch { /* silent — never disturb a running exhibit */ }
+            catch {
+                // Silent to the user — never disturb a running exhibit —
+                // but visible in Console so a stuck update is diagnosable.
+                Log.updater.error("Update check failed: \(error, privacy: .public)")
+            }
         }
     }
 
