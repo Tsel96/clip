@@ -58,10 +58,14 @@ struct PagesSidebar: View {
         }
     }
 
+    private func leadingIcon(for page: Page) -> String {
+        page.name == CanvasState.incomingPageName ? "iphone" : "doc"
+    }
+
     @ViewBuilder
     private func row(for page: Page) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: "doc")
+            Image(systemName: leadingIcon(for: page))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
@@ -84,6 +88,14 @@ struct PagesSidebar: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
+
+            if page.pinned {
+                Spacer(minLength: 4)
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .help("Pinned")
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
@@ -91,6 +103,7 @@ struct PagesSidebar: View {
         }
         .contextMenu {
             Button("Rename") { beginRename(page) }
+            Button(page.pinned ? "Unpin" : "Pin") { state.togglePin(page.id) }
             if state.pages.count > 1 {
                 Divider()
                 Button("Delete", role: .destructive) {
