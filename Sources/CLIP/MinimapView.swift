@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Resizable minimap view. Shape & background are owned by whatever wraps it
-/// (in-window: `MinimapPanel`; detached: `NSPanel` from `MinimapWindowController`).
+/// (in-window: `LiquidGlassMinimap`; detached: `NSPanel` from `MinimapWindowController`).
 ///
 ///   • Renders every node as a small rectangle (selected = accent).
 ///   • Renders the current viewport as a dashed accent rectangle.
@@ -12,7 +12,10 @@ struct MinimapView: View {
     /// `visibleWorldRect` derives from the camera.
     @EnvironmentObject var cameraStore: CameraStore
 
-    private let inset: CGFloat = 12
+    /// Padding between the projected content and the view edge. The default
+    /// suits a rectangular host; circular hosts (the glass lens) pass a
+    /// larger value so nothing drowns in the curved rim.
+    var inset: CGFloat = 12
 
     var body: some View {
         GeometryReader { geo in

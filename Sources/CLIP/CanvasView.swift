@@ -443,13 +443,16 @@ struct CanvasView: View {
             )
             .clipped()
             .coordinateSpace(name: CanvasCoords.name)
-            .overlay {
-                // Draggable + resizable minimap panel. Hidden when the
-                // floating-window version is currently being shown, or
-                // when in Archive (its calendar/bento/lightbox layers
-                // are their own navigation system).
+            .overlay(alignment: .bottomTrailing) {
+                // Circular liquid-glass minimap, pinned bottom-right above
+                // the toggles pill. Hidden when the floating-window version
+                // is currently being shown, or when in Archive (its
+                // calendar/bento/lightbox layers are their own navigation
+                // system).
                 if !state.isMinimapDetached && state.canvasMode != .archive {
-                    MinimapPanel()
+                    LiquidGlassMinimap()
+                        .padding(.trailing, 10)
+                        .padding(.bottom, 44)
                 }
             }
             // Empty state for the pinned iPhone inbox page: before any link
