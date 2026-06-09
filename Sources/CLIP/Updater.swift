@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import CryptoKit
+import os
 
 /// Silent self-updater for CLIP. Ships in every build and runs for *all*
 /// installs — the unattended exhibition Mac mini and anyone who downloads the
@@ -59,7 +60,11 @@ final class UpdateChecker {
         Task { @MainActor in
             defer { inFlight = false }
             do { try await runCheck(feed) }
-            catch { /* silent — never disturb a running exhibit */ }
+            catch {
+                // Silent to the user — never disturb a running exhibit —
+                // but visible in Console so a stuck update is diagnosable.
+                Log.updater.error("Update check failed: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 
@@ -74,12 +79,16 @@ final class UpdateChecker {
 
         guard m.build > currentBuild, let zipURL = URL(string: m.url) else { return }
 
-        // Download the update archive.
+        // Download the update archive. Read + hash off the main actor —
+        // the zip is tens of MB and this class is @MainActor.
         let (tmpZip, _) = try await URLSession.shared.download(from: zipURL)
-        let zipData = try Data(contentsOf: tmpZip)
+        let (zipData, digest) = try await Task.detached(priority: .utility) {
+            let data = try Data(contentsOf: tmpZip)
+            let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            return (data, hash)
+        }.value
 
         // Verify integrity before trusting it.
-        let digest = SHA256.hash(data: zipData).map { String(format: "%02x", $0) }.joined()
         guard digest.caseInsensitiveCompare(m.sha256) == .orderedSame else { return }
 
         // Unzip into a private work dir.

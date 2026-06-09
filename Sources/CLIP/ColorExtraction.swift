@@ -157,9 +157,13 @@ enum ColorExtraction {
 
     // MARK: - Instagram og:image → average
 
+    /// Cap network waits so a flaky connection degrades to the hue-seed
+    /// fallback in seconds, not URLSession's 60 s default per card.
+    private static let requestTimeout: TimeInterval = 10
+
     private static func dominantColorForInstagram(url: String) async -> RGB? {
         guard let pageURL = URL(string: url) else { return nil }
-        var req = URLRequest(url: pageURL)
+        var req = URLRequest(url: pageURL, timeoutInterval: requestTimeout)
         // Instagram serves a leaner OG-tagged page to crawler User-Agents.
         req.setValue(
             "Mozilla/5.0 (compatible; facebookexternalhit/1.1; +http://www.facebook.com/externalhit_uatext.php)",
@@ -171,15 +175,16 @@ enum ColorExtraction {
         return await averageColor(at: og)
     }
 
+    /// Compiled once — `ogImageURL` runs per node when warming Colorform.
+    private static let ogImageRegexes: [NSRegularExpression] = [
+        #"<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']"#,
+        #"<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']"#
+    ].map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+
     /// Parse `<meta property="og:image" content="...">` out of raw HTML.
     private static func ogImageURL(from html: String) -> URL? {
-        let patterns = [
-            #"<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']"#,
-            #"<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']"#
-        ]
-        for p in patterns {
-            if let rx = try? NSRegularExpression(pattern: p, options: [.caseInsensitive]),
-               let m = rx.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+        for rx in ogImageRegexes {
+            if let m = rx.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
                m.numberOfRanges > 1,
                let r = Range(m.range(at: 1), in: html) {
                 let raw = String(html[r])
@@ -225,14 +230,15 @@ enum ColorExtraction {
     }
 
     private static func cgImage(at url: URL) async -> CGImage? {
-        guard let (data, _) = try? await URLSession.shared.data(from: url),
+        let req = URLRequest(url: url, timeoutInterval: requestTimeout)
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
               let img = NSImage(data: data) else { return nil }
         return img.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
     private static func instagramOGImageURL(_ url: String) async -> URL? {
         guard let pageURL = URL(string: url) else { return nil }
-        var req = URLRequest(url: pageURL)
+        var req = URLRequest(url: pageURL, timeoutInterval: requestTimeout)
         req.setValue(
             "Mozilla/5.0 (compatible; facebookexternalhit/1.1; +http://www.facebook.com/externalhit_uatext.php)",
             forHTTPHeaderField: "User-Agent")

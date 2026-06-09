@@ -22,11 +22,13 @@ enum YouTubeService {
     ///   • https://youtu.be/ID?si=...
     ///   • https://www.youtube.com/shorts/ID
     ///   • https://www.youtube.com/embed/ID
+    private static let videoIDRegex = try! NSRegularExpression(
+        pattern: #"(?:youtu\.be/|youtube\.com/(?:watch\?v=|shorts/|embed/|v/))([A-Za-z0-9_-]{11})"#,
+        options: [.caseInsensitive]
+    )
+
     static func videoID(from urlString: String) -> String? {
-        let pattern = #"(?:youtu\.be/|youtube\.com/(?:watch\?v=|shorts/|embed/|v/))([A-Za-z0-9_-]{11})"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return nil
-        }
+        let regex = videoIDRegex
         let range = NSRange(urlString.startIndex..., in: urlString)
         guard let match = regex.firstMatch(in: urlString, options: [], range: range),
               match.numberOfRanges > 1,

@@ -17,13 +17,20 @@ enum TweetServiceError: LocalizedError {
 }
 
 enum TweetService {
+    /// Compiled once — this is hit from `TweetCardView`'s body on every
+    /// render, so per-call compilation was a render-path cost.
+    private static let tweetIDRegex = try! NSRegularExpression(
+        pattern: #"(?:twitter|x)\.com\/[^\/]+\/status(?:es)?\/(\d+)"#,
+        options: [.caseInsensitive]
+    )
+
+    /// Embed cards should fail fast, not after URLSession's 60 s default.
+    private static let requestTimeout: TimeInterval = 15
+
     /// Pulls the numeric status ID out of an X/Twitter URL.
     static func extractTweetID(from urlString: String) -> String? {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pattern = #"(?:twitter|x)\.com\/[^\/]+\/status(?:es)?\/(\d+)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return nil
-        }
+        let regex = tweetIDRegex
         let range = NSRange(trimmed.startIndex..., in: trimmed)
         guard let match = regex.firstMatch(in: trimmed, options: [], range: range),
               match.numberOfRanges > 1,
@@ -61,7 +68,7 @@ enum TweetService {
         ]
         guard let url = components.url else { throw TweetServiceError.invalidURL }
 
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, timeoutInterval: requestTimeout)
         // Twitter's syndication CDN can be picky about User-Agent.
         request.setValue(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
@@ -95,7 +102,8 @@ enum TweetService {
         guard let url = URL(string: "https://react-tweet.vercel.app/api/tweet/\(tweetID)") else {
             throw TweetServiceError.invalidURL
         }
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let request = URLRequest(url: url, timeoutInterval: requestTimeout)
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw TweetServiceError.network("No HTTP response")
         }
