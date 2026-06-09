@@ -116,14 +116,20 @@ struct TweetCardView: View {
                 }
             }
         } else if let msg = errorMessage {
-            placeholder(symbol: "exclamationmark.bubble", text: msg)
+            // Network / decode failures are transient — offer a retry
+            // instead of leaving the card permanently stuck on the error.
+            placeholder(symbol: "exclamationmark.bubble", text: msg) {
+                Task { await load() }
+            }
         } else {
             placeholder(symbol: nil, text: isLoading ? "Loading…" : "")
         }
     }
 
     @ViewBuilder
-    private func placeholder(symbol: String?, text: String) -> some View {
+    private func placeholder(
+        symbol: String?, text: String, retry: (() -> Void)? = nil
+    ) -> some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
             VStack(spacing: 8) {
@@ -136,6 +142,11 @@ struct TweetCardView: View {
                 }
                 if !text.isEmpty {
                     Text(text).font(.callout).foregroundStyle(.secondary)
+                }
+                if let retry {
+                    Button("Retry", action: retry)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                 }
             }
         }

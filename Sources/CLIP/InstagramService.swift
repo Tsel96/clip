@@ -43,11 +43,13 @@ enum InstagramService {
     ///   • https://instagram.com/reel/ABC123/?igsh=...
     ///   • https://www.instagram.com/reels/ABC123/
     ///   • https://www.instagram.com/tv/ABC123/
+    private static let postRegex = try! NSRegularExpression(
+        pattern: #"instagram\.com\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)"#,
+        options: [.caseInsensitive]
+    )
+
     static func parse(_ urlString: String) -> (kind: PostKind, shortcode: String)? {
-        let pattern = #"instagram\.com\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return nil
-        }
+        let regex = postRegex
         let range = NSRange(urlString.startIndex..., in: urlString)
         guard let match = regex.firstMatch(in: urlString, options: [], range: range),
               match.numberOfRanges > 2,
