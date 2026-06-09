@@ -47,6 +47,11 @@ struct ContentView: View {
                     SearchPalette()
                         .padding(.vertical, 80)
                 }
+                // "Set up iPhone sharing" how-to, opened from the inbox
+                // empty state.
+                .sheet(isPresented: $state.isInboxGuidePresented) {
+                    InboxSetupGuide()
+                }
         }
         // Drain any links the iPhone Shortcut dropped while the app was in
         // the background / closed.

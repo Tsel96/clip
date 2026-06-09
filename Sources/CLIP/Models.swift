@@ -465,17 +465,37 @@ struct Page: Identifiable, Equatable, Codable {
     var nodes: [CanvasNode]
     var connectors: [Connector]
     var camera: Camera
+    /// Pinned pages float to the top of the sidebar (e.g. the iPhone inbox).
+    var pinned: Bool
 
     init(id: UUID = UUID(),
          name: String,
          nodes: [CanvasNode] = [],
          connectors: [Connector] = [],
-         camera: Camera = Camera()) {
+         camera: Camera = Camera(),
+         pinned: Bool = false) {
         self.id = id
         self.name = name
         self.nodes = nodes
         self.connectors = connectors
         self.camera = camera
+        self.pinned = pinned
+    }
+
+    // Explicit, tolerant decoding so older `canvas.json` files (which predate
+    // `pinned`) still load — a missing key defaults to `false` instead of
+    // throwing and wiping the document.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, nodes, connectors, camera, pinned
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        nodes = try c.decode([CanvasNode].self, forKey: .nodes)
+        connectors = try c.decode([Connector].self, forKey: .connectors)
+        camera = try c.decode(Camera.self, forKey: .camera)
+        pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
     }
 }
 

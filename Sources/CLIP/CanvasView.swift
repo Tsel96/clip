@@ -452,6 +452,14 @@ struct CanvasView: View {
                     MinimapPanel()
                 }
             }
+            // Empty state for the pinned iPhone inbox page: before any link
+            // has been shared from the phone, invite the user to set it up.
+            .overlay {
+                if state.canvasMode == .canvas, state.isInboxEmpty,
+                   state.lightboxCardID == nil, state.trimmingCardID == nil {
+                    InboxEmptyState()
+                }
+            }
             // Figma-style "drop something here" highlight while dragging
             // a file or URL over the canvas.
             .overlay {

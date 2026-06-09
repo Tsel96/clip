@@ -93,6 +93,9 @@ final class CanvasState: ObservableObject {
         // ascending dates so chronology is preserved — newer array index
         // = newer timestamp, anchored just before "now."
         Self.migrateAddedAtSentinels(in: &self.pages)
+        // Rename/pin the iPhone inbox page if it was created under an older
+        // name, and float pinned pages to the top.
+        Self.migrateIncomingPage(in: &self.pages)
         // Hydrate the live camera + index from the just-loaded active page.
         let activeIdx = self.pages.firstIndex(where: { $0.id == self.activePageID }) ?? 0
         self.camera = self.pages[activeIdx].camera
@@ -876,7 +879,18 @@ final class CanvasState: ObservableObject {
 
     // MARK: - iPhone share inbox
 
-    static let incomingPageName = "📥 Incoming"
+    static let incomingPageName = "from my iPhone"
+    /// Earlier names this page shipped under — migrated to `incomingPageName`
+    /// on load so existing documents pick up the rename + pin.
+    static let legacyIncomingPageNames: Set<String> = ["📥 Incoming", "Incoming"]
+
+    /// True when the iPhone inbox page is the active page and still has no
+    /// cards — drives the "Send references from your iPhone" empty state.
+    var isInboxEmpty: Bool {
+        activePage.name == Self.incomingPageName && activePage.nodes.isEmpty
+    }
+    /// Presents the "set up iPhone sharing" how-to guide sheet.
+    @Published var isInboxGuidePresented = false
     private static let k_inboxBookmark = "share.inboxFolderBookmark"
 
     /// Point the inbox at an iCloud Drive folder (chosen via the folder
@@ -965,8 +979,43 @@ final class CanvasState: ObservableObject {
 
     private func ensureIncomingPageIndex() -> Int {
         if let i = pages.firstIndex(where: { $0.name == Self.incomingPageName }) { return i }
-        pages.append(Page(name: Self.incomingPageName))
-        return pages.count - 1
+        // Create the iPhone inbox pinned so it sits at the top of the sidebar.
+        pages.insert(Page(name: Self.incomingPageName, pinned: true), at: 0)
+        return 0
+    }
+
+    /// One-time migration: an inbox page created under an older name gets
+    /// renamed to `incomingPageName`, pinned, and floated to the top. Static
+    /// so it can run during `init` before `self` is fully formed.
+    private static func migrateIncomingPage(in pages: inout [Page]) {
+        if let i = pages.firstIndex(where: { legacyIncomingPageNames.contains($0.name) }) {
+            pages[i].name = incomingPageName
+            pages[i].pinned = true
+        }
+        pages = pinnedFirst(pages)
+    }
+
+    /// Stable order that floats pinned pages to the top while preserving the
+    /// relative order within each group.
+    private static func pinnedFirst(_ pages: [Page]) -> [Page] {
+        pages.enumerated().sorted { a, b in
+            if a.element.pinned != b.element.pinned { return a.element.pinned }
+            return a.offset < b.offset
+        }.map { $0.element }
+    }
+
+    /// Re-float pinned pages to the top (after a pin toggle or rename).
+    func sortPagesByPinned() {
+        let ordered = Self.pinnedFirst(pages)
+        if ordered.map(\.id) != pages.map(\.id) { pages = ordered }
+    }
+
+    /// Toggle a page's pinned state and re-float. The active page is tracked
+    /// by id, so reordering never loses the user's place.
+    func togglePin(_ id: UUID) {
+        guard let i = pages.firstIndex(where: { $0.id == id }) else { return }
+        pages[i].pinned.toggle()
+        sortPagesByPinned()
     }
 
     /// Simple 3-column grid so a burst of shares doesn't pile on one spot.
