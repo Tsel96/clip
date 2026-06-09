@@ -439,8 +439,8 @@ final class CanvasState: ObservableObject {
         applySnapshot(restored)
         undoStacks[activePageID] = stack
         // Reset transient interaction state that might reference vanished nodes.
-        selectedNodeIDs.subtract(selectedNodeIDs.subtracting(Set(nodes.map(\.id))))
-        selectedConnectorIDs.subtract(selectedConnectorIDs.subtracting(Set(connectors.map(\.id))))
+        selectedNodeIDs.formIntersection(Set(nodes.map(\.id)))
+        selectedConnectorIDs.formIntersection(Set(connectors.map(\.id)))
         pendingConnector = nil
     }
 
@@ -449,8 +449,8 @@ final class CanvasState: ObservableObject {
         guard let restored = stack.popRedo(current: currentSnapshot) else { return }
         applySnapshot(restored)
         undoStacks[activePageID] = stack
-        selectedNodeIDs.subtract(selectedNodeIDs.subtracting(Set(nodes.map(\.id))))
-        selectedConnectorIDs.subtract(selectedConnectorIDs.subtracting(Set(connectors.map(\.id))))
+        selectedNodeIDs.formIntersection(Set(nodes.map(\.id)))
+        selectedConnectorIDs.formIntersection(Set(connectors.map(\.id)))
         pendingConnector = nil
     }
 
@@ -1024,7 +1024,7 @@ final class CanvasState: ObservableObject {
     /// Re-float pinned pages to the top (after a pin toggle or rename).
     func sortPagesByPinned() {
         let ordered = Self.pinnedFirst(pages)
-        if ordered.map(\.id) != pages.map(\.id) { pages = ordered }
+        if !ordered.elementsEqual(pages, by: { $0.id == $1.id }) { pages = ordered }
     }
 
     /// Toggle a page's pinned state and re-float. The active page is tracked

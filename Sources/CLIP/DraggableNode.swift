@@ -131,6 +131,14 @@ struct DraggableNode: View {
         return CGSize(width: dx / len * pull, height: dy / len * pull)
     }
 
+    /// World-coordinate placement for the full card: the active mode's
+    /// effective position plus the connector "rubber band" tug.
+    private var worldOffset: CGSize {
+        let p = state.effectivePosition(of: node)
+        return CGSize(width: p.x + connectorTug.width,
+                      height: p.y + connectorTug.height)
+    }
+
     var body: some View {
         if isTiny { tinyBody } else { fullBody }
     }
@@ -250,10 +258,7 @@ struct DraggableNode: View {
         // The `connectorTug` adds a tiny offset toward any currently-
         // dragged peer this node is connected to — gives "rubber band"
         // tactility to connector relationships during drag.
-        .offset(
-            x: state.effectivePosition(of: node).x + connectorTug.width,
-            y: state.effectivePosition(of: node).y + connectorTug.height
-        )
+        .offset(worldOffset)
         // While trimming this card, suppress its own drag so the timeline
         // handles (subviews) can be dragged without moving the card.
         .gesture(dragGesture, including: isTrimming ? .subviews : .all)
@@ -930,8 +935,15 @@ struct DraggableNode: View {
             // Even if no snap fired, repStart silences "unused" warning.
             _ = repStart
 
-            state.activeAlignmentGuides = result.guides
-            state.activeSpacingIndicators = spacing.indicators
+            // Skip the publish when nothing changed (the common no-snap
+            // tick is empty → empty): each write fires `objectWillChange`
+            // on `CanvasState`, which every mounted card observes.
+            if state.activeAlignmentGuides != result.guides {
+                state.activeAlignmentGuides = result.guides
+            }
+            if state.activeSpacingIndicators != spacing.indicators {
+                state.activeSpacingIndicators = spacing.indicators
+            }
         }
 
         for (id, pos) in newPositions {

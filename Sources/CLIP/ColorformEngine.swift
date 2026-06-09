@@ -126,8 +126,11 @@ enum ColorformEngine {
         let cardGap: CGFloat = 36
         for c in clusters {
             let sizes = c.memberIDs.compactMap { nodeSizes[$0] }
-            let avgW = sizes.isEmpty ? 320 : sizes.map(\.width).reduce(0,+) / CGFloat(max(1, sizes.count))
-            let avgH = sizes.isEmpty ? 200 : sizes.map(\.height).reduce(0,+) / CGFloat(max(1, sizes.count))
+            let sum = sizes.reduce(CGSize.zero) {
+                CGSize(width: $0.width + $1.width, height: $0.height + $1.height)
+            }
+            let avgW = sizes.isEmpty ? 320 : sum.width / CGFloat(sizes.count)
+            let avgH = sizes.isEmpty ? 200 : sum.height / CGFloat(sizes.count)
 
             let m = c.memberIDs.count
             let cols = max(1, Int(ceil(sqrt(Double(m)))))

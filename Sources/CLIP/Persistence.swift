@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// On-disk snapshot of everything that should survive a quit: every page
 /// (which already carries its own nodes / connectors / camera) plus the
@@ -67,11 +68,7 @@ enum CanvasStore {
             let backup = url.appendingPathExtension(
                 "corrupt-\(fmt.string(from: Date()))")
             try? FileManager.default.copyItem(at: url, to: backup)
-            Log.persistence.error("""
-                Canvas load failed, starting fresh \
-                (original kept at \(backup.lastPathComponent, privacy: .public)): \
-                \(error, privacy: .public)
-                """)
+            Log.persistence.error("Canvas load failed, starting fresh (original kept at \(backup.lastPathComponent, privacy: .public)): \(String(describing: error), privacy: .public)")
             return nil
         }
     }
@@ -89,7 +86,7 @@ enum CanvasStore {
             do {
                 try save(snapshot)
             } catch {
-                Log.persistence.error("Canvas save failed: \(error, privacy: .public)")
+                Log.persistence.error("Canvas save failed: \(String(describing: error), privacy: .public)")
             }
         }
     }
@@ -103,7 +100,7 @@ enum CanvasStore {
             do {
                 try save(snapshot)
             } catch {
-                Log.persistence.error("Canvas flush at quit failed: \(error, privacy: .public)")
+                Log.persistence.error("Canvas flush at quit failed: \(String(describing: error), privacy: .public)")
             }
         }
     }
