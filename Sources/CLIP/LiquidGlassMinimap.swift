@@ -39,6 +39,9 @@ struct LiquidGlassMinimap: View {
         .overlay(alignment: .bottom) {
             zoomPill.offset(y: -apron + 16)
         }
+        // TEMPORARY diagnostic while verifying on a real machine — shows
+        // up in `swift run`'s terminal output. Remove once confirmed.
+        .onAppear { print("🗺️ LiquidGlassMinimap mounted") }
     }
 
     // MARK: - Lens

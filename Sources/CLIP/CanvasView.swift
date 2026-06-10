@@ -443,18 +443,6 @@ struct CanvasView: View {
             )
             .clipped()
             .coordinateSpace(name: CanvasCoords.name)
-            .overlay(alignment: .bottomTrailing) {
-                // Circular liquid-glass minimap, pinned bottom-right above
-                // the toggles pill. Hidden when the floating-window version
-                // is currently being shown, or when in Archive (its
-                // calendar/bento/lightbox layers are their own navigation
-                // system).
-                if !state.isMinimapDetached && state.canvasMode != .archive {
-                    LiquidGlassMinimap()
-                        .padding(.trailing, 10)
-                        .padding(.bottom, 44)
-                }
-            }
             // Empty state for the pinned iPhone inbox page: before any link
             // has been shared from the phone, invite the user to set it up.
             .overlay {
@@ -525,9 +513,19 @@ struct CanvasView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive {
-                CanvasTogglesPill()
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 16)
+                VStack(alignment: .trailing, spacing: 2) {
+                    // Circular liquid-glass minimap. Hidden while the
+                    // floating-window version is being shown. Mounted here
+                    // (window bounds) for the same reason as the pills —
+                    // the inner ZStack's frame can extend past the window.
+                    if !state.isMinimapDetached {
+                        LiquidGlassMinimap()
+                    }
+                    CanvasTogglesPill()
+                        .padding(.trailing, 6)
+                }
+                .padding(.trailing, 10)
+                .padding(.bottom, 16)
             }
         }
         // Transient share toast — slides in from the top when a link
