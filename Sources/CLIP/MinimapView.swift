@@ -16,6 +16,10 @@ struct MinimapView: View {
     /// suits a rectangular host; circular hosts (the glass lens) pass a
     /// larger value so nothing drowns in the curved rim.
     var inset: CGFloat = 12
+    /// When false (the glass lens), the dashed viewport box is not drawn
+    /// and the projection frames the content only — cards fill the map
+    /// instead of shrinking to make room for a huge zoomed-out viewport.
+    var showsViewport: Bool = true
 
     var body: some View {
         GeometryReader { geo in
@@ -124,19 +128,19 @@ struct MinimapView: View {
             }
         }
 
-        // Viewport rectangle.
-        let vp = state.visibleWorldRect
-        let topLeft = projection.project(CGPoint(x: vp.minX, y: vp.minY))
-        let vw = vp.width  * projection.scale
-        let vh = vp.height * projection.scale
-        let vRect = CGRect(x: topLeft.x, y: topLeft.y, width: vw, height: vh)
-
-        // Reference style: a thin neutral dashed outline, no fill.
-        ctx.stroke(
-            Path(roundedRect: vRect, cornerSize: CGSize(width: 2, height: 2)),
-            with: .color(.gray.opacity(0.9)),
-            style: StrokeStyle(lineWidth: 1, dash: [3, 3])
-        )
+        // Viewport rectangle (rectangular hosts only — the lens hides it).
+        if showsViewport {
+            let vp = state.visibleWorldRect
+            let topLeft = projection.project(CGPoint(x: vp.minX, y: vp.minY))
+            let vw = vp.width  * projection.scale
+            let vh = vp.height * projection.scale
+            let vRect = CGRect(x: topLeft.x, y: topLeft.y, width: vw, height: vh)
+            ctx.stroke(
+                Path(roundedRect: vRect, cornerSize: CGSize(width: 2, height: 2)),
+                with: .color(.gray.opacity(0.9)),
+                style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+            )
+        }
     }
 
     // MARK: - Projection
@@ -182,14 +186,19 @@ struct MinimapView: View {
                 maxY = max(maxY, n.position.y + (n.height ?? 200))
             }
         }
-        let vp = state.visibleWorldRect
-        minX = min(minX, vp.minX); minY = min(minY, vp.minY)
-        maxX = max(maxX, vp.maxX); maxY = max(maxY, vp.maxY)
+        if showsViewport {
+            // The viewport box must fit inside the map, so it joins the
+            // projected bounds.
+            let vp = state.visibleWorldRect
+            minX = min(minX, vp.minX); minY = min(minY, vp.minY)
+            maxX = max(maxX, vp.maxX); maxY = max(maxY, vp.maxY)
+        }
 
-        // Generous padding so the dashed viewport box always floats with a
-        // clear offset from the map's edge instead of hugging it.
-        let pX = (maxX - minX) * 0.26
-        let pY = (maxY - minY) * 0.26
+        // Lens mode frames the content tightly so cards read large;
+        // viewport mode pads more so the dashed box keeps clear air.
+        let pad: CGFloat = showsViewport ? 0.18 : 0.06
+        let pX = (maxX - minX) * pad
+        let pY = (maxY - minY) * pad
         return CGRect(x: minX - pX, y: minY - pY,
                       width:  max(1, maxX - minX + pX * 2),
                       height: max(1, maxY - minY + pY * 2))

@@ -38,15 +38,24 @@ struct LiquidGlassMinimap: View {
     // MARK: - Layer 1: clipped canvas content
 
     /// The live minimap, placed in the dome's visible (top-left) quadrant.
-    /// Geometry keeps the whole content rect inside both the circle and
-    /// the on-screen region: with a bleed of 0.30·D the visible square is
-    /// 0.70·D, and the rect below stays within the circle's radius.
+    /// Content-only projection (no viewport box) so the cards read large.
+    /// A dashed frame floats OUTSIDE the map block with a clear offset.
+    /// Geometry keeps map + frame inside both the circle and the
+    /// on-screen region (worst corner ≈ 0.493·D from center, radius 0.5·D).
     private var minimapContent: some View {
-        MinimapView(inset: 22)
+        MinimapView(inset: 10, showsViewport: false)
             .frame(width: diameter * 0.46, height: diameter * 0.38)
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(
+                        Color.gray.opacity(0.55),
+                        style: StrokeStyle(lineWidth: 1.2, dash: [4, 4])
+                    )
+                    .padding(-10)
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.leading, diameter * 0.14)
-            .padding(.top, diameter * 0.18)
+            .padding(.leading, diameter * 0.16)
+            .padding(.top, diameter * 0.20)
     }
 
     /// Base material under the canvas content. Real clear Liquid Glass on
@@ -172,16 +181,18 @@ struct LiquidGlassMinimap: View {
 
     // MARK: - Pointer triangle
 
-    /// Static compass triangle on the rim's up-left position, exactly as
-    /// in the reference. (A camera-tracking version rotated onto the
+    /// Static compass triangle at the rim's up-left position, apex aimed
+    /// INTO the map. (A camera-tracking version rotated onto the
     /// off-screen part of the ring during zoom/pan — useless and jumpy.)
     private var pointerTriangle: some View {
         let angle = -3 * Double.pi / 4
-        let r = diameter / 2 + 30
+        let r = diameter / 2 + 26
         return PointerTriangle()
             .fill(Color.gray.opacity(0.85))
             .frame(width: 16, height: 14)
-            .rotationEffect(.radians(angle + .pi / 2))
+            // Base triangle points up; `angle - π/2` turns the apex
+            // toward the dome's center.
+            .rotationEffect(.radians(angle - .pi / 2))
             .offset(x: cos(angle) * r, y: sin(angle) * r)
             .allowsHitTesting(false)
     }
