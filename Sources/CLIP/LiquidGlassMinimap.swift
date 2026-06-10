@@ -1,21 +1,16 @@
 import SwiftUI
 
-/// "Liquid Glass" minimap dome, after the landing-page lens artwork.
-///
-/// Composition (see CanvasView for the mounts):
-///
-///   • `LiquidGlassMinimap` — a massive glass circle anchored bottom-right
-///     whose center is pushed past the window corner, so only its top-left
-///     quadrant sweeps across the screen (viewport bleed). Inside the
-///     clipped disc: the live `MinimapView` (dot grid + node cards +
-///     viewport box), positioned in the visible quadrant. On top: the
-///     volumetric dome — rim highlight, grounding inner shadow, and
-///     chromatic edge fringing. On macOS 26+ the base material is the
-///     system's clear Liquid Glass (true refraction); earlier systems get
-///     `.ultraThinMaterial` with a white lift.
-///
-///   • `MinimapControlPill` — the dark frosted zoom pill, centered against
-///     the SCREEN (not the off-center dome), floating over the glass edge.
+/// "Liquid Glass" minimap dome, after the landing-page lens artwork:
+/// a large glass circle anchored bottom-right whose center is pushed past
+/// the window corner, so only its top-left quadrant sweeps across the
+/// screen (viewport bleed). Inside the clipped disc: the live
+/// `MinimapView` (dot grid + node cards + viewport box), positioned in
+/// the visible quadrant. On top: the volumetric dome — rim highlight,
+/// grounding inner shadow, and a subtle chromatic smear on the top arc.
+/// Around it: the tick dial and the static rim compass triangle. On
+/// macOS 26+ the base material is the system's clear Liquid Glass (true
+/// refraction); earlier systems get `.ultraThinMaterial` with a white
+/// lift. Mounted in `CanvasView`.
 struct LiquidGlassMinimap: View {
     @EnvironmentObject var state: CanvasState
     /// Observed for the pointer triangle — its angle derives from the camera.
@@ -35,12 +30,6 @@ struct LiquidGlassMinimap: View {
             pointerTriangle
         }
         .frame(width: diameter, height: diameter)
-        // The zoom pill floats over the lens just below the map content,
-        // like the reference. Anchored to the dome so it travels with it.
-        .overlay(alignment: .topLeading) {
-            MinimapControlPill()
-                .offset(x: diameter * 0.37 - 70, y: diameter * 0.575)
-        }
         // Push the center toward (and past) the bottom-right corner so
         // only the top-left quadrant of the circle stays on screen.
         .offset(x: bleed, y: bleed)
@@ -110,39 +99,32 @@ struct LiquidGlassMinimap: View {
                 .clipShape(Circle())
                 .allowsHitTesting(false)
         }
-        // Chromatic aberration — prismatic fringing hugging the extreme
-        // outer edge. Three offset stroked circles, clipped so the fringe
-        // stays in the outer few percent of the radius; with the dome
-        // shifted bottom-right these read along the sweeping top-left arc.
+        // Chromatic fringe — a barely-there prismatic smear confined to a
+        // short stretch of the top arc, like the reference. (Offset glow
+        // rings read as a pink halo — wrong.)
         .overlay {
-            ZStack {
-                Circle()
-                    .stroke(Color.cyan, lineWidth: 10)
-                    .offset(x: -4, y: -4)
-                    .opacity(0.4)
-                    .blur(radius: 4)
-                    .blendMode(.screen)
-                Circle()
-                    .stroke(Color(red: 1.0, green: 0.2, blue: 0.45), lineWidth: 10)
-                    .offset(x: 4, y: 4)
-                    .opacity(0.3)
-                    .blur(radius: 5)
-                    .blendMode(.screen)
-                Circle()
-                    .stroke(Color.yellow, lineWidth: 8)
-                    .offset(y: -3)
-                    .opacity(0.2)
-                    .blur(radius: 3)
-            }
-            // Keep the fringe in the outer ~7% of the radius (a stroked-
-            // border ring as the mask — macOS 13-safe, unlike shape
-            // boolean ops).
-            .mask {
-                Circle().strokeBorder(Color.white, lineWidth: diameter * 0.07)
-            }
-            .allowsHitTesting(false)
+            Circle()
+                .strokeBorder(
+                    AngularGradient(
+                        stops: [
+                            .init(color: .clear,               location: 0.00),
+                            .init(color: .clear,               location: 0.60),
+                            .init(color: .cyan.opacity(0.45),  location: 0.66),
+                            .init(color: .yellow.opacity(0.45), location: 0.71),
+                            .init(color: .pink.opacity(0.45),  location: 0.76),
+                            .init(color: .clear,               location: 0.82),
+                            .init(color: .clear,               location: 1.00)
+                        ],
+                        center: .center,
+                        angle: .degrees(0)
+                    ),
+                    lineWidth: 3
+                )
+                .blur(radius: 2)
+                .opacity(0.55)
+                .allowsHitTesting(false)
         }
-        .shadow(color: .black.opacity(0.25), radius: 40, x: -8, y: -8)
+        .shadow(color: .black.opacity(0.18), radius: 32, x: -6, y: -6)
     }
 
     // MARK: - Dial ticks
@@ -190,116 +172,18 @@ struct LiquidGlassMinimap: View {
 
     // MARK: - Pointer triangle
 
-    /// World-space vector from the board's content to the viewport. Drives
-    /// the compass triangle on the rim: when the user pans far from their
-    /// cards it points the way out; panned home, it fades away.
-    private var viewportOffsetFromContent: CGSize? {
-        guard !state.nodes.isEmpty else { return nil }
-        var minX = CGFloat.greatestFiniteMagnitude, minY = minX
-        var maxX = -CGFloat.greatestFiniteMagnitude, maxY = maxX
-        for n in state.nodes {
-            minX = min(minX, n.position.x)
-            minY = min(minY, n.position.y)
-            maxX = max(maxX, n.position.x + n.width)
-            maxY = max(maxY, n.position.y + (n.height ?? 200))
-        }
-        let content = CGPoint(x: (minX + maxX) / 2, y: (minY + maxY) / 2)
-        let vp = state.visibleWorldRect
-        return CGSize(width: vp.midX - content.x, height: vp.midY - content.y)
-    }
-
-    @ViewBuilder
+    /// Static compass triangle on the rim's up-left position, exactly as
+    /// in the reference. (A camera-tracking version rotated onto the
+    /// off-screen part of the ring during zoom/pan — useless and jumpy.)
     private var pointerTriangle: some View {
-        if let off = viewportOffsetFromContent {
-            let distance = hypot(off.width, off.height)
-            let vp = state.visibleWorldRect
-            // Always on, like the reference. Points at the viewport once
-            // there's meaningful drift; rests at the reference's up-left
-            // position when the user is centered on their content.
-            let hasDrift = distance > max(vp.width, vp.height) * 0.08
-            let angle = hasDrift ? atan2(off.height, off.width) : -3 * .pi / 4
-            let r = diameter / 2 + 30
-
-            PointerTriangle()
-                .fill(Color.gray.opacity(0.85))
-                .frame(width: 16, height: 14)
-                .rotationEffect(.radians(angle + .pi / 2))
-                .offset(x: cos(angle) * r, y: sin(angle) * r)
-                .animation(.easeInOut(duration: 0.25), value: hasDrift)
-                .allowsHitTesting(false)
-        }
-    }
-}
-
-// MARK: - Layer 3: the floating control pill
-
-/// Dark frosted zoom pill — centered against the screen near its bottom
-/// edge, floating over the dome's glass arc. Mounted separately from the
-/// dome (see CanvasView) precisely so it centers on the window, not on
-/// the off-center circle.
-struct MinimapControlPill: View {
-    @EnvironmentObject var state: CanvasState
-
-    var body: some View {
-        HStack(spacing: 0) {
-            pillButton(systemName: "minus.magnifyingglass", help: "Zoom out") {
-                state.zoomOut()
-            }
-            divider
-            Button {
-                state.zoomToFit()
-            } label: {
-                FitCornersGlyph()
-                    .stroke(style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
-                    .foregroundStyle(.white.opacity(0.75))
-                    .frame(width: 14, height: 14)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.hover)
-            .help("Zoom to fit")
-            divider
-            pillButton(systemName: "plus.magnifyingglass", help: "Zoom in") {
-                state.zoomIn()
-            }
-        }
-        .frame(width: 140, height: 42)
-        .background(Color.black.opacity(0.3))
-        .background(.ultraThinMaterial)
-        .environment(\.colorScheme, .dark)
-        .clipShape(Capsule(style: .continuous))
-        // Fine edge lighting along the capsule rim.
-        .overlay(
-            Capsule(style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [.white.opacity(0.4), .clear, .white.opacity(0.1)],
-                        startPoint: .top, endPoint: .bottom
-                    ),
-                    lineWidth: 0.5
-                )
-        )
-        .shadow(color: .black.opacity(0.25), radius: 15, x: 0, y: 8)
-    }
-
-    private var divider: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.15))
-            .frame(width: 1, height: 20)
-    }
-
-    private func pillButton(
-        systemName: String, help: String, action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(.white.opacity(0.75))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.hover)
-        .help(help)
+        let angle = -3 * Double.pi / 4
+        let r = diameter / 2 + 30
+        return PointerTriangle()
+            .fill(Color.gray.opacity(0.85))
+            .frame(width: 16, height: 14)
+            .rotationEffect(.radians(angle + .pi / 2))
+            .offset(x: cos(angle) * r, y: sin(angle) * r)
+            .allowsHitTesting(false)
     }
 }
 
@@ -315,20 +199,3 @@ private struct PointerTriangle: Shape {
     }
 }
 
-/// "Re-center / fit" glyph: two opposing corner brackets implying a frame,
-/// matching the reference pill's centre icon.
-private struct FitCornersGlyph: Shape {
-    func path(in rect: CGRect) -> Path {
-        let arm = rect.width * 0.45
-        var p = Path()
-        // Top-right corner bracket.
-        p.move(to: CGPoint(x: rect.maxX - arm, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + arm))
-        // Bottom-left corner bracket.
-        p.move(to: CGPoint(x: rect.minX + arm, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - arm))
-        return p
-    }
-}

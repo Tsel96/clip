@@ -65,8 +65,11 @@ struct MinimapView: View {
                 let rect = CGRect(x: origin.x, y: origin.y, width: w, height: h)
                 let isSel = state.selectedNodeIDs.contains(node.id)
 
-                // Sections span large areas — a filled block would read as
-                // a giant grey slab over the map. Hairline outline instead.
+                // Sections — and any node so large its projection covers a
+                // big share of the map (a giant text/drawing block) — draw
+                // as hairline outlines. A filled block that size reads as
+                // a grey slab swallowing the other cards.
+                let coversMap = (w * h) > canvasSize.width * canvasSize.height * 0.28
                 if case .section(_, let color) = node.kind {
                     layer.stroke(
                         Path(roundedRect: rect, cornerSize: CGSize(width: 3, height: 3)),
@@ -104,10 +107,15 @@ struct MinimapView: View {
                     fill = color.swiftUIColor.opacity(isSel ? 1 : 0.85)
                 }
                 let r = min(4, w * 0.18, h * 0.18)
-                layer.fill(
-                    Path(roundedRect: rect, cornerSize: CGSize(width: r, height: r)),
-                    with: .color(fill)
-                )
+                let path = Path(roundedRect: rect, cornerSize: CGSize(width: r, height: r))
+                if coversMap {
+                    layer.stroke(
+                        path, with: .color(fill.opacity(0.7)),
+                        style: StrokeStyle(lineWidth: 1)
+                    )
+                } else {
+                    layer.fill(path, with: .color(fill))
+                }
             }
         }
 
