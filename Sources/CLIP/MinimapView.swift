@@ -35,8 +35,13 @@ struct MinimapView: View {
     private func draw(in ctx: GraphicsContext, canvasSize: CGSize) {
         let projection = makeProjection(canvasSize: canvasSize)
 
-        // Subtle dot grid.
-        let gridSize: CGFloat = 60
+        // Subtle dot grid — scale-aware. At deep zoom-out the projected
+        // spacing collapses below a pixel and tens of thousands of dots
+        // merge into a solid grey slab over the map (and cost a fortune
+        // to draw). Grow the world step so dots stay ≥ 7pt apart.
+        let worldStep: CGFloat = 60
+        let projected = worldStep * projection.scale
+        let gridSize = worldStep * max(1, (7 / max(projected, 0.0001)).rounded(.up))
         let bounds = projection.bounds
         var gx = (bounds.minX / gridSize).rounded(.down) * gridSize
         let dotColor = Color(nsColor: .quaternaryLabelColor)
