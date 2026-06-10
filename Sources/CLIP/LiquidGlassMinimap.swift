@@ -21,12 +21,22 @@ struct LiquidGlassMinimap: View {
     /// How far the dome's frame is pushed past the bottom-right corner.
     private var bleed: CGFloat { diameter * 0.28 }
 
+    /// Canvas zoom mapped to 0…1 on a log scale across the practical
+    /// zoom range. Drives the dial rotation and the map's zoom response.
+    private var zoomT: Double {
+        let z = Double(max(0.02, min(8, cameraStore.camera.zoom)))
+        return (log(z) - log(0.02)) / (log(8) - log(0.02))
+    }
+
     var body: some View {
         ZStack {
             dome
-            // Ticks + pointer AFTER the dome so the dome's wide soft
-            // shadow can't wash them out.
+            // The dial: the dashed ring rotates with the canvas zoom
+            // (a full revolution across the zoom range), sweeping under
+            // the fixed needle like a lens' focus ring. Drawn AFTER the
+            // dome so its wide soft shadow can't wash the ticks out.
             tickRing
+                .rotationEffect(.radians(zoomT * 2 * .pi))
             pointerTriangle
         }
         .frame(width: diameter, height: diameter)
@@ -45,6 +55,10 @@ struct LiquidGlassMinimap: View {
     private var minimapContent: some View {
         MinimapView(inset: 8, showsViewport: false)
             .frame(width: diameter * 0.52, height: diameter * 0.44)
+            // The map breathes with the canvas: zooming in scales the
+            // cards up (bounded, so they stay under the glass — the
+            // circle clip catches any overflow).
+            .scaleEffect(0.8 + 0.6 * zoomT, anchor: .center)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.leading, diameter * 0.15)
             .padding(.top, diameter * 0.18)
@@ -196,15 +210,18 @@ struct LiquidGlassMinimap: View {
 
     // MARK: - Pointer triangle
 
-    /// Static compass triangle just outside the rim's up-left arc, apex
-    /// pointing up-left exactly as in the reference artwork.
+    /// The dial's fixed needle: sits OUTSIDE the rotating tick ring at the
+    /// up-left arc, apex pointing INWARD at the map — the ring sweeps
+    /// beneath it as the zoom changes, like a lens' focus index mark.
     private var pointerTriangle: some View {
         let angle = -3 * Double.pi / 4
-        let r = diameter / 2 + 24
+        let r = diameter / 2 + 42
         return PointerTriangle()
             .fill(Color.gray.opacity(0.8))
-            .frame(width: 19, height: 16)
-            .rotationEffect(.radians(angle + .pi / 2))
+            .frame(width: 18, height: 15)
+            // Base triangle points up; `angle - π/2` turns the apex
+            // toward the dome's center.
+            .rotationEffect(.radians(angle - .pi / 2))
             .offset(x: cos(angle) * r, y: sin(angle) * r)
             .allowsHitTesting(false)
     }
