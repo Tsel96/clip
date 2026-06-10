@@ -1,4 +1,60 @@
 import SwiftUI
+import AppKit
+import ImageIO
+
+/// Tiny downsampled previews for minimap cards, so the lens shows real
+/// thumbnails like the reference artwork instead of colored blocks.
+/// Images decode off the main thread once per node and cache; `version`
+/// bumps so the hosting Canvas re-renders as thumbs land. Video posters
+/// come from the existing process-wide `VideoPosterStore` (pre-warmed at
+/// launch).
+@MainActor
+final class MinimapThumbs: ObservableObject {
+    static let shared = MinimapThumbs()
+
+    @Published private(set) var version = 0
+    private var thumbs: [UUID: NSImage] = [:]
+    private var inFlight: Set<UUID> = []
+
+    func thumbnail(for node: CanvasNode) -> NSImage? {
+        switch node.kind {
+        case .image(let data, _):
+            if let hit = thumbs[node.id] { return hit }
+            decode(id: node.id, data: data)
+            return nil
+        case .video(let fileURL, _):
+            return VideoPosterStore.cachedPoster(for: fileURL)
+        default:
+            return nil
+        }
+    }
+
+    private func decode(id: UUID, data: Data) {
+        guard !inFlight.contains(id) else { return }
+        inFlight.insert(id)
+        Task.detached(priority: .utility) {
+            let thumb = Self.downsample(data, maxSide: 200)
+            await MainActor.run {
+                if let thumb { self.thumbs[id] = thumb }
+                self.inFlight.remove(id)
+                self.version &+= 1
+            }
+        }
+    }
+
+    nonisolated private static func downsample(_ data: Data, maxSide: CGFloat) -> NSImage? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxSide,
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+    }
+}
 
 /// Resizable minimap view. Shape & background are owned by whatever wraps it
 /// (in-window: `LiquidGlassMinimap`; detached: `NSPanel` from `MinimapWindowController`).
@@ -16,10 +72,15 @@ struct MinimapView: View {
     /// suits a rectangular host; circular hosts (the glass lens) pass a
     /// larger value so nothing drowns in the curved rim.
     var inset: CGFloat = 12
-    /// When false (the glass lens), the dashed viewport box is not drawn
-    /// and the projection frames the content only — cards fill the map
-    /// instead of shrinking to make room for a huge zoomed-out viewport.
+    /// When false (the glass lens), the dashed viewport box and the
+    /// world-space dot grid are not drawn, the projection frames the
+    /// content only — cards fill the map instead of shrinking to make
+    /// room for a huge zoomed-out viewport — and image/video cards render
+    /// real thumbnails like the reference artwork.
     var showsViewport: Bool = true
+
+    /// Re-renders the Canvas as image thumbnails finish decoding.
+    @ObservedObject private var thumbs = MinimapThumbs.shared
 
     var body: some View {
         GeometryReader { geo in
@@ -39,25 +100,29 @@ struct MinimapView: View {
     private func draw(in ctx: GraphicsContext, canvasSize: CGSize) {
         let projection = makeProjection(canvasSize: canvasSize)
 
-        // Subtle dot grid — scale-aware. At deep zoom-out the projected
-        // spacing collapses below a pixel and tens of thousands of dots
-        // merge into a solid grey slab over the map (and cost a fortune
-        // to draw). Grow the world step so dots stay ≥ 7pt apart.
-        let worldStep: CGFloat = 60
-        let projected = worldStep * projection.scale
-        let gridSize = worldStep * max(1, (7 / max(projected, 0.0001)).rounded(.up))
-        let bounds = projection.bounds
-        var gx = (bounds.minX / gridSize).rounded(.down) * gridSize
-        let dotColor = Color(nsColor: .quaternaryLabelColor)
-        while gx < bounds.maxX {
-            var gy = (bounds.minY / gridSize).rounded(.down) * gridSize
-            while gy < bounds.maxY {
-                let p = projection.project(CGPoint(x: gx, y: gy))
-                let r = CGRect(x: p.x - 0.5, y: p.y - 0.5, width: 1, height: 1)
-                ctx.fill(Path(ellipseIn: r), with: .color(dotColor))
-                gy += gridSize
+        // Subtle dot grid — rectangular hosts only (the lens draws one
+        // uniform grid across its whole disc instead). Scale-aware: at
+        // deep zoom-out the projected spacing collapses below a pixel and
+        // tens of thousands of dots merge into a solid grey slab over the
+        // map (and cost a fortune to draw). Grow the world step so dots
+        // stay ≥ 7pt apart.
+        if showsViewport {
+            let worldStep: CGFloat = 60
+            let projected = worldStep * projection.scale
+            let gridSize = worldStep * max(1, (7 / max(projected, 0.0001)).rounded(.up))
+            let bounds = projection.bounds
+            var gx = (bounds.minX / gridSize).rounded(.down) * gridSize
+            let dotColor = Color(nsColor: .quaternaryLabelColor)
+            while gx < bounds.maxX {
+                var gy = (bounds.minY / gridSize).rounded(.down) * gridSize
+                while gy < bounds.maxY {
+                    let p = projection.project(CGPoint(x: gx, y: gy))
+                    let r = CGRect(x: p.x - 0.5, y: p.y - 0.5, width: 1, height: 1)
+                    ctx.fill(Path(ellipseIn: r), with: .color(dotColor))
+                    gy += gridSize
+                }
+                gx += gridSize
             }
-            gx += gridSize
         }
 
         // Nodes — drawn in their own layer so the per-card soft shadow
@@ -85,6 +150,30 @@ struct MinimapView: View {
                         with: .color(color.swiftUIColor.opacity(isSel ? 0.8 : 0.45)),
                         style: StrokeStyle(lineWidth: 1)
                     )
+                    continue
+                }
+
+                // Lens mode: image/video cards draw their real thumbnail,
+                // aspect-filled and clipped to the rounded card — the
+                // reference's "photos under glass" look.
+                if !showsViewport, !coversMap, let thumb = thumbs.thumbnail(for: node) {
+                    let cr = min(8, w * 0.22, h * 0.22)
+                    let cardPath = Path(roundedRect: rect, cornerSize: CGSize(width: cr, height: cr))
+                    // White base takes the soft shadow from the layer filter.
+                    layer.fill(cardPath, with: .color(.white))
+                    layer.drawLayer { card in
+                        card.clip(to: cardPath)
+                        let ts = thumb.size
+                        if ts.width > 0, ts.height > 0 {
+                            let s = max(rect.width / ts.width, rect.height / ts.height)
+                            let dw = ts.width * s, dh = ts.height * s
+                            card.draw(
+                                Image(nsImage: thumb),
+                                in: CGRect(x: rect.midX - dw / 2, y: rect.midY - dh / 2,
+                                           width: dw, height: dh)
+                            )
+                        }
+                    }
                     continue
                 }
 

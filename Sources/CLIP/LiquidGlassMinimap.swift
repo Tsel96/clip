@@ -38,24 +38,38 @@ struct LiquidGlassMinimap: View {
     // MARK: - Layer 1: clipped canvas content
 
     /// The live minimap, placed in the dome's visible (top-left) quadrant.
-    /// Content-only projection (no viewport box) so the cards read large.
-    /// A dashed frame floats OUTSIDE the map block with a clear offset.
-    /// Geometry keeps map + frame inside both the circle and the
-    /// on-screen region (worst corner ≈ 0.493·D from center, radius 0.5·D).
+    /// Content-only projection (no viewport box) so the cards read large —
+    /// real thumbnails scattered over the lens, like the reference.
+    /// Geometry keeps the block inside both the circle and the on-screen
+    /// region (worst corner ≈ 0.474·D from center, radius 0.5·D).
     private var minimapContent: some View {
-        MinimapView(inset: 10, showsViewport: false)
-            .frame(width: diameter * 0.46, height: diameter * 0.38)
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        Color.gray.opacity(0.55),
-                        style: StrokeStyle(lineWidth: 1.2, dash: [4, 4])
-                    )
-                    .padding(-10)
-            }
+        MinimapView(inset: 8, showsViewport: false)
+            .frame(width: diameter * 0.52, height: diameter * 0.44)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.leading, diameter * 0.16)
-            .padding(.top, diameter * 0.20)
+            .padding(.leading, diameter * 0.15)
+            .padding(.top, diameter * 0.18)
+    }
+
+    /// One uniform screen-space dot grid across the whole disc — the
+    /// reference shows the canvas grid sweeping the full lens, not a
+    /// fenced map block.
+    private var lensDotGrid: some View {
+        Canvas { ctx, size in
+            let step: CGFloat = 22
+            var x = step / 2
+            while x < size.width {
+                var y = step / 2
+                while y < size.height {
+                    ctx.fill(
+                        Path(ellipseIn: CGRect(x: x - 0.75, y: y - 0.75, width: 1.5, height: 1.5)),
+                        with: .color(.gray.opacity(0.28))
+                    )
+                    y += step
+                }
+                x += step
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     /// Base material under the canvas content. Real clear Liquid Glass on
@@ -77,6 +91,7 @@ struct LiquidGlassMinimap: View {
         ZStack {
             baseMaterial
                 .allowsHitTesting(false)
+            lensDotGrid
             minimapContent
         }
         .clipShape(Circle())
@@ -154,15 +169,15 @@ struct LiquidGlassMinimap: View {
                 let f1 = hash(i, salt: 1)        // length
                 let f2 = hash(i, salt: 2)        // radial jitter
                 let f3 = hash(i, salt: 3)        // opacity
-                let length = 6 + f1 * 12
+                let length = 6 + f1 * 11
                 let r0 = baseRadius + f2 * 7
                 var path = Path()
                 path.move(to: polar(center, angle: angle, radius: r0))
                 path.addLine(to: polar(center, angle: angle, radius: r0 + length))
                 ctx.stroke(
                     path,
-                    with: .color(.gray.opacity(0.35 + f3 * 0.4)),
-                    style: StrokeStyle(lineWidth: 2.4, lineCap: .butt)
+                    with: .color(.gray.opacity(0.30 + f3 * 0.35)),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .butt)
                 )
             }
         }
@@ -181,18 +196,15 @@ struct LiquidGlassMinimap: View {
 
     // MARK: - Pointer triangle
 
-    /// Static compass triangle at the rim's up-left position, apex aimed
-    /// INTO the map. (A camera-tracking version rotated onto the
-    /// off-screen part of the ring during zoom/pan — useless and jumpy.)
+    /// Static compass triangle just outside the rim's up-left arc, apex
+    /// pointing up-left exactly as in the reference artwork.
     private var pointerTriangle: some View {
         let angle = -3 * Double.pi / 4
-        let r = diameter / 2 + 26
+        let r = diameter / 2 + 24
         return PointerTriangle()
-            .fill(Color.gray.opacity(0.85))
-            .frame(width: 16, height: 14)
-            // Base triangle points up; `angle - π/2` turns the apex
-            // toward the dome's center.
-            .rotationEffect(.radians(angle - .pi / 2))
+            .fill(Color.gray.opacity(0.8))
+            .frame(width: 19, height: 16)
+            .rotationEffect(.radians(angle + .pi / 2))
             .offset(x: cos(angle) * r, y: sin(angle) * r)
             .allowsHitTesting(false)
     }
