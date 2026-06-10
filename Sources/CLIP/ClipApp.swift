@@ -25,8 +25,19 @@ struct ClipApp: App {
         }
     }
 
+    /// Debug builds (`swift run`, Xcode ⌘R) are visibly marked in the window
+    /// title so it's always obvious whether a dev build or the installed
+    /// release copy is on screen. Release builds show plain "CLIP".
+    private var windowTitle: String {
+        #if DEBUG
+        "CLIP · dev"
+        #else
+        "CLIP"
+        #endif
+    }
+
     var body: some Scene {
-        WindowGroup("CLIP") {
+        WindowGroup(windowTitle) {
             ContentView()
                 .environmentObject(state)
                 .environmentObject(state.cameraStore)
