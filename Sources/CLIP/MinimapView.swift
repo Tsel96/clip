@@ -162,8 +162,10 @@ struct MinimapView: View {
         minX = min(minX, vp.minX); minY = min(minY, vp.minY)
         maxX = max(maxX, vp.maxX); maxY = max(maxY, vp.maxY)
 
-        let pX = (maxX - minX) * 0.18
-        let pY = (maxY - minY) * 0.18
+        // Generous padding so the dashed viewport box always floats with a
+        // clear offset from the map's edge instead of hugging it.
+        let pX = (maxX - minX) * 0.26
+        let pY = (maxY - minY) * 0.26
         return CGRect(x: minX - pX, y: minY - pY,
                       width:  max(1, maxX - minX + pX * 2),
                       height: max(1, maxY - minY + pY * 2))

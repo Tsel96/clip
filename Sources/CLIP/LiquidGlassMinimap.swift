@@ -21,15 +21,17 @@ struct LiquidGlassMinimap: View {
     /// Observed for the pointer triangle — its angle derives from the camera.
     @EnvironmentObject var cameraStore: CameraStore
 
-    /// Dome diameter. Deliberately enormous — most of it bleeds off-screen.
-    private let diameter: CGFloat = 720
+    /// Dome diameter. Deliberately large — part of it bleeds off-screen.
+    private let diameter: CGFloat = 520
     /// How far the dome's frame is pushed past the bottom-right corner.
-    private var bleed: CGFloat { diameter * 0.36 }
+    private var bleed: CGFloat { diameter * 0.30 }
 
     var body: some View {
         ZStack {
-            tickRing
             dome
+            // Ticks + pointer AFTER the dome so the dome's wide soft
+            // shadow can't wash them out.
+            tickRing
             pointerTriangle
         }
         .frame(width: diameter, height: diameter)
@@ -42,10 +44,10 @@ struct LiquidGlassMinimap: View {
 
     /// The live minimap, placed in the dome's visible (top-left) quadrant.
     /// Geometry keeps the whole content rect inside both the circle and
-    /// the on-screen region: with a bleed of 0.36·D the visible square is
-    /// 0.64·D, and the rect below stays within the circle's radius.
+    /// the on-screen region: with a bleed of 0.30·D the visible square is
+    /// 0.70·D, and the rect below stays within the circle's radius.
     private var minimapContent: some View {
-        MinimapView(inset: 18)
+        MinimapView(inset: 22)
             .frame(width: diameter * 0.46, height: diameter * 0.38)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.leading, diameter * 0.14)
@@ -146,8 +148,8 @@ struct LiquidGlassMinimap: View {
     private var tickRing: some View {
         Canvas { ctx, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let baseRadius = diameter / 2 + 16
-            let count = 96
+            let baseRadius = diameter / 2 + 14
+            let count = 80
             for i in 0..<count {
                 // Reference ring has gaps — drop ~30% of positions.
                 guard hash(i, salt: 4) > 0.3 else { continue }
@@ -155,15 +157,15 @@ struct LiquidGlassMinimap: View {
                 let f1 = hash(i, salt: 1)        // length
                 let f2 = hash(i, salt: 2)        // radial jitter
                 let f3 = hash(i, salt: 3)        // opacity
-                let length = 5 + f1 * 12
-                let r0 = baseRadius + f2 * 8
+                let length = 6 + f1 * 12
+                let r0 = baseRadius + f2 * 7
                 var path = Path()
                 path.move(to: polar(center, angle: angle, radius: r0))
                 path.addLine(to: polar(center, angle: angle, radius: r0 + length))
                 ctx.stroke(
                     path,
-                    with: .color(.primary.opacity(0.12 + f3 * 0.35)),
-                    style: StrokeStyle(lineWidth: 2.2, lineCap: .butt)
+                    with: .color(.gray.opacity(0.35 + f3 * 0.4)),
+                    style: StrokeStyle(lineWidth: 2.4, lineCap: .butt)
                 )
             }
         }
@@ -205,15 +207,15 @@ struct LiquidGlassMinimap: View {
         if let off = viewportOffsetFromContent {
             let distance = hypot(off.width, off.height)
             let vp = state.visibleWorldRect
-            // Visible once the viewport centre has wandered more than half
-            // a screen away from the content.
-            let visible = distance > max(vp.width, vp.height) * 0.5
+            // Live as soon as the viewport centre drifts meaningfully from
+            // the content — a direction cue, not a lost-at-sea alarm.
+            let visible = distance > max(vp.width, vp.height) * 0.08
             let angle = atan2(off.height, off.width)
-            let r = diameter / 2 + 34
+            let r = diameter / 2 + 30
 
             PointerTriangle()
                 .fill(Color.gray.opacity(0.85))
-                .frame(width: 18, height: 15)
+                .frame(width: 16, height: 14)
                 .rotationEffect(.radians(angle + .pi / 2))
                 .offset(x: cos(angle) * r, y: sin(angle) * r)
                 .opacity(visible ? 1 : 0)
