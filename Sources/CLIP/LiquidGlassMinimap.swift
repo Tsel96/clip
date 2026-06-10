@@ -108,6 +108,9 @@ struct LiquidGlassMinimap: View {
             lensDotGrid
             minimapContent
         }
+        // Pin the disc to its exact size — the glass circle must never
+        // inflate to a sibling-derived union size.
+        .frame(width: diameter, height: diameter)
         .clipShape(Circle())
         // ----- Layer 2: the volumetric glass dome -----
         // Bright rim highlight — thick liquid-light reflection along the
@@ -167,41 +170,31 @@ struct LiquidGlassMinimap: View {
 
     // MARK: - Dial ticks
 
-    /// Irregular tick marks ringing the dome — varying lengths, radial
-    /// jitter, and gaps, all from a deterministic hash so the ring is
-    /// static frame-to-frame. Only the arc near the visible quadrant
-    /// matters; the rest is clipped with the bleed.
+    /// The zoom dial: a regular instrument ring floating OUTSIDE the disc
+    /// with a clear offset. Evenly spaced ticks, every 6th one a longer
+    /// major mark — no randomness, it's a functioning scale that rotates
+    /// with the zoom.
     private var tickRing: some View {
         Canvas { ctx, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let baseRadius = diameter / 2 + 14
-            let count = 80
+            let baseRadius = diameter / 2 + 60
+            let count = 72
             for i in 0..<count {
-                // Reference ring has gaps — drop ~30% of positions.
-                guard hash(i, salt: 4) > 0.3 else { continue }
                 let angle = Double(i) / Double(count) * 2 * .pi - .pi / 2
-                let f1 = hash(i, salt: 1)        // length
-                let f2 = hash(i, salt: 2)        // radial jitter
-                let f3 = hash(i, salt: 3)        // opacity
-                let length = 6 + f1 * 11
-                let r0 = baseRadius + f2 * 7
+                let isMajor = i % 6 == 0
+                let length: CGFloat = isMajor ? 16 : 9
                 var path = Path()
-                path.move(to: polar(center, angle: angle, radius: r0))
-                path.addLine(to: polar(center, angle: angle, radius: r0 + length))
+                path.move(to: polar(center, angle: angle, radius: baseRadius))
+                path.addLine(to: polar(center, angle: angle, radius: baseRadius + length))
                 ctx.stroke(
                     path,
-                    with: .color(.gray.opacity(0.30 + f3 * 0.35)),
-                    style: StrokeStyle(lineWidth: 3, lineCap: .butt)
+                    with: .color(.gray.opacity(isMajor ? 0.55 : 0.4)),
+                    style: StrokeStyle(lineWidth: 2.5, lineCap: .butt)
                 )
             }
         }
-        .frame(width: diameter + 80, height: diameter + 80)
+        .frame(width: diameter + 220, height: diameter + 220)
         .allowsHitTesting(false)
-    }
-
-    private func hash(_ i: Int, salt: Int) -> Double {
-        let x = sin(Double(i * 127 + salt * 311) * 12.9898) * 43758.5453
-        return x - x.rounded(.down)
     }
 
     private func polar(_ c: CGPoint, angle: Double, radius: CGFloat) -> CGPoint {
@@ -215,7 +208,7 @@ struct LiquidGlassMinimap: View {
     /// beneath it as the zoom changes, like a lens' focus index mark.
     private var pointerTriangle: some View {
         let angle = -3 * Double.pi / 4
-        let r = diameter / 2 + 42
+        let r = diameter / 2 + 92
         return PointerTriangle()
             .fill(Color.gray.opacity(0.8))
             .frame(width: 18, height: 15)
