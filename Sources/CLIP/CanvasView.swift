@@ -511,21 +511,31 @@ struct CanvasView: View {
                     .padding(.bottom, 16)
             }
         }
+        // Liquid-glass minimap dome — anchored to the bottom-right corner
+        // with most of the circle bleeding off-screen, so its top-left
+        // quadrant sweeps across the viewport. Mounted here (window
+        // bounds) for the same reason as the pills — the inner ZStack's
+        // frame can extend past the window. Hidden while the floating-
+        // window minimap is being shown.
+        .overlay(alignment: .bottomTrailing) {
+            if state.canvasMode != .archive, !state.isMinimapDetached {
+                LiquidGlassMinimap()
+                    .ignoresSafeArea()
+            }
+        }
+        // The dome's zoom pill — centered against the screen (not the
+        // off-center dome), floating over the glass arc.
+        .overlay(alignment: .bottom) {
+            if state.canvasMode != .archive, !state.isMinimapDetached {
+                MinimapControlPill()
+                    .padding(.bottom, 28)
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive {
-                VStack(alignment: .trailing, spacing: 2) {
-                    // Circular liquid-glass minimap. Hidden while the
-                    // floating-window version is being shown. Mounted here
-                    // (window bounds) for the same reason as the pills —
-                    // the inner ZStack's frame can extend past the window.
-                    if !state.isMinimapDetached {
-                        LiquidGlassMinimap()
-                    }
-                    CanvasTogglesPill()
-                        .padding(.trailing, 6)
-                }
-                .padding(.trailing, 10)
-                .padding(.bottom, 16)
+                CanvasTogglesPill()
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 16)
             }
         }
         // Transient share toast — slides in from the top when a link

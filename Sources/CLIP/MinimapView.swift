@@ -51,45 +51,53 @@ struct MinimapView: View {
             gx += gridSize
         }
 
-        // Nodes.
-        for node in state.nodes {
-            let origin = projection.project(node.position)
-            let w = max(2, node.width  * projection.scale)
-            let h = max(2, (node.height ?? state.renderedHeight(of: node)) * projection.scale)
-            let rect = CGRect(x: origin.x, y: origin.y, width: w, height: h)
-            let isSel = state.selectedNodeIDs.contains(node.id)
+        // Nodes — drawn in their own layer so the per-card soft shadow
+        // (the "scattered cards" look) never leaks onto the grid or the
+        // viewport box.
+        ctx.drawLayer { layer in
+            layer.addFilter(.shadow(
+                color: .black.opacity(0.15), radius: 3, x: 0, y: 1.5
+            ))
+            for node in state.nodes {
+                let origin = projection.project(node.position)
+                let w = max(2, node.width  * projection.scale)
+                let h = max(2, (node.height ?? state.renderedHeight(of: node)) * projection.scale)
+                let rect = CGRect(x: origin.x, y: origin.y, width: w, height: h)
+                let isSel = state.selectedNodeIDs.contains(node.id)
 
-            let fill: Color
-            switch node.kind {
-            case .tweet:
-                fill = isSel ? .accentColor : Color(nsColor: .controlAccentColor).opacity(0.5)
-            case .instagram:
-                // Instagram brand-ish pink/orange so it's visually distinct.
-                fill = isSel
-                    ? Color(red: 0.91, green: 0.21, blue: 0.45)
-                    : Color(red: 0.91, green: 0.21, blue: 0.45).opacity(0.55)
-            case .text:
-                fill = isSel ? .accentColor : .secondary.opacity(0.7)
-            case .drawing(let s):
-                fill = s.color.swiftUIColor.opacity(isSel ? 1 : 0.7)
-            case .image:
-                fill = isSel ? .green : Color.green.opacity(0.55)
-            case .video:
-                fill = isSel ? .orange : Color.orange.opacity(0.6)
-            case .youtube:
-                // YouTube red so it reads as distinct from local video.
-                fill = isSel
-                    ? Color(red: 1.0, green: 0.0, blue: 0.0)
-                    : Color(red: 1.0, green: 0.0, blue: 0.0).opacity(0.6)
-            case .section(_, let color):
-                fill = color.swiftUIColor.opacity(isSel ? 0.7 : 0.35)
-            case .stickyNote(_, let color):
-                fill = color.swiftUIColor.opacity(isSel ? 1 : 0.85)
+                let fill: Color
+                switch node.kind {
+                case .tweet:
+                    fill = isSel ? .accentColor : Color(nsColor: .controlAccentColor).opacity(0.5)
+                case .instagram:
+                    // Instagram brand-ish pink/orange so it's visually distinct.
+                    fill = isSel
+                        ? Color(red: 0.91, green: 0.21, blue: 0.45)
+                        : Color(red: 0.91, green: 0.21, blue: 0.45).opacity(0.55)
+                case .text:
+                    fill = isSel ? .accentColor : .secondary.opacity(0.7)
+                case .drawing(let s):
+                    fill = s.color.swiftUIColor.opacity(isSel ? 1 : 0.7)
+                case .image:
+                    fill = isSel ? .green : Color.green.opacity(0.55)
+                case .video:
+                    fill = isSel ? .orange : Color.orange.opacity(0.6)
+                case .youtube:
+                    // YouTube red so it reads as distinct from local video.
+                    fill = isSel
+                        ? Color(red: 1.0, green: 0.0, blue: 0.0)
+                        : Color(red: 1.0, green: 0.0, blue: 0.0).opacity(0.6)
+                case .section(_, let color):
+                    fill = color.swiftUIColor.opacity(isSel ? 0.7 : 0.35)
+                case .stickyNote(_, let color):
+                    fill = color.swiftUIColor.opacity(isSel ? 1 : 0.85)
+                }
+                let r = min(4, w * 0.18, h * 0.18)
+                layer.fill(
+                    Path(roundedRect: rect, cornerSize: CGSize(width: r, height: r)),
+                    with: .color(fill)
+                )
             }
-            ctx.fill(
-                Path(roundedRect: rect, cornerSize: CGSize(width: 1.5, height: 1.5)),
-                with: .color(fill)
-            )
         }
 
         // Viewport rectangle.

@@ -1,165 +1,153 @@
 import SwiftUI
 
-/// Circular Liquid Glass minimap pinned to the canvas's bottom-right
-/// corner, after the landing-page lens artwork:
+/// "Liquid Glass" minimap dome, after the landing-page lens artwork.
 ///
-///   • a clear glass disc that refracts the canvas behind it, with the
-///     system's bright rim and specular highlights
-///   • a dial of irregular tick marks ringing the lens
-///   • a small triangle just outside the rim that points from the board's
-///     content toward the viewport when the user has panned away
-///   • a glass zoom pill (zoom out · fit · zoom in) resting near the
-///     lens's bottom edge
+/// Composition (see CanvasView for the mounts):
 ///
-/// On macOS 26+ the disc and pill use the real `glassEffect` material
-/// (shared `GlassEffectContainer` so the overlapping glasses sample
-/// correctly). Earlier systems get a hand-built material approximation.
-/// The lens content is the existing `MinimapView` (dot grid + node rects +
-/// viewport box), so click-to-jump / drag-to-pan keep working inside the
-/// circle.
+///   • `LiquidGlassMinimap` — a massive glass circle anchored bottom-right
+///     whose center is pushed past the window corner, so only its top-left
+///     quadrant sweeps across the screen (viewport bleed). Inside the
+///     clipped disc: the live `MinimapView` (dot grid + node cards +
+///     viewport box), positioned in the visible quadrant. On top: the
+///     volumetric dome — rim highlight, grounding inner shadow, and
+///     chromatic edge fringing. On macOS 26+ the base material is the
+///     system's clear Liquid Glass (true refraction); earlier systems get
+///     `.ultraThinMaterial` with a white lift.
+///
+///   • `MinimapControlPill` — the dark frosted zoom pill, centered against
+///     the SCREEN (not the off-center dome), floating over the glass edge.
 struct LiquidGlassMinimap: View {
     @EnvironmentObject var state: CanvasState
     /// Observed for the pointer triangle — its angle derives from the camera.
     @EnvironmentObject var cameraStore: CameraStore
 
-    /// Lens diameter. The dial ticks and pointer live in the extra apron
-    /// around it (see `apron`).
-    private let diameter: CGFloat = 230
-    /// Extra room around the lens for the tick ring + pointer triangle.
-    private let apron: CGFloat = 32
-
-    private var clusterSide: CGFloat { diameter + apron * 2 }
+    /// Dome diameter. Deliberately enormous — most of it bleeds off-screen.
+    private let diameter: CGFloat = 720
+    /// How far the dome's frame is pushed past the bottom-right corner.
+    private var bleed: CGFloat { diameter * 0.36 }
 
     var body: some View {
-        if #available(macOS 26.0, *) {
-            // Shared sampling region — glass can't sample other glass, so
-            // the pill overlapping the lens needs a common container.
-            GlassEffectContainer {
-                cluster
-            }
-        } else {
-            cluster
-        }
-    }
-
-    private var cluster: some View {
         ZStack {
             tickRing
-            lens
+            dome
             pointerTriangle
         }
-        .frame(width: clusterSide, height: clusterSide)
-        // The pill rests just inside the lens's bottom rim, like the
-        // reference.
-        .overlay(alignment: .bottom) {
-            zoomPill.offset(y: -(apron + 14))
-        }
+        .frame(width: diameter, height: diameter)
+        // Push the center toward (and past) the bottom-right corner so
+        // only the top-left quadrant of the circle stays on screen.
+        .offset(x: bleed, y: bleed)
     }
 
-    // MARK: - Lens
+    // MARK: - Layer 1: clipped canvas content
 
-    /// Minimap content sized + clipped to the disc.
-    private var lensContent: some View {
-        MinimapView(inset: 30)
-            .frame(width: diameter, height: diameter)
-            .clipShape(Circle())
+    /// The live minimap, placed in the dome's visible (top-left) quadrant.
+    /// Geometry keeps the whole content rect inside both the circle and
+    /// the on-screen region: with a bleed of 0.36·D the visible square is
+    /// 0.64·D, and the rect below stays within the circle's radius.
+    private var minimapContent: some View {
+        MinimapView(inset: 18)
+            .frame(width: diameter * 0.46, height: diameter * 0.38)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.leading, diameter * 0.14)
+            .padding(.top, diameter * 0.18)
     }
 
+    /// Base material under the canvas content. Real clear Liquid Glass on
+    /// macOS 26+ (refracts the canvas behind the dome); frosted fallback
+    /// with a slight white lift elsewhere.
     @ViewBuilder
-    private var lens: some View {
+    private var baseMaterial: some View {
         if #available(macOS 26.0, *) {
-            // The real thing: clear Liquid Glass refracts the canvas
-            // behind the disc; the system draws rim, specular and shadow.
-            lensContent
+            Color.clear
                 .glassEffect(.clear, in: .circle)
         } else {
-            lensContent
-                .background { fallbackGlass }
-                .overlay { fallbackRim }
-                .clipShape(Circle())
-                .shadow(color: .black.opacity(0.13), radius: 26, y: 12)
-                .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+            Circle()
+                .fill(.ultraThinMaterial)
+                .background(Circle().fill(Color.white.opacity(0.05)))
         }
     }
 
-    /// Pre-Tahoe approximation: frosted base with a slight white lift so
-    /// the disc reads as glass on dark canvases too.
-    private var fallbackGlass: some View {
+    private var dome: some View {
         ZStack {
-            Circle().fill(.ultraThinMaterial)
-            Circle().fill(Color.white.opacity(0.07))
-            // Top-left specular sheen — the "light hits the glass" wash.
+            baseMaterial
+                .allowsHitTesting(false)
+            minimapContent
+        }
+        .clipShape(Circle())
+        // ----- Layer 2: the volumetric glass dome -----
+        // Bright rim highlight — thick liquid-light reflection along the
+        // top-left edge of the visible curve.
+        .overlay {
             Circle()
-                .fill(
+                .strokeBorder(
                     LinearGradient(
-                        stops: [
-                            .init(color: .white.opacity(0.30), location: 0.0),
-                            .init(color: .white.opacity(0.07), location: 0.35),
-                            .init(color: .clear,               location: 0.6)
-                        ],
+                        colors: [.white.opacity(0.9), .white.opacity(0.1), .clear],
                         startPoint: .topLeading, endPoint: .bottomTrailing
-                    )
-                )
-        }
-        .allowsHitTesting(false)
-    }
-
-    /// Pre-Tahoe rim: thick refracting edge band + chromatic smear +
-    /// bright rim line.
-    private var fallbackRim: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(Color.white.opacity(0.45), lineWidth: 16)
-                .blur(radius: 10)
-            Circle()
-                .strokeBorder(
-                    AngularGradient(
-                        stops: [
-                            .init(color: .clear,               location: 0.00),
-                            .init(color: .clear,               location: 0.55),
-                            .init(color: .cyan.opacity(0.5),   location: 0.62),
-                            .init(color: .yellow.opacity(0.5), location: 0.68),
-                            .init(color: .pink.opacity(0.5),   location: 0.74),
-                            .init(color: .clear,               location: 0.82),
-                            .init(color: .clear,               location: 1.00)
-                        ],
-                        center: .center,
-                        angle: .degrees(0)
                     ),
-                    lineWidth: 3
+                    lineWidth: 6
                 )
-                .blur(radius: 2.5)
-                .opacity(0.6)
-            Circle()
-                .strokeBorder(
-                    AngularGradient(
-                        stops: [
-                            .init(color: .white.opacity(0.9),  location: 0.00),
-                            .init(color: .white.opacity(0.2),  location: 0.25),
-                            .init(color: .white.opacity(0.7),  location: 0.50),
-                            .init(color: .white.opacity(0.2),  location: 0.75),
-                            .init(color: .white.opacity(0.9),  location: 1.00)
-                        ],
-                        center: .center,
-                        angle: .degrees(-60)
-                    ),
-                    lineWidth: 1.5
-                )
+                .blur(radius: 1)
+                .allowsHitTesting(false)
         }
-        .allowsHitTesting(false)
+        // Grounding inner shadow — gives the dome spherical volume.
+        .overlay {
+            Circle()
+                .fill(Color.clear)
+                .overlay(
+                    Circle()
+                        .stroke(Color.black.opacity(0.15), lineWidth: 8)
+                        .blur(radius: 10)
+                        .offset(x: -5, y: 5)
+                )
+                .clipShape(Circle())
+                .allowsHitTesting(false)
+        }
+        // Chromatic aberration — prismatic fringing hugging the extreme
+        // outer edge. Three offset stroked circles, clipped so the fringe
+        // stays in the outer few percent of the radius; with the dome
+        // shifted bottom-right these read along the sweeping top-left arc.
+        .overlay {
+            ZStack {
+                Circle()
+                    .stroke(Color.cyan, lineWidth: 10)
+                    .offset(x: -4, y: -4)
+                    .opacity(0.4)
+                    .blur(radius: 4)
+                    .blendMode(.screen)
+                Circle()
+                    .stroke(Color(red: 1.0, green: 0.2, blue: 0.45), lineWidth: 10)
+                    .offset(x: 4, y: 4)
+                    .opacity(0.3)
+                    .blur(radius: 5)
+                    .blendMode(.screen)
+                Circle()
+                    .stroke(Color.yellow, lineWidth: 8)
+                    .offset(y: -3)
+                    .opacity(0.2)
+                    .blur(radius: 3)
+            }
+            // Keep the fringe in the outer ~7% of the radius (a stroked-
+            // border ring as the mask — macOS 13-safe, unlike shape
+            // boolean ops).
+            .mask {
+                Circle().strokeBorder(Color.white, lineWidth: diameter * 0.07)
+            }
+            .allowsHitTesting(false)
+        }
+        .shadow(color: .black.opacity(0.25), radius: 40, x: -8, y: -8)
     }
 
     // MARK: - Dial ticks
 
-    /// Irregular tick marks ringing the lens, like the reference dial:
-    /// varying lengths, radial jitter, and gaps. All randomness comes from
-    /// a deterministic hash of the tick index, so the ring is static
-    /// frame-to-frame.
+    /// Irregular tick marks ringing the dome — varying lengths, radial
+    /// jitter, and gaps, all from a deterministic hash so the ring is
+    /// static frame-to-frame. Only the arc near the visible quadrant
+    /// matters; the rest is clipped with the bleed.
     private var tickRing: some View {
         Canvas { ctx, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let baseRadius = diameter / 2 + 12
-            let count = 64
+            let baseRadius = diameter / 2 + 16
+            let count = 96
             for i in 0..<count {
                 // Reference ring has gaps — drop ~30% of positions.
                 guard hash(i, salt: 4) > 0.3 else { continue }
@@ -167,18 +155,19 @@ struct LiquidGlassMinimap: View {
                 let f1 = hash(i, salt: 1)        // length
                 let f2 = hash(i, salt: 2)        // radial jitter
                 let f3 = hash(i, salt: 3)        // opacity
-                let length = 4 + f1 * 9
-                let r0 = baseRadius + f2 * 5
+                let length = 5 + f1 * 12
+                let r0 = baseRadius + f2 * 8
                 var path = Path()
                 path.move(to: polar(center, angle: angle, radius: r0))
                 path.addLine(to: polar(center, angle: angle, radius: r0 + length))
                 ctx.stroke(
                     path,
                     with: .color(.primary.opacity(0.12 + f3 * 0.35)),
-                    style: StrokeStyle(lineWidth: 1.8, lineCap: .butt)
+                    style: StrokeStyle(lineWidth: 2.2, lineCap: .butt)
                 )
             }
         }
+        .frame(width: diameter + 80, height: diameter + 80)
         .allowsHitTesting(false)
     }
 
@@ -194,9 +183,8 @@ struct LiquidGlassMinimap: View {
     // MARK: - Pointer triangle
 
     /// World-space vector from the board's content to the viewport. Drives
-    /// the compass triangle: when the user pans far from their cards, the
-    /// triangle appears on the rim pointing the way out — panned home,
-    /// it fades away.
+    /// the compass triangle on the rim: when the user pans far from their
+    /// cards it points the way out; panned home, it fades away.
     private var viewportOffsetFromContent: CGSize? {
         guard !state.nodes.isEmpty else { return nil }
         var minX = CGFloat.greatestFiniteMagnitude, minY = minX
@@ -221,11 +209,11 @@ struct LiquidGlassMinimap: View {
             // a screen away from the content.
             let visible = distance > max(vp.width, vp.height) * 0.5
             let angle = atan2(off.height, off.width)
-            let r = diameter / 2 + 24
+            let r = diameter / 2 + 34
 
             PointerTriangle()
                 .fill(Color.gray.opacity(0.85))
-                .frame(width: 15, height: 13)
+                .frame(width: 18, height: 15)
                 .rotationEffect(.radians(angle + .pi / 2))
                 .offset(x: cos(angle) * r, y: sin(angle) * r)
                 .opacity(visible ? 1 : 0)
@@ -233,66 +221,63 @@ struct LiquidGlassMinimap: View {
                 .allowsHitTesting(false)
         }
     }
+}
 
-    // MARK: - Zoom pill
+// MARK: - Layer 3: the floating control pill
 
-    private var pillButtons: some View {
+/// Dark frosted zoom pill — centered against the screen near its bottom
+/// edge, floating over the dome's glass arc. Mounted separately from the
+/// dome (see CanvasView) precisely so it centers on the window, not on
+/// the off-center circle.
+struct MinimapControlPill: View {
+    @EnvironmentObject var state: CanvasState
+
+    var body: some View {
         HStack(spacing: 0) {
             pillButton(systemName: "minus.magnifyingglass", help: "Zoom out") {
                 state.zoomOut()
             }
-            pillDivider
+            divider
             Button {
                 state.zoomToFit()
             } label: {
                 FitCornersGlyph()
-                    .stroke(style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 13, height: 13)
-                    .frame(width: 50, height: 38)
+                    .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .frame(width: 16, height: 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.hover)
             .help("Zoom to fit")
-            pillDivider
+            divider
             pillButton(systemName: "plus.magnifyingglass", help: "Zoom in") {
                 state.zoomIn()
             }
         }
-        .padding(.horizontal, 4)
-    }
-
-    @ViewBuilder
-    private var zoomPill: some View {
-        if #available(macOS 26.0, *) {
-            pillButtons
-                .glassEffect(.regular, in: .capsule)
-        } else {
-            pillButtons
-                .background {
-                    ZStack {
-                        Capsule(style: .continuous).fill(.regularMaterial)
-                        Capsule(style: .continuous).fill(Color.primary.opacity(0.05))
-                    }
-                }
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [.white.opacity(0.45), .white.opacity(0.08)],
-                                startPoint: .top, endPoint: .bottom
-                            ),
-                            lineWidth: 0.8
-                        )
+        .frame(width: 160, height: 48)
+        .background(Color.black.opacity(0.3))
+        .background(.ultraThinMaterial)
+        .environment(\.colorScheme, .dark)
+        .clipShape(Capsule(style: .continuous))
+        // Fine edge lighting along the capsule rim.
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [.white.opacity(0.4), .clear, .white.opacity(0.1)],
+                        startPoint: .top, endPoint: .bottom
+                    ),
+                    lineWidth: 0.5
                 )
-                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
-        }
+        )
+        .shadow(color: .black.opacity(0.25), radius: 15, x: 0, y: 8)
     }
 
-    private var pillDivider: some View {
+    private var divider: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.14))
-            .frame(width: 1, height: 16)
+            .fill(Color.white.opacity(0.15))
+            .frame(width: 1, height: 24)
     }
 
     private func pillButton(
@@ -300,9 +285,9 @@ struct LiquidGlassMinimap: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(.secondary)
-                .frame(width: 50, height: 38)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.hover)
@@ -322,7 +307,7 @@ private struct PointerTriangle: Shape {
     }
 }
 
-/// "Zoom to fit" glyph: two opposing corner brackets implying a frame,
+/// "Re-center / fit" glyph: two opposing corner brackets implying a frame,
 /// matching the reference pill's centre icon.
 private struct FitCornersGlyph: Shape {
     func path(in rect: CGRect) -> Path {
