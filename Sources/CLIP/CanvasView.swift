@@ -523,14 +523,6 @@ struct CanvasView: View {
                     .ignoresSafeArea()
             }
         }
-        // The dome's zoom pill — centered against the screen (not the
-        // off-center dome), floating over the glass arc.
-        .overlay(alignment: .bottom) {
-            if state.canvasMode != .archive, !state.isMinimapDetached {
-                MinimapControlPill()
-                    .padding(.bottom, 28)
-            }
-        }
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive {
                 CanvasTogglesPill()

@@ -21,10 +21,10 @@ struct LiquidGlassMinimap: View {
     /// Observed for the pointer triangle — its angle derives from the camera.
     @EnvironmentObject var cameraStore: CameraStore
 
-    /// Dome diameter. Deliberately large — part of it bleeds off-screen.
-    private let diameter: CGFloat = 520
+    /// Dome diameter. Part of it bleeds off-screen.
+    private let diameter: CGFloat = 360
     /// How far the dome's frame is pushed past the bottom-right corner.
-    private var bleed: CGFloat { diameter * 0.30 }
+    private var bleed: CGFloat { diameter * 0.28 }
 
     var body: some View {
         ZStack {
@@ -35,6 +35,12 @@ struct LiquidGlassMinimap: View {
             pointerTriangle
         }
         .frame(width: diameter, height: diameter)
+        // The zoom pill floats over the lens just below the map content,
+        // like the reference. Anchored to the dome so it travels with it.
+        .overlay(alignment: .topLeading) {
+            MinimapControlPill()
+                .offset(x: diameter * 0.37 - 70, y: diameter * 0.575)
+        }
         // Push the center toward (and past) the bottom-right corner so
         // only the top-left quadrant of the circle stays on screen.
         .offset(x: bleed, y: bleed)
@@ -207,10 +213,11 @@ struct LiquidGlassMinimap: View {
         if let off = viewportOffsetFromContent {
             let distance = hypot(off.width, off.height)
             let vp = state.visibleWorldRect
-            // Live as soon as the viewport centre drifts meaningfully from
-            // the content — a direction cue, not a lost-at-sea alarm.
-            let visible = distance > max(vp.width, vp.height) * 0.08
-            let angle = atan2(off.height, off.width)
+            // Always on, like the reference. Points at the viewport once
+            // there's meaningful drift; rests at the reference's up-left
+            // position when the user is centered on their content.
+            let hasDrift = distance > max(vp.width, vp.height) * 0.08
+            let angle = hasDrift ? atan2(off.height, off.width) : -3 * .pi / 4
             let r = diameter / 2 + 30
 
             PointerTriangle()
@@ -218,8 +225,7 @@ struct LiquidGlassMinimap: View {
                 .frame(width: 16, height: 14)
                 .rotationEffect(.radians(angle + .pi / 2))
                 .offset(x: cos(angle) * r, y: sin(angle) * r)
-                .opacity(visible ? 1 : 0)
-                .animation(.easeInOut(duration: 0.25), value: visible)
+                .animation(.easeInOut(duration: 0.25), value: hasDrift)
                 .allowsHitTesting(false)
         }
     }
@@ -244,9 +250,9 @@ struct MinimapControlPill: View {
                 state.zoomToFit()
             } label: {
                 FitCornersGlyph()
-                    .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .stroke(style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
                     .foregroundStyle(.white.opacity(0.75))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 14, height: 14)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
@@ -257,7 +263,7 @@ struct MinimapControlPill: View {
                 state.zoomIn()
             }
         }
-        .frame(width: 160, height: 48)
+        .frame(width: 140, height: 42)
         .background(Color.black.opacity(0.3))
         .background(.ultraThinMaterial)
         .environment(\.colorScheme, .dark)
@@ -279,7 +285,7 @@ struct MinimapControlPill: View {
     private var divider: some View {
         Rectangle()
             .fill(Color.white.opacity(0.15))
-            .frame(width: 1, height: 24)
+            .frame(width: 1, height: 20)
     }
 
     private func pillButton(
@@ -287,7 +293,7 @@ struct MinimapControlPill: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 20, weight: .medium))
+                .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(.white.opacity(0.75))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())

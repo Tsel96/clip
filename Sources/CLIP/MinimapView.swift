@@ -65,6 +65,17 @@ struct MinimapView: View {
                 let rect = CGRect(x: origin.x, y: origin.y, width: w, height: h)
                 let isSel = state.selectedNodeIDs.contains(node.id)
 
+                // Sections span large areas — a filled block would read as
+                // a giant grey slab over the map. Hairline outline instead.
+                if case .section(_, let color) = node.kind {
+                    layer.stroke(
+                        Path(roundedRect: rect, cornerSize: CGSize(width: 3, height: 3)),
+                        with: .color(color.swiftUIColor.opacity(isSel ? 0.8 : 0.45)),
+                        style: StrokeStyle(lineWidth: 1)
+                    )
+                    continue
+                }
+
                 let fill: Color
                 switch node.kind {
                 case .tweet:
@@ -107,11 +118,11 @@ struct MinimapView: View {
         let vh = vp.height * projection.scale
         let vRect = CGRect(x: topLeft.x, y: topLeft.y, width: vw, height: vh)
 
-        ctx.fill(Path(vRect), with: .color(.accentColor.opacity(0.08)))
+        // Reference style: a thin neutral dashed outline, no fill.
         ctx.stroke(
-            Path(vRect),
-            with: .color(.accentColor.opacity(0.7)),
-            style: StrokeStyle(lineWidth: 1.2, dash: [3, 2.5])
+            Path(roundedRect: vRect, cornerSize: CGSize(width: 2, height: 2)),
+            with: .color(.gray.opacity(0.9)),
+            style: StrokeStyle(lineWidth: 1, dash: [3, 3])
         )
     }
 
