@@ -530,6 +530,20 @@ struct CanvasView: View {
                     .padding(.bottom, 16)
             }
         }
+        // Acute tool-mode visibility — while a non-Select tool is active,
+        // a chip at the top of the canvas says WHY clicks now draw/place/
+        // connect, and offers the way back (click or V).
+        .overlay(alignment: .top) {
+            Group {
+                if state.canvasMode == .canvas, state.toolMode != .select {
+                    ActiveToolChip()
+                        .padding(.top, 14)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.32, dampingFraction: 0.85),
+                       value: state.toolMode)
+        }
         // Transient share toast — slides in from the top when a link
         // arrives from the iPhone; tap to jump to the Incoming page.
         .overlay(alignment: .top) {

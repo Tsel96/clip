@@ -185,8 +185,10 @@ struct TweetCardView: View {
 
     @ViewBuilder
     private var videoControls: some View {
+        // Always faintly visible (discoverability — no hide-on-hover);
+        // hover or selection brings them to full strength.
         let revealed = hovering || isSelected
-        if let tweet, tweet.bestVideoURL != nil, revealed, isLive, !isTrimming {
+        if let tweet, tweet.bestVideoURL != nil, isLive, !isTrimming {
             HStack(spacing: 6) {
                 if let onTrim {
                     Button(action: onTrim) {
@@ -215,10 +217,9 @@ struct TweetCardView: View {
                 .help(isMuted ? "Unmute" : "Mute")
             }
             .padding(8)
-            .opacity(revealed ? 1 : 0)
+            .opacity(revealed ? 1 : 0.45)
             .animation(.easeOut(duration: 0.12), value: hovering)
             .animation(.easeOut(duration: 0.12), value: isSelected)
-            .allowsHitTesting(revealed)
         }
     }
 

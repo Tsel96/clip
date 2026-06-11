@@ -342,7 +342,19 @@ final class CanvasState: ObservableObject {
         pages[idx].name = trimmed
     }
 
-    func deletePage(_ id: UUID) {
+    /// Page whose deletion is awaiting user confirmation (sidebar shows a
+    /// confirmation dialog while non-nil). Deleting a page destroys every
+    /// card on it, so it must never be a single silent click.
+    @Published var pageAwaitingDeletion: Page? = nil
+
+    /// One-shot backup of the most recently deleted page so ⌘Z can bring
+    /// it back. Cleared as soon as any other undoable mutation lands —
+    /// page restoration is only offered while it is the latest action.
+    private var deletedPageBackup: (page: Page, index: Int)? = nil
+
+    /// First step of page deletion: validate, then ask. The actual removal
+    /// happens in `confirmDeletePage()` once the user confirms.
+    func requestDeletePage(_ id: UUID) {
         guard pages.count > 1 else {
             alert = AlertContent(
                 title: "Can't delete the last page",
@@ -350,14 +362,36 @@ final class CanvasState: ObservableObject {
             )
             return
         }
-        guard let idx = pages.firstIndex(where: { $0.id == id }) else { return }
-        let wasActive = (id == activePageID)
+        guard let page = pages.first(where: { $0.id == id }) else { return }
+        pageAwaitingDeletion = page
+    }
+
+    /// Second step: actually remove the page, keeping a backup so the
+    /// deletion is undoable (⌘Z restores the page and its cards).
+    func confirmDeletePage() {
+        guard let page = pageAwaitingDeletion else { return }
+        pageAwaitingDeletion = nil
+        guard pages.count > 1,
+              let idx = pages.firstIndex(where: { $0.id == page.id }) else { return }
+        deletedPageBackup = (pages[idx], idx)
+        let wasActive = (page.id == activePageID)
         pages.remove(at: idx)
         if wasActive {
             // Prefer the page that was previously above it; fall back to first.
             let newIdx = max(0, idx - 1)
             switchTo(pageID: pages[newIdx].id)
         }
+        showToast("Deleted “\(page.name)” — ⌘Z to undo", systemImage: "trash")
+    }
+
+    /// Restore the most recently deleted page. Returns false when there is
+    /// nothing to restore (the caller falls through to normal page undo).
+    private func restoreDeletedPageIfPending() -> Bool {
+        guard let backup = deletedPageBackup else { return false }
+        deletedPageBackup = nil
+        pages.insert(backup.page, at: min(backup.index, pages.count))
+        switchTo(pageID: backup.page.id)
+        return true
     }
 
     /// Switch the active page. Clears selection because the previously
@@ -394,7 +428,9 @@ final class CanvasState: ObservableObject {
     /// One stack per page so switching pages preserves history.
     @Published private(set) var undoStacks: [UUID: UndoStack] = [:]
 
-    var canUndo: Bool { undoStacks[activePageID]?.canUndo ?? false }
+    var canUndo: Bool {
+        deletedPageBackup != nil || (undoStacks[activePageID]?.canUndo ?? false)
+    }
     var canRedo: Bool { undoStacks[activePageID]?.canRedo ?? false }
 
     private var currentSnapshot: PageSnapshot {
@@ -417,6 +453,7 @@ final class CanvasState: ObservableObject {
         let after = currentSnapshot
         undoDepth -= 1
         guard before != after else { return }
+        deletedPageBackup = nil
         undoStacks[activePageID, default: UndoStack()].push(before)
     }
 
@@ -430,10 +467,13 @@ final class CanvasState: ObservableObject {
     func commitUndoable(from before: PageSnapshot) {
         let after = currentSnapshot
         guard before != after else { return }
+        deletedPageBackup = nil
         undoStacks[activePageID, default: UndoStack()].push(before)
     }
 
     func undo() {
+        // A just-deleted page is the most recent action — restore it first.
+        if restoreDeletedPageIfPending() { return }
         var stack = undoStacks[activePageID] ?? UndoStack()
         guard let restored = stack.popUndo(current: currentSnapshot) else { return }
         applySnapshot(restored)
@@ -628,8 +668,10 @@ final class CanvasState: ObservableObject {
     func addTweet(url: String, at worldPoint: CGPoint? = nil,
                   origin: CanvasNode.Origin = .local) {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard TweetService.isLikelyTweetURL(trimmed),
-              TweetService.extractTweetID(from: trimmed) != nil else {
+        // The regex is the validator — it tolerates tracking params,
+        // /statuses/ paths, and other human-real URL shapes that the
+        // cruder substring check would reject.
+        guard TweetService.extractTweetID(from: trimmed) != nil else {
             alert = AlertContent(
                 title: "Not an X / Twitter URL",
                 message: "Paste a link that points at a single tweet, e.g. https://x.com/user/status/123…"
@@ -669,11 +711,17 @@ final class CanvasState: ObservableObject {
     func addPostFromURL(_ url: String, at worldPoint: CGPoint? = nil,
                         origin: CanvasNode.Origin = .local) {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        if TweetService.isLikelyTweetURL(trimmed) {
+        // Route by what the real parsers can extract, not by substring
+        // sniffing — the machine sweats so a /statuses/ path or a link
+        // full of tracking params still lands as a card.
+        if TweetService.extractTweetID(from: trimmed) != nil
+            || TweetService.isLikelyTweetURL(trimmed) {
             addTweet(url: trimmed, at: worldPoint, origin: origin)
-        } else if InstagramService.isLikelyInstagramURL(trimmed) {
+        } else if InstagramService.parse(trimmed) != nil
+            || InstagramService.isLikelyInstagramURL(trimmed) {
             addInstagram(url: trimmed, at: worldPoint, origin: origin)
-        } else if YouTubeService.isLikelyYouTubeURL(trimmed) {
+        } else if YouTubeService.videoID(from: trimmed) != nil
+            || YouTubeService.isLikelyYouTubeURL(trimmed) {
             addYouTube(url: trimmed, at: worldPoint, origin: origin)
         } else {
             alert = AlertContent(
@@ -1214,13 +1262,18 @@ final class CanvasState: ObservableObject {
     // MARK: - Video trim (non-destructive)
 
     /// Set the loop range (seconds) for a video card; the player loops only
-    /// `[start, end]`. Autosaves via `$pages`.
+    /// `[start, end]`. Autosaves via `$pages`. Undoable — ⌘Z restores the
+    /// previous range like every other card mutation.
     func setTrim(_ id: UUID, start: Double, end: Double) {
-        updateNode(id) { $0.trimStart = start; $0.trimEnd = end }
+        withUndoable {
+            updateNode(id) { $0.trimStart = start; $0.trimEnd = end }
+        }
     }
-    /// Clear the trim — the card loops the full clip again.
+    /// Clear the trim — the card loops the full clip again. Undoable.
     func clearTrim(_ id: UUID) {
-        updateNode(id) { $0.trimStart = nil; $0.trimEnd = nil }
+        withUndoable {
+            updateNode(id) { $0.trimStart = nil; $0.trimEnd = nil }
+        }
     }
 
     private func updateNode(_ id: UUID, _ mutate: (inout CanvasNode) -> Void) {
@@ -1465,6 +1518,7 @@ final class CanvasState: ObservableObject {
             return n
         }
         guard candidates.count >= 2 else { return nil }
+        showToast("Grouped \(candidates.count) cards", systemImage: "square.stack.3d.up")
         let newGroupID = UUID()
         let head = candidates.min { $0.id.uuidString < $1.id.uuidString }!
         let headPos = head.position
@@ -1533,6 +1587,10 @@ final class CanvasState: ObservableObject {
             if let g = nodeByID[id]?.groupID { groups.insert(g) }
         }
         guard !groups.isEmpty else { return }
+        showToast(
+            groups.count == 1 ? "Ungrouped stack" : "Ungrouped \(groups.count) stacks",
+            systemImage: "square.stack.3d.down.right"
+        )
 
         let before = snapshotForUndo()
         var released = Set<UUID>()
@@ -1988,6 +2046,7 @@ final class CanvasState: ObservableObject {
         // `groupID` and stay invisible forever.
         allIDs.formUnion(expandedDragSet(from: allIDs))
 
+        let removedCount = nodes.lazy.filter { allIDs.contains($0.id) }.count
         withUndoable {
             nodes.removeAll { allIDs.contains($0.id) }
             connectors.removeAll { c in
@@ -2003,6 +2062,17 @@ final class CanvasState: ObservableObject {
             if pendingFocusNodeID == cid { pendingFocusNodeID = nil }
         }
         selectedConnectorIDs.subtract(extraConnectorIDs)
+
+        // Deletion leaves no visible trace where the cards were — confirm
+        // it happened (and remind that it's reversible).
+        if removedCount > 0 {
+            showToast(
+                removedCount == 1
+                    ? "Deleted 1 card — ⌘Z to undo"
+                    : "Deleted \(removedCount) cards — ⌘Z to undo",
+                systemImage: "trash"
+            )
+        }
     }
 
     // Kept for backward-compat with menu wiring.

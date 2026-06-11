@@ -56,6 +56,21 @@ struct PagesSidebar: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
         }
+        // Deleting a page destroys every card on it — confirm before the
+        // (undoable) removal in `confirmDeletePage()`.
+        .confirmationDialog(
+            "Delete “\(state.pageAwaitingDeletion?.name ?? "")”?",
+            isPresented: Binding(
+                get: { state.pageAwaitingDeletion != nil },
+                set: { if !$0 { state.pageAwaitingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Page", role: .destructive) { state.confirmDeletePage() }
+            Button("Cancel", role: .cancel) { state.pageAwaitingDeletion = nil }
+        } message: {
+            Text("All cards on this page will be deleted. You can undo with ⌘Z.")
+        }
     }
 
     private func leadingIcon(for page: Page) -> String {
@@ -107,7 +122,7 @@ struct PagesSidebar: View {
             if state.pages.count > 1 {
                 Divider()
                 Button("Delete", role: .destructive) {
-                    state.deletePage(page.id)
+                    state.requestDeletePage(page.id)
                 }
             }
         }
