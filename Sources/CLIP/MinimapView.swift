@@ -217,18 +217,31 @@ struct MinimapView: View {
             }
         }
 
-        // Viewport rectangle (rectangular hosts only — the lens hides it).
+        // Current viewport. Rectangular hosts get the classic dashed box;
+        // the lens gets a soft rounded indication in the map's own style —
+        // quiet fill, hairline edge, continuous corners.
+        let vp = state.visibleWorldRect
+        let vpTopLeft = projection.project(CGPoint(x: vp.minX, y: vp.minY))
+        let vRect = CGRect(
+            x: vpTopLeft.x, y: vpTopLeft.y,
+            width: vp.width * projection.scale,
+            height: vp.height * projection.scale
+        )
         if showsViewport {
-            let vp = state.visibleWorldRect
-            let topLeft = projection.project(CGPoint(x: vp.minX, y: vp.minY))
-            let vw = vp.width  * projection.scale
-            let vh = vp.height * projection.scale
-            let vRect = CGRect(x: topLeft.x, y: topLeft.y, width: vw, height: vh)
             ctx.stroke(
                 Path(roundedRect: vRect, cornerSize: CGSize(width: 2, height: 2)),
                 with: .color(.gray.opacity(0.9)),
                 style: StrokeStyle(lineWidth: 1, dash: [3, 3])
             )
+        } else {
+            let vPath = Path(
+                roundedRect: vRect,
+                cornerSize: CGSize(width: 6, height: 6),
+                style: .continuous
+            )
+            ctx.fill(vPath, with: .color(.gray.opacity(0.07)))
+            ctx.stroke(vPath, with: .color(.gray.opacity(0.5)),
+                       style: StrokeStyle(lineWidth: 1.2))
         }
     }
 

@@ -177,7 +177,7 @@ struct LiquidGlassMinimap: View {
     private var tickRing: some View {
         Canvas { ctx, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let baseRadius = diameter / 2 + 60
+            let baseRadius = diameter / 2 + 28
             let count = 72
             for i in 0..<count {
                 let angle = Double(i) / Double(count) * 2 * .pi - .pi / 2
@@ -193,7 +193,7 @@ struct LiquidGlassMinimap: View {
                 )
             }
         }
-        .frame(width: diameter + 220, height: diameter + 220)
+        .frame(width: diameter + 150, height: diameter + 150)
         .allowsHitTesting(false)
     }
 
@@ -208,7 +208,7 @@ struct LiquidGlassMinimap: View {
     /// beneath it as the zoom changes, like a lens' focus index mark.
     private var pointerTriangle: some View {
         let angle = -3 * Double.pi / 4
-        let r = diameter / 2 + 92
+        let r = diameter / 2 + 58
         return PointerTriangle()
             .fill(Color.gray.opacity(0.8))
             .frame(width: 18, height: 15)
