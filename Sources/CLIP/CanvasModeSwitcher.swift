@@ -124,7 +124,7 @@ struct CanvasModeSwitcher: View {
         switch mode {
         case .canvas:    return "Edit on the infinite canvas (⌘1)"
         case .colorform: return "Group cards by dominant color (⌘2)"
-        case .archive:   return "Browse by date — calendar, then drill in (⌘3)"
+        case .archive:   return "Everything you've added, newest first (⌘3)"
         }
     }
 }
