@@ -1208,13 +1208,25 @@ final class CanvasState: ObservableObject {
             .map(\.id)
     }
 
+    /// Bumped on every open so the hero view re-drives its grow animation
+    /// even when the layer never unmounted — reopening during the closing
+    /// shrink used to leave the hero with stale progress/landed state
+    /// (and on macOS 27 the re-entrant hero could trip AppKit's
+    /// layout-recursion trap).
+    @Published private(set) var lightboxGeneration = 0
+
     func openLightbox(_ id: UUID) {
         guard let node = nodeByID[id] else { return }
+        // The hero grows out of the card's measured on-screen rect — stop
+        // any camera coast/glide so the measurement (and the later shrink
+        // target) stays truthful while the hero animates.
+        cancelPanInertia()
         // Measure the card's on-screen rect now; the hero grows out of it.
-        // The grow itself is animated by the view (progress 0→1) on appear.
+        // The grow itself is animated by the view (progress 0→1).
         lightboxSourceRect = screenRect(of: node)
         lightboxClosing = false
         lightboxCardID = id
+        lightboxGeneration &+= 1
     }
 
     /// Begin the close. The card stays mounted (and the on-canvas original
