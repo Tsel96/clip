@@ -1782,8 +1782,9 @@ final class CanvasState: ObservableObject {
         let members = stackMembers(of: headID)
         guard members.count >= 2 else { return }
 
-        // Camera snapshot — restored on exit so pan / zoom survive
-        // the round-trip through focus mode.
+        // Focus choreographs the camera — stop any coast/glide first,
+        // and snapshot the *resting* camera for the exit restore.
+        cancelPanInertia()
         focusOriginCamera = cameraStore.camera
 
         // Compute the grid layout in viewport coords. The viewport's
@@ -1816,6 +1817,7 @@ final class CanvasState: ObservableObject {
     /// restores its pre-focus state, and the overlay chrome dismisses.
     func exitStackFocus() {
         guard focusedStackID != nil else { return }
+        cancelPanInertia()   // the restore owns the camera from here
         let restoreCamera = focusOriginCamera ?? cameraStore.camera
         // Animate the dismissal — same spring as entry for symmetry.
         withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
@@ -2167,6 +2169,9 @@ final class CanvasState: ObservableObject {
     /// + async dispatch for modes that need it.
     func setMode(_ mode: CanvasMode) {
         guard mode != canvasMode else { return }
+        // Mode transitions choreograph the camera themselves — coasting
+        // or gliding must hand it over first.
+        cancelPanInertia()
         // Exit whatever's active first so its transient state clears
         // before the next entry routine begins publishing.
         switch canvasMode {
@@ -2519,24 +2524,105 @@ final class CanvasState: ObservableObject {
 
     // MARK: - Camera
 
-    func zoomIn()    { zoom(by: 1.25, around: viewportCentre) }
-    func zoomOut()   { zoom(by: 1 / 1.25, around: viewportCentre) }
-    func resetView() { camera = Camera() }
+    func zoomIn()    { glideCamera(to: cameraZooming(by: 1.25, around: viewportCentre)) }
+    func zoomOut()   { glideCamera(to: cameraZooming(by: 1 / 1.25, around: viewportCentre)) }
+    func resetView() { glideCamera(to: Camera()) }
 
-    func zoom(by factor: CGFloat, around screenPoint: CGPoint) {
+    /// Pure target computation for a zoom step about a screen anchor —
+    /// shared by the instant (pinch) and gliding (buttons/⌘±) paths.
+    private func cameraZooming(by factor: CGFloat, around screenPoint: CGPoint) -> Camera {
         let oldZoom = camera.zoom
         let newZoom = max(Self.minZoom, min(Self.maxZoom, oldZoom * factor))
-        guard newZoom != oldZoom else { return }
+        guard newZoom != oldZoom else { return camera }
         let worldX = (screenPoint.x - camera.x) / oldZoom
         let worldY = (screenPoint.y - camera.y) / oldZoom
-        camera.zoom = newZoom
-        camera.x = screenPoint.x - worldX * newZoom
-        camera.y = screenPoint.y - worldY * newZoom
+        return Camera(
+            x: screenPoint.x - worldX * newZoom,
+            y: screenPoint.y - worldY * newZoom,
+            zoom: newZoom
+        )
+    }
+
+    func zoom(by factor: CGFloat, around screenPoint: CGPoint) {
+        // Direct gesture — it owns the camera now; kill any glide.
+        cancelCameraGlide()
+        camera = cameraZooming(by: factor, around: screenPoint)
     }
 
     func pan(deltaX: CGFloat, deltaY: CGFloat) {
         camera.x += deltaX
         camera.y += deltaY
+    }
+
+    // MARK: - Camera glide (continuous navigation)
+    //
+    // Discrete navigation moves (zoom buttons, ⌘0/fit, minimap jumps)
+    // animate the camera VALUE with a spring driver instead of snapping —
+    // so every observer (node layer, dot grid, minimap, zoom dial) moves
+    // in lockstep. Retargeting mid-flight keeps the current velocity
+    // (pressing ⌘+ repeatedly chains into one continuous accelerating
+    // move), and any direct gesture cancels the glide and takes over —
+    // motion never blocks input.
+
+    private var cameraGlideTimer: Timer?
+    private var glideTarget: Camera?
+    private var glideVelocity: (x: CGFloat, y: CGFloat, zoom: CGFloat) = (0, 0, 0)
+
+    func glideCamera(to target: Camera) {
+        // Honour Reduce Motion: jump, exactly like the pre-glide behavior.
+        guard !lightboxReduceMotion else {
+            cancelPanInertia()
+            camera = target
+            return
+        }
+        cancelInertiaOnly()
+        glideTarget = target
+        guard cameraGlideTimer == nil else { return }   // retarget mid-flight
+
+        // Critically-damped-ish spring, integrated semi-implicitly at 60 Hz.
+        let omega = 2 * CGFloat.pi / Motion.glideResponse
+        let k = omega * omega
+        let c = 2 * Motion.glideDampingRatio * omega
+        let dt: CGFloat = 1.0 / 60.0
+
+        cameraGlideTimer = Timer.scheduledTimer(
+            withTimeInterval: 1.0 / 60.0, repeats: true
+        ) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            Task { @MainActor in
+                guard let target = self.glideTarget else {
+                    self.cancelCameraGlide(); return
+                }
+                var cam = self.camera
+                self.glideVelocity.x    += (k * (target.x - cam.x)       - c * self.glideVelocity.x)    * dt
+                self.glideVelocity.y    += (k * (target.y - cam.y)       - c * self.glideVelocity.y)    * dt
+                self.glideVelocity.zoom += (k * (target.zoom - cam.zoom) - c * self.glideVelocity.zoom) * dt
+                cam.x    += self.glideVelocity.x * dt
+                cam.y    += self.glideVelocity.y * dt
+                cam.zoom += self.glideVelocity.zoom * dt
+
+                let settled =
+                    abs(target.x - cam.x) < 0.3 &&
+                    abs(target.y - cam.y) < 0.3 &&
+                    abs(target.zoom - cam.zoom) < 0.0005 &&
+                    abs(self.glideVelocity.x) < 6 &&
+                    abs(self.glideVelocity.y) < 6 &&
+                    abs(self.glideVelocity.zoom) < 0.01
+                if settled {
+                    self.camera = target
+                    self.cancelCameraGlide()
+                } else {
+                    self.camera = cam
+                }
+            }
+        }
+    }
+
+    func cancelCameraGlide() {
+        cameraGlideTimer?.invalidate()
+        cameraGlideTimer = nil
+        glideTarget = nil
+        glideVelocity = (0, 0, 0)
     }
 
     // MARK: - Pan-with-inertia (trackpad / mouse-wheel scroll)
@@ -2574,10 +2660,18 @@ final class CanvasState: ObservableObject {
         }
     }
 
-    /// Cancel any in-flight inertia + idle detection. Called whenever
-    /// a new pan tick arrives or the user starts a different gesture
-    /// (zoom, drag, mode switch).
+    /// Cancel ALL autonomous camera motion — inertia coasting and any
+    /// navigation glide. Called whenever a new pan tick arrives or the
+    /// user starts a different gesture (zoom, drag, mode switch): direct
+    /// input always seizes the camera mid-flight.
     func cancelPanInertia() {
+        cancelInertiaOnly()
+        cancelCameraGlide()
+    }
+
+    /// Inertia/idle teardown without touching a glide — used by
+    /// `glideCamera` itself, which replaces coasting but IS the glide.
+    private func cancelInertiaOnly() {
         panIdleTimer?.invalidate()
         panIdleTimer = nil
         panInertiaTimer?.invalidate()
@@ -2659,35 +2753,39 @@ final class CanvasState: ObservableObject {
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    /// Centre the camera on the given world rect with `padding` extra
-    /// breathing room on each side. Capped to zoom 1.5× max so a single
-    /// small card doesn't get magnified into a blur.
+    /// Glide the camera to frame the given world rect with `padding`
+    /// extra breathing room on each side. Capped to zoom 1.5× max so a
+    /// single small card doesn't get magnified into a blur.
     func frameRect(_ rect: CGRect, padding: CGFloat) {
         let worldW = max(1, rect.width + padding * 2)
         let worldH = max(1, rect.height + padding * 2)
         let raw = min(viewportSize.width / worldW, viewportSize.height / worldH)
         let z = max(Self.minZoom, min(Self.maxZoom, min(raw, 1.5)))
-        let centerX = rect.midX
-        let centerY = rect.midY
-        camera = Camera(
-            x: viewportSize.width / 2 - centerX * z,
-            y: viewportSize.height / 2 - centerY * z,
+        glideCamera(to: Camera(
+            x: viewportSize.width / 2 - rect.midX * z,
+            y: viewportSize.height / 2 - rect.midY * z,
             zoom: z
-        )
+        ))
     }
 
-    /// Jump the camera to an exact zoom value, recentred on the viewport
+    /// Glide the camera to an exact zoom value, recentred on the viewport
     /// centre so the user's eye doesn't lose its place.
     func setZoom(_ z: CGFloat) {
         let target = max(Self.minZoom, min(Self.maxZoom, z))
         guard camera.zoom > 0 else { camera.zoom = target; return }
-        zoom(by: target / camera.zoom, around: viewportCentre)
+        glideCamera(to: cameraZooming(by: target / camera.zoom, around: viewportCentre))
     }
 
-    /// Centre the camera on the given world point at the current zoom.
+    /// Glide the camera so the given world point sits at the viewport
+    /// centre (current zoom). Click-drag in the minimap retargets this
+    /// every tick — the glide's preserved velocity turns that into a
+    /// smooth pursuit of the cursor.
     func centerCamera(on worldPoint: CGPoint) {
-        camera.x = viewportSize.width / 2 - worldPoint.x * camera.zoom
-        camera.y = viewportSize.height / 2 - worldPoint.y * camera.zoom
+        glideCamera(to: Camera(
+            x: viewportSize.width / 2 - worldPoint.x * camera.zoom,
+            y: viewportSize.height / 2 - worldPoint.y * camera.zoom,
+            zoom: camera.zoom
+        ))
     }
 
     // MARK: - Coordinate helpers
