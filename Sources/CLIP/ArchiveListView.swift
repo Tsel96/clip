@@ -165,6 +165,12 @@ private struct ArchiveListRow: View {
                     .font(.system(size: 12))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+
+                // Always-visible navigation affordance: this row goes
+                // somewhere (the card on the canvas).
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(hovering ? .secondary : .tertiary)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

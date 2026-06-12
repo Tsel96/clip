@@ -24,6 +24,12 @@ final class MinimapThumbs: ObservableObject {
             return nil
         case .video(let fileURL, _):
             return VideoPosterStore.cachedPoster(for: fileURL)
+        case .tweet, .instagram, .youtube:
+            // Web embeds: poster fetched once via the same pipeline the
+            // Colorform palette extractor uses, then cached here.
+            if let hit = thumbs[node.id] { return hit }
+            fetchPoster(for: node)
+            return nil
         default:
             return nil
         }
@@ -39,6 +45,35 @@ final class MinimapThumbs: ObservableObject {
                 self.inFlight.remove(id)
                 self.version &+= 1
             }
+        }
+    }
+
+    /// Network poster for tweet / Instagram / YouTube cards. Failures stay
+    /// in `inFlight` so a dead URL is only attempted once per session.
+    private func fetchPoster(for node: CanvasNode) {
+        guard !inFlight.contains(node.id) else { return }
+        inFlight.insert(node.id)
+        let snapshot = node
+        Task { [weak self] in
+            let cg = await ColorExtraction.representativeCGImage(for: snapshot)
+            guard let self else { return }
+            await MainActor.run {
+                if let cg {
+                    self.thumbs[snapshot.id] = Self.scaledImage(from: cg, maxSide: 240)
+                    self.version &+= 1
+                }
+            }
+        }
+    }
+
+    nonisolated private static func scaledImage(from cg: CGImage, maxSide: CGFloat) -> NSImage {
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        let scale = min(1, maxSide / max(w, h))
+        let size = NSSize(width: max(1, w * scale), height: max(1, h * scale))
+        return NSImage(size: size, flipped: false) { rect in
+            NSGraphicsContext.current?.cgContext.interpolationQuality = .medium
+            NSGraphicsContext.current?.cgContext.draw(cg, in: rect)
+            return true
         }
     }
 
