@@ -20,20 +20,21 @@ struct ArchiveListView: View {
             if dayGroups.isEmpty {
                 emptyState
             } else {
+                // Plain LazyVStack — no pinned headers. Pinning re-offsets
+                // the header inside the layout pass, and combined with a
+                // material backing that fed an AppKit layout-recursion trap
+                // (EXC_BREAKPOINT in _layoutSubtreeWithOldSize) on macOS 27.
                 ScrollView {
-                    LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    LazyVStack(spacing: 0) {
                         ForEach(dayGroups, id: \.day) { group in
-                            Section {
-                                ForEach(group.nodes) { node in
-                                    ArchiveListRow(node: node) { reveal(node) }
-                                    if node.id != group.nodes.last?.id {
-                                        Divider()
-                                            .padding(.leading, 64)
-                                            .opacity(0.5)
-                                    }
+                            dayHeader(for: group)
+                            ForEach(group.nodes) { node in
+                                ArchiveListRow(node: node) { reveal(node) }
+                                if node.id != group.nodes.last?.id {
+                                    Divider()
+                                        .padding(.leading, 64)
+                                        .opacity(0.5)
                                 }
-                            } header: {
-                                dayHeader(for: group)
                             }
                         }
                     }
@@ -83,13 +84,8 @@ struct ArchiveListView: View {
             Spacer()
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        // Solid-ish backing so rows scrolling beneath the pinned header
-        // never bleed through the text.
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .padding(.top, 12)
-        .padding(.bottom, 4)
+        .padding(.top, 20)
+        .padding(.bottom, 6)
     }
 
     static func dayTitle(for day: Date) -> String {
