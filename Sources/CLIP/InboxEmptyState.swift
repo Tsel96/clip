@@ -73,7 +73,7 @@ struct InboxSetupGuide: View {
     @Environment(\.clipTheme) private var theme
 
     /// Where the iCloud "Add to Canvas" Shortcut + setup live (the landing site).
-    private let helpURL = URL(string: "https://clip-umprum.netlify.app")!
+    private let helpURL = URL(string: "https://clip-umprum.vercel.app")!
 
     var body: some View {
         VStack(spacing: 0) {
