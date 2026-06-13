@@ -30,6 +30,19 @@
   --shadow-sm: 0 10px 26px rgba(0,0,0,.08);
   --mono: "ONY Semimono Beta", ui-monospace, "SF Mono", Menlo, monospace;
   --maxw: 1280px;
+
+  /* transitions.dev — texts reveal (18) + avatar group hover (11) */
+  --stagger-dur: 600ms;
+  --stagger-distance: 14px;
+  --stagger-stagger: 70ms;
+  --stagger-blur: 4px;
+  --stagger-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --avatar-lift: -6px;
+  --avatar-dur: 320ms;
+  --avatar-scale: 1.06;
+  --avatar-falloff: 0.5;
+  --avatar-ease-in: cubic-bezier(0.22, 1, 0.36, 1);
+  --avatar-ease-out: cubic-bezier(0.34, 3.85, 0.64, 1);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -195,7 +208,7 @@ section { position: relative; }
 .usecase-grid { margin-top: clamp(36px, 5vw, 60px); display: grid; grid-template-columns: repeat(4,1fr); gap: 18px; }
 .usecase { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 30px 24px;
   text-align: center; transition: transform .16s ease, box-shadow .16s ease; }
-.usecase:hover { transform: translateY(-4px); box-shadow: var(--shadow-sm); }
+.usecase:hover { box-shadow: var(--shadow-sm); }   /* lift handled by .t-avatar comb-hover */
 .usecase img { width: 62px; height: 62px; margin: 0 auto 18px; }
 .usecase h4 { font-size: 16px; font-weight: 900; letter-spacing: .01em; margin-bottom: 8px; }
 .usecase p { font-size: 13px; line-height: 1.6; color: var(--dim); }
@@ -233,12 +246,44 @@ section { position: relative; }
 .foot-links a:hover { color: var(--ink); }
 .foot-fine { font-size: 11.5px; color: var(--faint); letter-spacing: .04em; }
 
-/* ===== Motion ===== */
+/* ===== Motion (transitions.dev) ===== */
 .reveal { opacity: 0; transform: translateY(16px); animation: rise .8s cubic-bezier(.22,.7,.3,1) forwards; }
 .d1 { animation-delay: .06s; } .d2 { animation-delay: .12s; } .d3 { animation-delay: .18s; } .d4 { animation-delay: .26s; }
 @keyframes rise { to { opacity: 1; transform: none; } }
-.rise { opacity: 0; transform: translateY(24px); transition: opacity .7s cubic-bezier(.22,.7,.3,1), transform .7s cubic-bezier(.22,.7,.3,1); }
-.rise.in { opacity: 1; transform: none; }
+
+/* Texts reveal (18-texts-reveal.md) — staggered blurred rise for stacked
+   text lines; used on the hero copy and is toggled by .is-shown. */
+.t-stagger-line {
+  display: block; opacity: 0;
+  transform: translateY(var(--stagger-distance));
+  filter: blur(var(--stagger-blur));
+  transition:
+    opacity   var(--stagger-dur) var(--stagger-ease),
+    transform var(--stagger-dur) var(--stagger-ease),
+    filter    var(--stagger-dur) var(--stagger-ease);
+  will-change: transform, opacity, filter;
+}
+.t-stagger-line--2 { transition-delay: var(--stagger-stagger); }
+.t-stagger-line--3 { transition-delay: calc(var(--stagger-stagger) * 2); }
+.t-stagger.is-shown .t-stagger-line { opacity: 1; transform: translateY(0); filter: blur(0); }
+
+/* Section scroll-reveal — refined to the texts-reveal motion tokens
+   (same blur + distance + ease so the whole page shares one feel). */
+.rise { opacity: 0; transform: translateY(var(--stagger-distance)); filter: blur(var(--stagger-blur));
+  transition: opacity var(--stagger-dur) var(--stagger-ease),
+              transform var(--stagger-dur) var(--stagger-ease),
+              filter var(--stagger-dur) var(--stagger-ease); }
+.rise.in { opacity: 1; transform: none; filter: blur(0); }
+
+/* Avatar group hover (11-avatar-group-hover.md) — comb lift on the
+   use-case row. JS sets --shift / --scale-active per item with falloff. */
+.t-avatar {
+  transform-origin: center;
+  transform: translateY(var(--shift, 0px)) scale(var(--scale-active, 1));
+  transition: transform var(--avatar-dur) var(--avatar-ease-in);
+  will-change: transform;
+}
+
 .float-a { animation: floatA 7s ease-in-out infinite; }
 .float-b { animation: floatB 8.5s ease-in-out infinite; }
 .float-c { animation: floatC 9.5s ease-in-out infinite; }
@@ -246,7 +291,9 @@ section { position: relative; }
 @keyframes floatB { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-18px) } }
 @keyframes floatC { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-9px) } }
 @media (prefers-reduced-motion: reduce) {
-  .reveal, .rise { opacity: 1; transform: none; animation: none; transition: none; }
+  .reveal, .rise { opacity: 1; transform: none; filter: none; animation: none; transition: none; }
+  .t-stagger-line { transition: none !important; }
+  .t-avatar { transition: none !important; transform: none !important; }
   .float-a,.float-b,.float-c,.marquee-track { animation: none; }
   html { scroll-behavior: auto; }
 }
