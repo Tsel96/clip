@@ -198,3 +198,89 @@ body.manual-page { overflow: auto; }   /* the landing locks scroll; the manual n
 }
 
 .manual-foot { margin-top: 8px; display: flex; justify-content: center; }
+
+/* ---------- Install page ---------- */
+
+.install {
+  max-width: 60ch;
+  margin: 0 auto;
+  padding: 56px 28px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.install-head { display: flex; flex-direction: column; gap: 12px; }
+
+.install-title {
+  font-weight: 900;
+  font-size: clamp(28px, 5vw, 42px);
+  letter-spacing: .08em;
+  line-height: 1.05;
+}
+
+.reqs {
+  font-size: 12.5px;
+  color: var(--dim);
+  letter-spacing: .02em;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 13px;
+  background: var(--surface);
+  align-self: flex-start;
+}
+.reqs b { color: var(--accent); font-weight: 400; }
+
+.inline-link { color: var(--accent); text-decoration: none; }
+.inline-link:hover { text-decoration: underline; }
+
+.steps {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  counter-reset: none;
+}
+
+.step {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+.step-n {
+  flex: 0 0 auto;
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #1a1300;
+  font-weight: 900;
+  font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.step-body { display: flex; flex-direction: column; gap: 7px; }
+.step-body h2 {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+.step-body p {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--dim);
+}
+.step-body .sub { color: var(--faint); font-size: 12px; }
+.step-body b { color: var(--fg); font-weight: 400; }
+
+.done {
+  font-size: 13px;
+  color: var(--dim);
+  line-height: 1.6;
+  text-align: center;
+  margin-top: 4px;
+}
