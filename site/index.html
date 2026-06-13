@@ -4,33 +4,130 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>CLIP — an infinite moodboard for macOS</title>
-<meta name="description" content="CLIP is an infinite-canvas moodboard for macOS. Drop in tweets, videos, images; send links from your phone." />
+<meta name="description" content="CLIP is an infinite-canvas moodboard for macOS. Clip tweets, videos, images and ideas onto one endless surface. For Apple Silicon." />
 <link rel="icon" href="icon.png" />
 <link rel="stylesheet" href="style.css" />
+<meta property="og:title" content="CLIP — an infinite moodboard for macOS" />
+<meta property="og:description" content="Clip tweets, videos, images and ideas onto one endless canvas. For Apple Silicon Macs." />
+<meta property="og:image" content="assets/mark.png" />
 </head>
 <body>
-  <main class="stage">
-    <img class="mark" src="icon.png" alt="CLIP" width="120" height="120" />
-    <h1>CLIP</h1>
-    <p class="tag">An infinite moodboard for macOS — tweets, videos and images on one endless canvas.</p>
 
-    <div class="actions">
-      <a class="btn primary" id="download" href="install.html">
-        Download for macOS
-      </a>
-      <!-- TODO: paste your iCloud Shortcut share link -->
-      <a class="btn ghost" id="shortcut" href="SHORTCUT_URL_HERE">
-        Send links from iPhone
-      </a>
-      <a class="btn ghost" href="manual.html">
-        Manual
-      </a>
-    </div>
+  <!-- Nav -->
+  <header class="nav">
+    <a class="nav-brand" href="/">
+      <img src="assets/mark.png" alt="" width="28" height="28" />
+      <span>CLIP</span>
+    </a>
+    <nav class="nav-links">
+      <a href="manual.html">Manual</a>
+      <a href="manual.html#iphone">iPhone</a>
+      <a href="https://github.com/Tsel96/clip">GitHub</a>
+      <a class="nav-cta" href="install.html">Download</a>
+    </nav>
+  </header>
 
-    <p class="note">
-      For <b>Apple&nbsp;Silicon</b> Macs (M1 or later) · macOS&nbsp;13+. The download page
-      walks you through the three install steps. CLIP keeps itself up to date after that.
-    </p>
+  <main>
+    <!-- Hero -->
+    <section class="hero">
+      <a class="pill reveal" href="manual.html#iphone">
+        <span class="pill-dot"></span> Send anything from your iPhone <span class="pill-arrow">→</span>
+      </a>
+
+      <h1 class="hero-title reveal d1">Clip<br>everything.</h1>
+
+      <p class="hero-sub reveal d2">
+        An infinite-canvas moodboard for macOS. Tweets, videos, images
+        and ideas — alive on one endless surface.
+      </p>
+
+      <div class="hero-actions reveal d3">
+        <a class="btn primary" href="install.html">Download for macOS</a>
+        <a class="btn ghost" href="manual.html">Read the manual</a>
+      </div>
+
+      <p class="hero-reqs reveal d4">For Apple&nbsp;Silicon Macs (M1 or later) · macOS&nbsp;13+ · free</p>
+
+      <!-- Hero stage: the brand mark with floating coin badges -->
+      <div class="stage reveal d4" aria-hidden="true">
+        <div class="halo"></div>
+        <img class="mark" src="assets/mark.png" alt="CLIP" width="320" height="320" />
+        <img class="coin c1 float-a" src="assets/badge-1.svg" alt="" />
+        <img class="coin c2 float-b" src="assets/badge-2.svg" alt="" />
+        <img class="coin c3 float-c" src="assets/badge-3.svg" alt="" />
+        <img class="coin c4 float-b" src="assets/badge-4.svg" alt="" />
+        <img class="coin c5 float-a" src="assets/badge-5.svg" alt="" />
+        <img class="coin c6 float-c" src="assets/badge-6.svg" alt="" />
+      </div>
+    </section>
+
+    <!-- Brand band -->
+    <section class="band" aria-hidden="true">
+      <img src="assets/wordmark-band.svg" alt="CLIP" />
+    </section>
+
+    <!-- Three modes -->
+    <section class="modes">
+      <h2 class="section-title">Three views over one canvas.</h2>
+      <div class="mode-grid">
+        <article class="mode">
+          <img class="mode-icon" src="assets/badge-1.svg" alt="" width="56" height="56" />
+          <h3>Canvas</h3>
+          <p>The free, infinite surface. Pan, zoom, drag in files, paste any
+          link. Tweets, Instagram and YouTube embed live; videos play in place.</p>
+        </article>
+        <article class="mode">
+          <img class="mode-icon" src="assets/badge-3.svg" alt="" width="56" height="56" />
+          <h3>Colorform</h3>
+          <p>Groups your cards by dominant colour into soft clouds — zoom out
+          and the board melts into its own palette.</p>
+        </article>
+        <article class="mode">
+          <img class="mode-icon" src="assets/badge-5.svg" alt="" width="56" height="56" />
+          <h3>Archive</h3>
+          <p>Everything you've added, newest first, grouped by day with the
+          exact time. One click jumps back to the card on the canvas.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- iPhone -->
+    <section class="feature">
+      <div class="feature-text">
+        <h2 class="section-title left">From your phone,<br>onto your canvas.</h2>
+        <p>Share any link from your iPhone — a post, a video, an image — and it
+        lands on your pinned inbox page within seconds. Set it up once.</p>
+        <a class="btn ghost" href="manual.html#iphone">How it works</a>
+      </div>
+      <div class="feature-coins" aria-hidden="true">
+        <img class="float-a" src="assets/badge-2.svg" alt="" width="92" height="92" />
+        <img class="float-c" src="assets/badge-4.svg" alt="" width="92" height="92" />
+        <img class="float-b" src="assets/badge-6.svg" alt="" width="92" height="92" />
+      </div>
+    </section>
+
+    <!-- Closing CTA -->
+    <section class="closer">
+      <img class="closer-mark" src="assets/mark.png" alt="" width="96" height="96" />
+      <h2 class="section-title">Start your canvas.</h2>
+      <p>Free, for Apple Silicon Macs. Installs in seconds and keeps itself up to date.</p>
+      <a class="btn primary big" href="install.html">Download for macOS</a>
+    </section>
   </main>
+
+  <footer class="foot">
+    <div class="foot-brand">
+      <img src="assets/mark.png" alt="" width="22" height="22" />
+      <span>CLIP</span>
+    </div>
+    <nav class="foot-links">
+      <a href="install.html">Download</a>
+      <a href="manual.html">Manual</a>
+      <a href="manual.html#iphone">iPhone setup</a>
+      <a href="https://github.com/Tsel96/clip">GitHub</a>
+    </nav>
+    <p class="foot-fine">Apple Silicon · macOS 13+</p>
+  </footer>
+
 </body>
 </html>
