@@ -1,0 +1,69 @@
+name: Build & Release CLIP
+
+# Builds the macOS app on a real Mac runner and publishes CLIP.dmg +
+# CLIP.zip + latest.json to GitHub Releases. The website's Download
+# button (releases/latest/download/CLIP.dmg) and the in-app self-updater
+# (releases/latest/download/latest.json) both track "latest" automatically,
+# so every repo update ships a fresh, downloadable, self-updating build.
+on:
+  push:
+    branches: [main, 'claude/**']
+    tags: ['v*']
+    paths-ignore: ['site/**', '**/*.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version && xcodebuild -version
+
+      - name: Build release binary
+        run: swift build -c release
+
+      - name: Bundle .app, .zip and .dmg
+        env:
+          MARKETING: "1.0"
+          BUILD: ${{ github.run_number }}
+          FEED_URL: "https://github.com/${{ github.repository }}/releases/latest/download/latest.json"
+          ZIP: "1"
+          DMG: "1"
+        run: Scripts/make-app.sh
+
+      - name: Write self-update manifest
+        run: |
+          SHA=$(shasum -a 256 CLIP.zip | awk '{print $1}')
+          cat > latest.json <<EOF
+          {
+            "build": ${{ github.run_number }},
+            "version": "1.0 (${{ github.run_number }})",
+            "url": "https://github.com/${{ github.repository }}/releases/latest/download/CLIP.zip",
+            "sha256": "$SHA"
+          }
+          EOF
+          echo "latest.json:"; cat latest.json
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: CLIP 1.0 (build ${{ github.run_number }})
+          make_latest: true
+          body: |
+            Automated build from `${{ github.sha }}`.
+            Download **CLIP.dmg** below and drag CLIP into Applications.
+            Installed copies self-update to this build automatically.
+          files: |
+            CLIP.dmg
+            CLIP.zip
+            latest.json
