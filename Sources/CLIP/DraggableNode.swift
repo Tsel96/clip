@@ -617,7 +617,7 @@ struct DraggableNode: View {
         case .text:       return 2
         case .stickyNote: return StickyNodeView.cornerRadius
         case .section:    return SectionNodeView.cornerRadius
-        case .tweet, .instagram, .youtube, .image, .video, .drawing:
+        case .tweet, .instagram, .youtube, .webclip, .image, .video, .drawing:
             return 19.375
         }
     }
@@ -643,7 +643,7 @@ struct DraggableNode: View {
     private var isResizableKind: Bool {
         switch node.kind {
         case .text:                        return false
-        case .tweet, .instagram, .youtube,
+        case .tweet, .instagram, .youtube, .webclip,
              .image, .video, .drawing,
              .section, .stickyNote:        return true
         }

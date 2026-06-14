@@ -236,6 +236,8 @@ private struct MemberCoverView: View {
             instagramBody
         case .youtube:
             kindPlaceholder(systemName: "play.rectangle.fill")
+        case .webclip:
+            kindPlaceholder(systemName: "globe")
         case .drawing:
             kindPlaceholder(systemName: "scribble")
         }

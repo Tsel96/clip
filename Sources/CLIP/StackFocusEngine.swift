@@ -76,7 +76,7 @@ enum StackFocusEngine {
                 width:  min(raw.width,  textCap.width),
                 height: min(raw.height, textCap.height)
             )
-        case .image, .video, .tweet, .instagram, .youtube, .drawing:
+        case .image, .video, .tweet, .instagram, .youtube, .webclip, .drawing:
             return raw
         }
     }
