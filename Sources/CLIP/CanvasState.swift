@@ -2249,7 +2249,17 @@ final class CanvasState: ObservableObject {
         guard !heightFlushScheduled else { return }
         heightFlushScheduled = true
         // Defer the @Published write off the current layout pass.
-        Task { @MainActor in self.flushMeasuredHeights() }
+        // DispatchQueue.main.async is required here rather than
+        // Task { @MainActor in }: on macOS 27 beta, CA::Transaction::flush
+        // can drain Swift Concurrency tasks mid-layout, so the Task-based
+        // deferral fires while _layoutSubtreeWithOldSize is still on the
+        // stack, writing measuredHeights re-enters layout, and AppKit's
+        // recursion guard trips at depth 16. DispatchQueue.main.async
+        // always defers to the NEXT main queue drain (after the display
+        // callback has returned to the runloop), breaking the cycle.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.flushMeasuredHeights() }
+        }
     }
 
     /// Apply buffered height reports in one batch (one `objectWillChange`),
