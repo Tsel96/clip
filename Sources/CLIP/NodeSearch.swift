@@ -10,6 +10,7 @@ extension CanvasNode {
         case .tweet(let url):           return url
         case .instagram(let url):       return url
         case .youtube(let url):         return url
+        case .webclip(let url):         return url
         case .text(let content, _):
             return content.isEmpty ? "(empty text)" : content
         case .drawing:                  return "Drawing"
@@ -27,6 +28,7 @@ extension CanvasNode {
         case .tweet:      return "bird"
         case .instagram:  return "camera"
         case .youtube:    return "play.rectangle"
+        case .webclip:    return "globe"
         case .text:       return "textformat"
         case .drawing:    return "pencil.tip"
         case .image:      return "photo"

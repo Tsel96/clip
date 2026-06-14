@@ -234,6 +234,8 @@ struct MinimapView: View {
                     fill = isSel
                         ? Color(red: 1.0, green: 0.0, blue: 0.0)
                         : Color(red: 1.0, green: 0.0, blue: 0.0).opacity(0.6)
+                case .webclip:
+                    fill = isSel ? .blue : Color.blue.opacity(0.5)
                 case .section(_, let color):
                     fill = color.swiftUIColor.opacity(isSel ? 0.7 : 0.35)
                 case .stickyNote(_, let color):

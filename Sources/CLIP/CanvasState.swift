@@ -739,10 +739,36 @@ final class CanvasState: ObservableObject {
             || YouTubeService.isLikelyYouTubeURL(trimmed) {
             addYouTube(url: trimmed, at: worldPoint, origin: origin)
         } else {
+            // Any other http(s) link becomes a rendered web-clip card
+            // instead of a dead-end alert.
+            addWebClip(url: trimmed, at: worldPoint, origin: origin)
+        }
+    }
+
+    /// Add a web-clip card for an arbitrary http(s) URL. Non-web strings
+    /// (no scheme) get a gentle alert rather than a broken card.
+    func addWebClip(url: String, at worldPoint: CGPoint? = nil,
+                    origin: CanvasNode.Origin = .local) {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let u = URL(string: trimmed),
+              let scheme = u.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
             alert = AlertContent(
-                title: "Unsupported URL",
-                message: "Paste a link from x.com, twitter.com, instagram.com, or youtube.com."
+                title: "Not a link",
+                message: "Paste a web address (starting with http:// or https://), an X / Instagram / YouTube post, or drop a file."
             )
+            return
+        }
+        let cardWidth: CGFloat = 480, cardHeight: CGFloat = 320
+        let centre = worldPoint ?? screenToWorld(point: viewportCentre)
+        let jitter: CGFloat = worldPoint == nil ? CGFloat.random(in: -40...40) : 0
+        let position = CGPoint(x: centre.x - cardWidth / 2 + jitter,
+                               y: centre.y - cardHeight / 2 + jitter)
+        withUndoable {
+            var node = CanvasNode.webclip(url: trimmed, position: position,
+                                          width: cardWidth, height: cardHeight)
+            node.origin = origin
+            nodes.append(node)
         }
     }
 
@@ -1012,6 +1038,11 @@ final class CanvasState: ObservableObject {
             made = CanvasNode(position: .zero, width: cardWidth,
                               height: YouTubeService.defaultCardHeight(forWidth: cardWidth),
                               kind: .youtube(url: trimmed))
+        } else if let u = URL(string: trimmed),
+                  let scheme = u.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" {
+            // Any other shared link lands as a web-clip card.
+            made = CanvasNode.webclip(url: trimmed, position: .zero, width: cardWidth, height: 320)
         }
         guard var node = made else { return }
         node.origin = .phone
@@ -1352,6 +1383,7 @@ final class CanvasState: ObservableObject {
         case .tweet:      derived += ["tweet", "x"]
         case .instagram:  derived.append("instagram")
         case .youtube:    derived += ["youtube", "video"]
+        case .webclip:    derived += ["web", "link"]
         case .text:       derived.append("text")
         case .stickyNote: derived.append("note")
         case .drawing:    derived.append("drawing")
@@ -2200,6 +2232,7 @@ final class CanvasState: ObservableObject {
         case .image:      return 360
         case .video:      return 270
         case .youtube:    return 203
+        case .webclip:    return 320
         case .section:    return 200
         case .stickyNote: return 200
         }

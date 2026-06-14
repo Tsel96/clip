@@ -636,6 +636,7 @@ private struct DetailsInspector: View {
         case .tweet:     return "X"
         case .instagram: return "IG"
         case .youtube:   return "YT"
+        case .webclip:   return "WEB"
         case .text:      return "TEXT"
         case .stickyNote: return "NOTE"
         case .drawing:   return "DRAW"
@@ -690,6 +691,7 @@ struct CardContentView: View {
         case .tweet(let url):       TweetCardView(url: url, isLive: isLive)
         case .instagram(let url):   InstagramCardView(url: url, isLive: isLive)
         case .youtube(let url):     YouTubeNodeView(url: url, isLive: isLive)
+        case .webclip(let url):     WebClipCardView(url: url, isLive: isLive, nodeID: node.id)
         case .image(let data, let filename):
             ImageNodeView(data: data, filename: filename, isLive: isLive)
         case .video(let fileURL, let filename):

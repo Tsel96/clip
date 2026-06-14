@@ -55,6 +55,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         case tweet(url: String)
         case instagram(url: String)
         case youtube(url: String)
+        case webclip(url: String)
         case text(content: String, fontSize: CGFloat)
         case drawing(stroke: DrawingStroke)
         case image(data: Data, filename: String)
@@ -171,6 +172,14 @@ struct CanvasNode: Identifiable, Equatable, Codable {
                           height: CGFloat = 540) -> CanvasNode {
         CanvasNode(position: position, width: width, height: height,
                    kind: .instagram(url: url))
+    }
+
+    static func webclip(url: String,
+                        position: CGPoint,
+                        width: CGFloat = 480,
+                        height: CGFloat = 320) -> CanvasNode {
+        CanvasNode(position: position, width: width, height: height,
+                   kind: .webclip(url: url))
     }
 
     static func image(data: Data,
@@ -583,6 +592,8 @@ extension CanvasNode.Kind: Codable {
             self = .instagram(url: try c.decode(String.self, forKey: .url))
         case "youtube":
             self = .youtube(url: try c.decode(String.self, forKey: .url))
+        case "webclip":
+            self = .webclip(url: try c.decode(String.self, forKey: .url))
         case "text":
             self = .text(
                 content: try c.decode(String.self, forKey: .content),
@@ -629,6 +640,9 @@ extension CanvasNode.Kind: Codable {
             try c.encode(url, forKey: .url)
         case .youtube(let url):
             try c.encode("youtube", forKey: .type)
+            try c.encode(url, forKey: .url)
+        case .webclip(let url):
+            try c.encode("webclip", forKey: .type)
             try c.encode(url, forKey: .url)
         case .text(let content, let fontSize):
             try c.encode("text", forKey: .type)
