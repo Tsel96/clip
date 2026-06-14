@@ -17,20 +17,34 @@ struct PagesSidebar: View {
                 .padding(.top, 10)
                 .padding(.bottom, 8)
 
-            List(selection: Binding<UUID?>(
-                get: { state.activePageID },
-                set: { newID in
-                    if let id = newID { state.switchTo(pageID: id) }
-                }
-            )) {
-                Section("Pages") {
-                    ForEach(state.pages) { page in
-                        row(for: page)
-                            .tag(page.id)
+            // Pages vs. Outline (flat list of every card across pages).
+            Picker("", selection: $state.sidebarTab) {
+                Text("Pages").tag(CanvasState.SidebarTab.pages)
+                Text("Outline").tag(CanvasState.SidebarTab.outline)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 10)
+            .padding(.bottom, 8)
+
+            if state.sidebarTab == .pages {
+                List(selection: Binding<UUID?>(
+                    get: { state.activePageID },
+                    set: { newID in
+                        if let id = newID { state.switchTo(pageID: id) }
+                    }
+                )) {
+                    Section("Pages") {
+                        ForEach(state.pages) { page in
+                            row(for: page)
+                                .tag(page.id)
+                        }
                     }
                 }
+                .listStyle(.sidebar)
+            } else {
+                OutlinePanel()
             }
-            .listStyle(.sidebar)
 
             Divider()
 

@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// ⌘K command palette. Substring-search across the *active page* — tweet
-/// URLs, Instagram URLs, text-node contents, and image/video filenames.
-/// Selecting a result selects that node and centres the camera on it.
+/// ⌘K command palette. Substring-search across EVERY page — post URLs,
+/// text/sticky contents, file names, section titles, plus each card's
+/// name, note and tags. Selecting a result switches to that card's page,
+/// selects it, and centres the camera on it. (`searchSummary`/`searchIcon`/
+/// `searchHaystack` live in NodeSearch.swift, shared with the Outline list.)
 struct SearchPalette: View {
     @EnvironmentObject var state: CanvasState
 
@@ -10,20 +12,26 @@ struct SearchPalette: View {
     @State private var highlighted: Int = 0
     @FocusState private var queryFocused: Bool
 
+    /// Cap so a broad query can't build an unbounded list.
+    private let maxResults = 50
+
     private var results: [SearchResult] {
         guard !query.isEmpty else { return [] }
         let needle = query.lowercased()
-        return state.nodes.compactMap { node in
-            let summary = node.searchSummary
-            if summary.lowercased().contains(needle) {
-                return SearchResult(
+        var out: [SearchResult] = []
+        for page in state.pages {
+            for node in page.nodes where node.searchHaystack.lowercased().contains(needle) {
+                out.append(SearchResult(
                     nodeID: node.id,
+                    pageID: page.id,
+                    pageName: page.name,
                     icon: node.searchIcon,
-                    title: summary
-                )
+                    title: node.searchSummary
+                ))
+                if out.count >= maxResults { return out }
             }
-            return nil
         }
+        return out
     }
 
     var body: some View {
@@ -31,7 +39,7 @@ struct SearchPalette: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Search posts, text, files…", text: $query)
+                TextField("Search posts, text, files, tags…", text: $query)
                     .textFieldStyle(.plain)
                     .focused($queryFocused)
                     .onSubmit { activateHighlighted() }
@@ -53,8 +61,8 @@ struct SearchPalette: View {
 
             if results.isEmpty {
                 Text(query.isEmpty
-                     ? "Type to search the current page."
-                     : "No matches on this page.")
+                     ? "Type to search every page."
+                     : "No matches.")
                     .font(.clip(12))
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 28)
@@ -65,7 +73,7 @@ struct SearchPalette: View {
                         ForEach(Array(results.enumerated()), id: \.element.id) { idx, r in
                             resultRow(result: r, isHighlighted: idx == highlighted)
                                 .contentShape(Rectangle())
-                                .onTapGesture { jump(to: r.nodeID) }
+                                .onTapGesture { jump(to: r) }
                                 .onHover { hovering in
                                     if hovering { highlighted = idx }
                                 }
@@ -101,7 +109,15 @@ struct SearchPalette: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .font(.clip(12.5))
-            Spacer()
+            Spacer(minLength: 8)
+            Text(result.pageName)
+                .font(.clip(10))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color(nsColor: .separatorColor).opacity(0.25),
+                            in: Capsule(style: .continuous))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -116,58 +132,20 @@ struct SearchPalette: View {
         guard !results.isEmpty,
               highlighted >= 0,
               highlighted < results.count else { return }
-        jump(to: results[highlighted].nodeID)
+        jump(to: results[highlighted])
     }
 
-    private func jump(to nodeID: UUID) {
-        guard let n = state.nodeByID[nodeID] else { return }
-        let centre = CGPoint(
-            x: n.position.x + n.width / 2,
-            y: n.position.y + state.renderedHeight(of: n) / 2
-        )
-        state.centerCamera(on: centre)
-        state.select(nodeID)
+    private func jump(to result: SearchResult) {
         state.isSearchPresented = false
+        state.jumpToNode(result.nodeID, onPage: result.pageID)
     }
 }
 
 private struct SearchResult: Identifiable {
     let id = UUID()
     let nodeID: UUID
+    let pageID: UUID
+    let pageName: String
     let icon: String
     let title: String
-}
-
-private extension CanvasNode {
-    /// Text used both for filtering and for the displayed row title.
-    var searchSummary: String {
-        switch kind {
-        case .tweet(let url):           return url
-        case .instagram(let url):       return url
-        case .youtube(let url):         return url
-        case .text(let content, _):
-            return content.isEmpty ? "(empty text)" : content
-        case .drawing:                  return "Drawing"
-        case .image(_, let filename):   return filename
-        case .video(_, let filename):   return filename
-        case .section(let title, _):
-            return title.isEmpty ? "(untitled section)" : title
-        case .stickyNote(let content, _):
-            return content.isEmpty ? "(empty sticky)" : content
-        }
-    }
-
-    var searchIcon: String {
-        switch kind {
-        case .tweet:      return "bird"
-        case .instagram:  return "camera"
-        case .youtube:    return "play.rectangle"
-        case .text:       return "textformat"
-        case .drawing:    return "pencil.tip"
-        case .image:      return "photo"
-        case .video:      return "film"
-        case .section:    return "rectangle.dashed"
-        case .stickyNote: return "note.text"
-        }
-    }
 }

@@ -660,6 +660,11 @@ final class CanvasState: ObservableObject {
 
     @Published var isAddSheetPresented = false
     @Published var isSearchPresented = false
+
+    /// Which sidebar tab is showing: the page list or the flat Outline of
+    /// every card across pages.
+    enum SidebarTab: Hashable { case pages, outline }
+    @Published var sidebarTab: SidebarTab = .pages
     @Published var alert: AlertContent? = nil
 
     // Figma-equivalent range: ~2% to 1600%. Lets you frame a large board
@@ -1944,6 +1949,29 @@ final class CanvasState: ObservableObject {
     func select(_ id: UUID?) {
         selectedNodeIDs = id.map { [$0] } ?? []
         selectedConnectorIDs = []
+    }
+
+    /// Reveal a node from anywhere (⌘K search, Outline list): switch to its
+    /// page if needed, then centre + select it. When a page switch happens
+    /// the center/select runs on the next main-actor turn, after `switchTo`
+    /// has rebuilt `nodeByID` and cleared the old selection.
+    func jumpToNode(_ nodeID: UUID, onPage pageID: UUID) {
+        if pageID != activePageID {
+            if canvasMode != .canvas { setMode(.canvas) }
+            switchTo(pageID: pageID)
+            Task { @MainActor in self.frameAndSelect(nodeID) }
+        } else {
+            if canvasMode != .canvas { setMode(.canvas) }
+            frameAndSelect(nodeID)
+        }
+    }
+
+    private func frameAndSelect(_ nodeID: UUID) {
+        guard let n = nodeByID[nodeID] else { return }
+        let centre = CGPoint(x: n.position.x + n.width / 2,
+                             y: n.position.y + renderedHeight(of: n) / 2)
+        centerCamera(on: centre)
+        select(nodeID)
     }
 
     /// Replace selection with the given set of node ids.
