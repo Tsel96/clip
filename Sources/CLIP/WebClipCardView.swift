@@ -13,10 +13,10 @@ import AppKit
 /// `WebClipSnapshotStore` for use as the resting-state poster.
 struct WebClipCardView: View {
     let url: String
-    let nodeID: UUID
     /// Live iff the card intersects the viewport AND is projected at
     /// ≥ `livePlaybackMinScreenSide`. Default true keeps test sites unaffected.
     var isLive: Bool = true
+    let nodeID: UUID
 
     @State private var hovering = false
     @State private var isLoading = true
