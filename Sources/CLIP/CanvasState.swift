@@ -1441,6 +1441,8 @@ final class CanvasState: ObservableObject {
             return "An Instagram post, square crop, vibrant social-media aesthetic."
         case .youtube:
             return "A YouTube thumbnail, bold focal subject, high contrast, punchy color."
+        case .webclip:
+            return "A web page screenshot, clean readable layout, informative content."
         case .video:
             return "A \(aspect) video still, cinematic lighting, gentle natural motion."
         case .text(let content, _):

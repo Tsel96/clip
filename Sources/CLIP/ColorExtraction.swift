@@ -99,6 +99,10 @@ enum ColorExtraction {
             // No cheap local pixels for an embed; seed a stable hue.
             return fallback(for: node)
 
+        case .webclip:
+            // No cheap local pixels for arbitrary websites; seed a stable hue.
+            return fallback(for: node)
+
         case .text(let content, _):
             return fallback(seed: content.isEmpty ? node.id.uuidString : content)
 
