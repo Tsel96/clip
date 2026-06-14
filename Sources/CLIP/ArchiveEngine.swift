@@ -239,7 +239,7 @@ enum ArchiveEngine {
                 let scale = min(maxW / natW, maxH / natH)
                 return CGSize(width: natW * scale, height: natH * scale)
 
-            case .tweet, .instagram:
+            case .tweet, .instagram, .webclip:
                 // Fixed 480 pt card width, height by natural aspect,
                 // capped to the usable height.
                 let w: CGFloat = 480

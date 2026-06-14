@@ -68,7 +68,7 @@ enum NodeMetadata {
             }
             return rows
 
-        case .text, .drawing, .section, .stickyNote:
+        case .text, .drawing, .section, .stickyNote, .webclip:
             return []
         }
     }
