@@ -647,6 +647,16 @@ final class CanvasState: ObservableObject {
     /// Cached rendered heights, keyed by node id, reported by the node views.
     /// Used so connectors can hit the correct edge of an auto-sized card.
     @Published var measuredHeights: [UUID: CGFloat] = [:]
+    /// Staging for height-probe reports. `reportMeasuredHeight` is called
+    /// from inside a SwiftUI layout pass (a GeometryReader background);
+    /// writing the @Published `measuredHeights` there *synchronously* can
+    /// re-enter layout and, on macOS 26/27, trip AppKit's recursion trap
+    /// (EXC_BREAKPOINT in `_layoutSubtreeWithOldSize` — seen when exiting
+    /// Archive/Colorform, where many auto-height cards re-measure at once
+    /// during the transition). Reports are buffered and flushed once on the
+    /// next main-actor turn, outside the current layout pass.
+    private var pendingHeights: [UUID: CGFloat] = [:]
+    private var heightFlushScheduled = false
 
     @Published var isAddSheetPresented = false
     @Published var isSearchPresented = false
@@ -2169,9 +2179,28 @@ final class CanvasState: ObservableObject {
 
     func reportMeasuredHeight(_ height: CGFloat, for id: UUID) {
         guard height > 0 else { return }
-        if abs((measuredHeights[id] ?? -1) - height) > 0.5 {
-            measuredHeights[id] = height
+        // Skip sub-pixel jitter up front so a stable layout never schedules
+        // a flush at all.
+        guard abs((measuredHeights[id] ?? -1) - height) > 0.5 else { return }
+        pendingHeights[id] = height
+        guard !heightFlushScheduled else { return }
+        heightFlushScheduled = true
+        // Defer the @Published write off the current layout pass.
+        Task { @MainActor in self.flushMeasuredHeights() }
+    }
+
+    /// Apply buffered height reports in one batch (one `objectWillChange`),
+    /// on a fresh main-actor turn so it can't recurse into the layout pass
+    /// that produced them.
+    private func flushMeasuredHeights() {
+        heightFlushScheduled = false
+        guard !pendingHeights.isEmpty else { return }
+        for (id, h) in pendingHeights {
+            if abs((measuredHeights[id] ?? -1) - h) > 0.5 {
+                measuredHeights[id] = h
+            }
         }
+        pendingHeights.removeAll(keepingCapacity: true)
     }
 
     // MARK: - Mode dispatch
