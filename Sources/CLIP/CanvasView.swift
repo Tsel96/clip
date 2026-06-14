@@ -121,12 +121,7 @@ struct CanvasView: View {
     private var backgroundColor: Color {
         switch state.canvasMode {
         case .colorform: return Color(red: 0.985, green: 0.965, blue: 0.945)
-        case .archive:
-            switch state.archiveLevel {
-            case .calendar:   return Color(red: 0.965, green: 0.955, blue: 0.940)
-            case .day:        return Color(red: 0.985, green: 0.985, blue: 0.985)
-            case .card:       return Color(red: 0.04, green: 0.05, blue: 0.08)
-            }
+        case .archive:   return Color(red: 0.965, green: 0.955, blue: 0.940)
         case .canvas:    return theme.canvas
         }
     }
@@ -298,24 +293,13 @@ struct CanvasView: View {
                     ToolInputLayer()
                 }
 
-                // Archive — Calendar level paints its own heatmap; the
-                // normal node group is hidden by the gate below. Day +
-                // Card levels still use the node group (cards laid out
-                // by `effectivePosition` / `effectiveSize`).
-                if state.canvasMode == .archive && state.archiveLevel == .calendar {
-                    ArchiveCalendarLayer()
+                // Archive — a chronological list of everything added,
+                // newest first, grouped by day with per-row timestamps.
+                // The node group is hidden entirely in this mode (gate
+                // below); rows jump back to the card on the canvas.
+                if state.canvasMode == .archive {
+                    ArchiveListView()
                         .transition(.opacity)
-                }
-
-                // Archive — Lightbox chrome (caption pill + action row +
-                // radial vignette). The focused card itself comes from
-                // the node group, positioned + sized via the archive
-                // overrides set up by `drillToCard`.
-                if state.canvasMode == .archive,
-                   case .card(let id) = state.archiveLevel {
-                    ArchiveLightboxLayer(cardID: id)
-                        .transition(.opacity)
-                        .zIndex(1)
                 }
 
                 // Colorform bulbs — big blurred color clouds, only in
@@ -336,18 +320,15 @@ struct CanvasView: View {
                 }
 
                 // Nodes themselves. In Colorform they crossfade as zoom
-                // drops, revealing the bulbs beneath. In Archive's
-                // Calendar level the group is hidden entirely
-                // (the calendar paints its own layer). In Archive's Day
-                // level only that day's cards are visible, laid out by
-                // `effectivePosition` + `effectiveSize` (the Bento grid).
+                // drops, revealing the bulbs beneath. Hidden entirely in
+                // Archive (the list paints its own layer).
                 //
                 // Camera scale + pan is applied ONCE on the parent — pan
                 // ticks only re-evaluate this one transform regardless of
                 // how many cards live on the page. (Maps to the thesis's
                 // "apply scale changes directly to the whole graphics
                 // context.")
-                if !(state.canvasMode == .archive && state.archiveLevel == .calendar) {
+                if state.canvasMode != .archive {
                     Group { nodeLayer }
                     .scaleEffect(cameraStore.camera.zoom, anchor: .topLeading)
                     .offset(x: cameraStore.camera.x, y: cameraStore.camera.y)
@@ -443,15 +424,6 @@ struct CanvasView: View {
             )
             .clipped()
             .coordinateSpace(name: CanvasCoords.name)
-            .overlay {
-                // Draggable + resizable minimap panel. Hidden when the
-                // floating-window version is currently being shown, or
-                // when in Archive (its calendar/bento/lightbox layers
-                // are their own navigation system).
-                if !state.isMinimapDetached && state.canvasMode != .archive {
-                    MinimapPanel()
-                }
-            }
             // Empty state for the pinned iPhone inbox page: before any link
             // has been shared from the phone, invite the user to set it up.
             .overlay {
@@ -475,17 +447,6 @@ struct CanvasView: View {
                         )
                         .padding(2)
                         .allowsHitTesting(false)
-                }
-            }
-            .overlay(alignment: .top) {
-                // Archive breadcrumb pill — appears in Day + Card levels
-                // (the only places where there's a "back" path that the
-                // user might want as a persistent affordance).
-                if state.canvasMode == .archive,
-                   state.archiveLevel != .calendar {
-                    ArchiveBreadcrumb()
-                        .padding(.top, 16)
-                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .onAppear {
@@ -520,12 +481,38 @@ struct CanvasView: View {
                     .padding(.bottom, 16)
             }
         }
+        // Liquid-glass minimap dome — anchored to the bottom-right corner
+        // with most of the circle bleeding off-screen, so its top-left
+        // quadrant sweeps across the viewport. Mounted here (window
+        // bounds) for the same reason as the pills — the inner ZStack's
+        // frame can extend past the window. Hidden while the floating-
+        // window minimap is being shown.
+        .overlay(alignment: .bottomTrailing) {
+            if state.canvasMode != .archive, !state.isMinimapDetached {
+                LiquidGlassMinimap()
+                    .ignoresSafeArea()
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive {
                 CanvasTogglesPill()
                     .padding(.trailing, 16)
                     .padding(.bottom, 16)
             }
+        }
+        // Acute tool-mode visibility — while a non-Select tool is active,
+        // a chip at the top of the canvas says WHY clicks now draw/place/
+        // connect, and offers the way back (click or V).
+        .overlay(alignment: .top) {
+            Group {
+                if state.canvasMode == .canvas, state.toolMode != .select {
+                    ActiveToolChip()
+                        .padding(.top, 14)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.32, dampingFraction: 0.85),
+                       value: state.toolMode)
         }
         // Transient share toast — slides in from the top when a link
         // arrives from the iPhone; tap to jump to the Incoming page.

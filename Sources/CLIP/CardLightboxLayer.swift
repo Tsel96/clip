@@ -63,12 +63,12 @@ struct CardLightboxLayer: View {
                         .offset(x: dx, y: dy)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.trailing, inspectorWidth)
-                        // Drive the grow on appear; reset on unmount so the next
-                        // open starts from the source again.
-                        .onAppear {
-                            progress = 0; landed = false
-                            withAnimation(state.lightboxHeroAnimation) { progress = 1 }
-                        }
+                        // Drive the grow on appear AND on every reopen — the
+                        // layer stays mounted through a closing shrink, so a
+                        // reopen during that window never re-fires onAppear;
+                        // the generation bump does.
+                        .onAppear { driveOpen() }
+                        .onChange(of: state.lightboxGeneration) { _ in driveOpen() }
                         .onDisappear { progress = 0; landed = false }
 
                     // Chrome (inspector + toolbar + nav) fades with progress.
@@ -90,8 +90,9 @@ struct CardLightboxLayer: View {
             }
         }
         // Eyedropper sampler + the "landed" gate (interaction enabled only once
-        // the grow has settled).
-        .task(id: state.lightboxCardID) {
+        // the grow has settled). Keyed on card AND generation so a reopen of
+        // the same card cancels the stale task and rebuilds cleanly.
+        .task(id: "\(state.lightboxGeneration)|\(state.lightboxCardID?.uuidString ?? "")") {
             landed = false; pickPoint = nil; pickColor = nil; sampler = nil
             guard let id = state.lightboxCardID, let n = state.nodeByID[id] else { return }
             async let built = PixelSampler.make(for: n)
@@ -100,6 +101,15 @@ struct CardLightboxLayer: View {
             landed = true
             sampler = await built
         }
+    }
+
+    /// Reset and re-drive the grow. Setting `progress` to 0 outside the
+    /// animation, then to 1 inside it, retargets any in-flight spring
+    /// (including a closing shrink) instead of stacking on top of it.
+    private func driveOpen() {
+        progress = 0
+        landed = false
+        withAnimation(state.lightboxHeroAnimation) { progress = 1 }
     }
 
     // MARK: - Hero card geometry
@@ -626,6 +636,7 @@ private struct DetailsInspector: View {
         case .tweet:     return "X"
         case .instagram: return "IG"
         case .youtube:   return "YT"
+        case .webclip:   return "WEB"
         case .text:      return "TEXT"
         case .stickyNote: return "NOTE"
         case .drawing:   return "DRAW"
@@ -680,6 +691,7 @@ struct CardContentView: View {
         case .tweet(let url):       TweetCardView(url: url, isLive: isLive)
         case .instagram(let url):   InstagramCardView(url: url, isLive: isLive)
         case .youtube(let url):     YouTubeNodeView(url: url, isLive: isLive)
+        case .webclip(let url):     WebClipCardView(url: url, isLive: isLive, nodeID: node.id)
         case .image(let data, let filename):
             ImageNodeView(data: data, filename: filename, isLive: isLive)
         case .video(let fileURL, let filename):

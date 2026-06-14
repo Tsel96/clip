@@ -342,7 +342,19 @@ final class CanvasState: ObservableObject {
         pages[idx].name = trimmed
     }
 
-    func deletePage(_ id: UUID) {
+    /// Page whose deletion is awaiting user confirmation (sidebar shows a
+    /// confirmation dialog while non-nil). Deleting a page destroys every
+    /// card on it, so it must never be a single silent click.
+    @Published var pageAwaitingDeletion: Page? = nil
+
+    /// One-shot backup of the most recently deleted page so ⌘Z can bring
+    /// it back. Cleared as soon as any other undoable mutation lands —
+    /// page restoration is only offered while it is the latest action.
+    private var deletedPageBackup: (page: Page, index: Int)? = nil
+
+    /// First step of page deletion: validate, then ask. The actual removal
+    /// happens in `confirmDeletePage()` once the user confirms.
+    func requestDeletePage(_ id: UUID) {
         guard pages.count > 1 else {
             alert = AlertContent(
                 title: "Can't delete the last page",
@@ -350,14 +362,36 @@ final class CanvasState: ObservableObject {
             )
             return
         }
-        guard let idx = pages.firstIndex(where: { $0.id == id }) else { return }
-        let wasActive = (id == activePageID)
+        guard let page = pages.first(where: { $0.id == id }) else { return }
+        pageAwaitingDeletion = page
+    }
+
+    /// Second step: actually remove the page, keeping a backup so the
+    /// deletion is undoable (⌘Z restores the page and its cards).
+    func confirmDeletePage() {
+        guard let page = pageAwaitingDeletion else { return }
+        pageAwaitingDeletion = nil
+        guard pages.count > 1,
+              let idx = pages.firstIndex(where: { $0.id == page.id }) else { return }
+        deletedPageBackup = (pages[idx], idx)
+        let wasActive = (page.id == activePageID)
         pages.remove(at: idx)
         if wasActive {
             // Prefer the page that was previously above it; fall back to first.
             let newIdx = max(0, idx - 1)
             switchTo(pageID: pages[newIdx].id)
         }
+        showToast("Deleted “\(page.name)” — ⌘Z to undo", systemImage: "trash")
+    }
+
+    /// Restore the most recently deleted page. Returns false when there is
+    /// nothing to restore (the caller falls through to normal page undo).
+    private func restoreDeletedPageIfPending() -> Bool {
+        guard let backup = deletedPageBackup else { return false }
+        deletedPageBackup = nil
+        pages.insert(backup.page, at: min(backup.index, pages.count))
+        switchTo(pageID: backup.page.id)
+        return true
     }
 
     /// Switch the active page. Clears selection because the previously
@@ -394,7 +428,9 @@ final class CanvasState: ObservableObject {
     /// One stack per page so switching pages preserves history.
     @Published private(set) var undoStacks: [UUID: UndoStack] = [:]
 
-    var canUndo: Bool { undoStacks[activePageID]?.canUndo ?? false }
+    var canUndo: Bool {
+        deletedPageBackup != nil || (undoStacks[activePageID]?.canUndo ?? false)
+    }
     var canRedo: Bool { undoStacks[activePageID]?.canRedo ?? false }
 
     private var currentSnapshot: PageSnapshot {
@@ -417,6 +453,7 @@ final class CanvasState: ObservableObject {
         let after = currentSnapshot
         undoDepth -= 1
         guard before != after else { return }
+        deletedPageBackup = nil
         undoStacks[activePageID, default: UndoStack()].push(before)
     }
 
@@ -430,10 +467,13 @@ final class CanvasState: ObservableObject {
     func commitUndoable(from before: PageSnapshot) {
         let after = currentSnapshot
         guard before != after else { return }
+        deletedPageBackup = nil
         undoStacks[activePageID, default: UndoStack()].push(before)
     }
 
     func undo() {
+        // A just-deleted page is the most recent action — restore it first.
+        if restoreDeletedPageIfPending() { return }
         var stack = undoStacks[activePageID] ?? UndoStack()
         guard let restored = stack.popUndo(current: currentSnapshot) else { return }
         applySnapshot(restored)
@@ -607,9 +647,24 @@ final class CanvasState: ObservableObject {
     /// Cached rendered heights, keyed by node id, reported by the node views.
     /// Used so connectors can hit the correct edge of an auto-sized card.
     @Published var measuredHeights: [UUID: CGFloat] = [:]
+    /// Staging for height-probe reports. `reportMeasuredHeight` is called
+    /// from inside a SwiftUI layout pass (a GeometryReader background);
+    /// writing the @Published `measuredHeights` there *synchronously* can
+    /// re-enter layout and, on macOS 26/27, trip AppKit's recursion trap
+    /// (EXC_BREAKPOINT in `_layoutSubtreeWithOldSize` — seen when exiting
+    /// Archive/Colorform, where many auto-height cards re-measure at once
+    /// during the transition). Reports are buffered and flushed once on the
+    /// next main-actor turn, outside the current layout pass.
+    private var pendingHeights: [UUID: CGFloat] = [:]
+    private var heightFlushScheduled = false
 
     @Published var isAddSheetPresented = false
     @Published var isSearchPresented = false
+
+    /// Which sidebar tab is showing: the page list or the flat Outline of
+    /// every card across pages.
+    enum SidebarTab: Hashable { case pages, outline }
+    @Published var sidebarTab: SidebarTab = .pages
     @Published var alert: AlertContent? = nil
 
     // Figma-equivalent range: ~2% to 1600%. Lets you frame a large board
@@ -628,8 +683,10 @@ final class CanvasState: ObservableObject {
     func addTweet(url: String, at worldPoint: CGPoint? = nil,
                   origin: CanvasNode.Origin = .local) {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard TweetService.isLikelyTweetURL(trimmed),
-              TweetService.extractTweetID(from: trimmed) != nil else {
+        // The regex is the validator — it tolerates tracking params,
+        // /statuses/ paths, and other human-real URL shapes that the
+        // cruder substring check would reject.
+        guard TweetService.extractTweetID(from: trimmed) != nil else {
             alert = AlertContent(
                 title: "Not an X / Twitter URL",
                 message: "Paste a link that points at a single tweet, e.g. https://x.com/user/status/123…"
@@ -669,17 +726,49 @@ final class CanvasState: ObservableObject {
     func addPostFromURL(_ url: String, at worldPoint: CGPoint? = nil,
                         origin: CanvasNode.Origin = .local) {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        if TweetService.isLikelyTweetURL(trimmed) {
+        // Route by what the real parsers can extract, not by substring
+        // sniffing — the machine sweats so a /statuses/ path or a link
+        // full of tracking params still lands as a card.
+        if TweetService.extractTweetID(from: trimmed) != nil
+            || TweetService.isLikelyTweetURL(trimmed) {
             addTweet(url: trimmed, at: worldPoint, origin: origin)
-        } else if InstagramService.isLikelyInstagramURL(trimmed) {
+        } else if InstagramService.parse(trimmed) != nil
+            || InstagramService.isLikelyInstagramURL(trimmed) {
             addInstagram(url: trimmed, at: worldPoint, origin: origin)
-        } else if YouTubeService.isLikelyYouTubeURL(trimmed) {
+        } else if YouTubeService.videoID(from: trimmed) != nil
+            || YouTubeService.isLikelyYouTubeURL(trimmed) {
             addYouTube(url: trimmed, at: worldPoint, origin: origin)
         } else {
+            // Any other http(s) link becomes a rendered web-clip card
+            // instead of a dead-end alert.
+            addWebClip(url: trimmed, at: worldPoint, origin: origin)
+        }
+    }
+
+    /// Add a web-clip card for an arbitrary http(s) URL. Non-web strings
+    /// (no scheme) get a gentle alert rather than a broken card.
+    func addWebClip(url: String, at worldPoint: CGPoint? = nil,
+                    origin: CanvasNode.Origin = .local) {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let u = URL(string: trimmed),
+              let scheme = u.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
             alert = AlertContent(
-                title: "Unsupported URL",
-                message: "Paste a link from x.com, twitter.com, instagram.com, or youtube.com."
+                title: "Not a link",
+                message: "Paste a web address (starting with http:// or https://), an X / Instagram / YouTube post, or drop a file."
             )
+            return
+        }
+        let cardWidth: CGFloat = 480, cardHeight: CGFloat = 320
+        let centre = worldPoint ?? screenToWorld(point: viewportCentre)
+        let jitter: CGFloat = worldPoint == nil ? CGFloat.random(in: -40...40) : 0
+        let position = CGPoint(x: centre.x - cardWidth / 2 + jitter,
+                               y: centre.y - cardHeight / 2 + jitter)
+        withUndoable {
+            var node = CanvasNode.webclip(url: trimmed, position: position,
+                                          width: cardWidth, height: cardHeight)
+            node.origin = origin
+            nodes.append(node)
         }
     }
 
@@ -949,6 +1038,11 @@ final class CanvasState: ObservableObject {
             made = CanvasNode(position: .zero, width: cardWidth,
                               height: YouTubeService.defaultCardHeight(forWidth: cardWidth),
                               kind: .youtube(url: trimmed))
+        } else if let u = URL(string: trimmed),
+                  let scheme = u.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" {
+            // Any other shared link lands as a web-clip card.
+            made = CanvasNode.webclip(url: trimmed, position: .zero, width: cardWidth, height: 320)
         }
         guard var node = made else { return }
         node.origin = .phone
@@ -1160,13 +1254,25 @@ final class CanvasState: ObservableObject {
             .map(\.id)
     }
 
+    /// Bumped on every open so the hero view re-drives its grow animation
+    /// even when the layer never unmounted — reopening during the closing
+    /// shrink used to leave the hero with stale progress/landed state
+    /// (and on macOS 27 the re-entrant hero could trip AppKit's
+    /// layout-recursion trap).
+    @Published private(set) var lightboxGeneration = 0
+
     func openLightbox(_ id: UUID) {
         guard let node = nodeByID[id] else { return }
+        // The hero grows out of the card's measured on-screen rect — stop
+        // any camera coast/glide so the measurement (and the later shrink
+        // target) stays truthful while the hero animates.
+        cancelPanInertia()
         // Measure the card's on-screen rect now; the hero grows out of it.
-        // The grow itself is animated by the view (progress 0→1) on appear.
+        // The grow itself is animated by the view (progress 0→1).
         lightboxSourceRect = screenRect(of: node)
         lightboxClosing = false
         lightboxCardID = id
+        lightboxGeneration &+= 1
     }
 
     /// Begin the close. The card stays mounted (and the on-canvas original
@@ -1214,13 +1320,18 @@ final class CanvasState: ObservableObject {
     // MARK: - Video trim (non-destructive)
 
     /// Set the loop range (seconds) for a video card; the player loops only
-    /// `[start, end]`. Autosaves via `$pages`.
+    /// `[start, end]`. Autosaves via `$pages`. Undoable — ⌘Z restores the
+    /// previous range like every other card mutation.
     func setTrim(_ id: UUID, start: Double, end: Double) {
-        updateNode(id) { $0.trimStart = start; $0.trimEnd = end }
+        withUndoable {
+            updateNode(id) { $0.trimStart = start; $0.trimEnd = end }
+        }
     }
-    /// Clear the trim — the card loops the full clip again.
+    /// Clear the trim — the card loops the full clip again. Undoable.
     func clearTrim(_ id: UUID) {
-        updateNode(id) { $0.trimStart = nil; $0.trimEnd = nil }
+        withUndoable {
+            updateNode(id) { $0.trimStart = nil; $0.trimEnd = nil }
+        }
     }
 
     private func updateNode(_ id: UUID, _ mutate: (inout CanvasNode) -> Void) {
@@ -1272,6 +1383,7 @@ final class CanvasState: ObservableObject {
         case .tweet:      derived += ["tweet", "x"]
         case .instagram:  derived.append("instagram")
         case .youtube:    derived += ["youtube", "video"]
+        case .webclip:    derived += ["web", "link"]
         case .text:       derived.append("text")
         case .stickyNote: derived.append("note")
         case .drawing:    derived.append("drawing")
@@ -1465,6 +1577,7 @@ final class CanvasState: ObservableObject {
             return n
         }
         guard candidates.count >= 2 else { return nil }
+        showToast("Grouped \(candidates.count) cards", systemImage: "square.stack.3d.up")
         let newGroupID = UUID()
         let head = candidates.min { $0.id.uuidString < $1.id.uuidString }!
         let headPos = head.position
@@ -1533,6 +1646,10 @@ final class CanvasState: ObservableObject {
             if let g = nodeByID[id]?.groupID { groups.insert(g) }
         }
         guard !groups.isEmpty else { return }
+        showToast(
+            groups.count == 1 ? "Ungrouped stack" : "Ungrouped \(groups.count) stacks",
+            systemImage: "square.stack.3d.down.right"
+        )
 
         let before = snapshotForUndo()
         var released = Set<UUID>()
@@ -1724,8 +1841,9 @@ final class CanvasState: ObservableObject {
         let members = stackMembers(of: headID)
         guard members.count >= 2 else { return }
 
-        // Camera snapshot — restored on exit so pan / zoom survive
-        // the round-trip through focus mode.
+        // Focus choreographs the camera — stop any coast/glide first,
+        // and snapshot the *resting* camera for the exit restore.
+        cancelPanInertia()
         focusOriginCamera = cameraStore.camera
 
         // Compute the grid layout in viewport coords. The viewport's
@@ -1758,6 +1876,7 @@ final class CanvasState: ObservableObject {
     /// restores its pre-focus state, and the overlay chrome dismisses.
     func exitStackFocus() {
         guard focusedStackID != nil else { return }
+        cancelPanInertia()   // the restore owns the camera from here
         let restoreCamera = focusOriginCamera ?? cameraStore.camera
         // Animate the dismissal — same spring as entry for symmetry.
         withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
@@ -1862,6 +1981,29 @@ final class CanvasState: ObservableObject {
     func select(_ id: UUID?) {
         selectedNodeIDs = id.map { [$0] } ?? []
         selectedConnectorIDs = []
+    }
+
+    /// Reveal a node from anywhere (⌘K search, Outline list): switch to its
+    /// page if needed, then centre + select it. When a page switch happens
+    /// the center/select runs on the next main-actor turn, after `switchTo`
+    /// has rebuilt `nodeByID` and cleared the old selection.
+    func jumpToNode(_ nodeID: UUID, onPage pageID: UUID) {
+        if pageID != activePageID {
+            if canvasMode != .canvas { setMode(.canvas) }
+            switchTo(pageID: pageID)
+            Task { @MainActor in self.frameAndSelect(nodeID) }
+        } else {
+            if canvasMode != .canvas { setMode(.canvas) }
+            frameAndSelect(nodeID)
+        }
+    }
+
+    private func frameAndSelect(_ nodeID: UUID) {
+        guard let n = nodeByID[nodeID] else { return }
+        let centre = CGPoint(x: n.position.x + n.width / 2,
+                             y: n.position.y + renderedHeight(of: n) / 2)
+        centerCamera(on: centre)
+        select(nodeID)
     }
 
     /// Replace selection with the given set of node ids.
@@ -1988,6 +2130,7 @@ final class CanvasState: ObservableObject {
         // `groupID` and stay invisible forever.
         allIDs.formUnion(expandedDragSet(from: allIDs))
 
+        let removedCount = nodes.lazy.filter { allIDs.contains($0.id) }.count
         withUndoable {
             nodes.removeAll { allIDs.contains($0.id) }
             connectors.removeAll { c in
@@ -2003,6 +2146,17 @@ final class CanvasState: ObservableObject {
             if pendingFocusNodeID == cid { pendingFocusNodeID = nil }
         }
         selectedConnectorIDs.subtract(extraConnectorIDs)
+
+        // Deletion leaves no visible trace where the cards were — confirm
+        // it happened (and remind that it's reversible).
+        if removedCount > 0 {
+            showToast(
+                removedCount == 1
+                    ? "Deleted 1 card — ⌘Z to undo"
+                    : "Deleted \(removedCount) cards — ⌘Z to undo",
+                systemImage: "trash"
+            )
+        }
     }
 
     // Kept for backward-compat with menu wiring.
@@ -2078,6 +2232,7 @@ final class CanvasState: ObservableObject {
         case .image:      return 360
         case .video:      return 270
         case .youtube:    return 203
+        case .webclip:    return 320
         case .section:    return 200
         case .stickyNote: return 200
         }
@@ -2085,9 +2240,28 @@ final class CanvasState: ObservableObject {
 
     func reportMeasuredHeight(_ height: CGFloat, for id: UUID) {
         guard height > 0 else { return }
-        if abs((measuredHeights[id] ?? -1) - height) > 0.5 {
-            measuredHeights[id] = height
+        // Skip sub-pixel jitter up front so a stable layout never schedules
+        // a flush at all.
+        guard abs((measuredHeights[id] ?? -1) - height) > 0.5 else { return }
+        pendingHeights[id] = height
+        guard !heightFlushScheduled else { return }
+        heightFlushScheduled = true
+        // Defer the @Published write off the current layout pass.
+        Task { @MainActor in self.flushMeasuredHeights() }
+    }
+
+    /// Apply buffered height reports in one batch (one `objectWillChange`),
+    /// on a fresh main-actor turn so it can't recurse into the layout pass
+    /// that produced them.
+    private func flushMeasuredHeights() {
+        heightFlushScheduled = false
+        guard !pendingHeights.isEmpty else { return }
+        for (id, h) in pendingHeights {
+            if abs((measuredHeights[id] ?? -1) - h) > 0.5 {
+                measuredHeights[id] = h
+            }
         }
+        pendingHeights.removeAll(keepingCapacity: true)
     }
 
     // MARK: - Mode dispatch
@@ -2097,6 +2271,9 @@ final class CanvasState: ObservableObject {
     /// + async dispatch for modes that need it.
     func setMode(_ mode: CanvasMode) {
         guard mode != canvasMode else { return }
+        // Mode transitions choreograph the camera themselves — coasting
+        // or gliding must hand it over first.
+        cancelPanInertia()
         // Exit whatever's active first so its transient state clears
         // before the next entry routine begins publishing.
         switch canvasMode {
@@ -2449,24 +2626,105 @@ final class CanvasState: ObservableObject {
 
     // MARK: - Camera
 
-    func zoomIn()    { zoom(by: 1.25, around: viewportCentre) }
-    func zoomOut()   { zoom(by: 1 / 1.25, around: viewportCentre) }
-    func resetView() { camera = Camera() }
+    func zoomIn()    { glideCamera(to: cameraZooming(by: 1.25, around: viewportCentre)) }
+    func zoomOut()   { glideCamera(to: cameraZooming(by: 1 / 1.25, around: viewportCentre)) }
+    func resetView() { glideCamera(to: Camera()) }
 
-    func zoom(by factor: CGFloat, around screenPoint: CGPoint) {
+    /// Pure target computation for a zoom step about a screen anchor —
+    /// shared by the instant (pinch) and gliding (buttons/⌘±) paths.
+    private func cameraZooming(by factor: CGFloat, around screenPoint: CGPoint) -> Camera {
         let oldZoom = camera.zoom
         let newZoom = max(Self.minZoom, min(Self.maxZoom, oldZoom * factor))
-        guard newZoom != oldZoom else { return }
+        guard newZoom != oldZoom else { return camera }
         let worldX = (screenPoint.x - camera.x) / oldZoom
         let worldY = (screenPoint.y - camera.y) / oldZoom
-        camera.zoom = newZoom
-        camera.x = screenPoint.x - worldX * newZoom
-        camera.y = screenPoint.y - worldY * newZoom
+        return Camera(
+            x: screenPoint.x - worldX * newZoom,
+            y: screenPoint.y - worldY * newZoom,
+            zoom: newZoom
+        )
+    }
+
+    func zoom(by factor: CGFloat, around screenPoint: CGPoint) {
+        // Direct gesture — it owns the camera now; kill any glide.
+        cancelCameraGlide()
+        camera = cameraZooming(by: factor, around: screenPoint)
     }
 
     func pan(deltaX: CGFloat, deltaY: CGFloat) {
         camera.x += deltaX
         camera.y += deltaY
+    }
+
+    // MARK: - Camera glide (continuous navigation)
+    //
+    // Discrete navigation moves (zoom buttons, ⌘0/fit, minimap jumps)
+    // animate the camera VALUE with a spring driver instead of snapping —
+    // so every observer (node layer, dot grid, minimap, zoom dial) moves
+    // in lockstep. Retargeting mid-flight keeps the current velocity
+    // (pressing ⌘+ repeatedly chains into one continuous accelerating
+    // move), and any direct gesture cancels the glide and takes over —
+    // motion never blocks input.
+
+    private var cameraGlideTimer: Timer?
+    private var glideTarget: Camera?
+    private var glideVelocity: (x: CGFloat, y: CGFloat, zoom: CGFloat) = (0, 0, 0)
+
+    func glideCamera(to target: Camera) {
+        // Honour Reduce Motion: jump, exactly like the pre-glide behavior.
+        guard !lightboxReduceMotion else {
+            cancelPanInertia()
+            camera = target
+            return
+        }
+        cancelInertiaOnly()
+        glideTarget = target
+        guard cameraGlideTimer == nil else { return }   // retarget mid-flight
+
+        // Critically-damped-ish spring, integrated semi-implicitly at 60 Hz.
+        let omega = 2 * CGFloat.pi / Motion.glideResponse
+        let k = omega * omega
+        let c = 2 * Motion.glideDampingRatio * omega
+        let dt: CGFloat = 1.0 / 60.0
+
+        cameraGlideTimer = Timer.scheduledTimer(
+            withTimeInterval: 1.0 / 60.0, repeats: true
+        ) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            Task { @MainActor in
+                guard let target = self.glideTarget else {
+                    self.cancelCameraGlide(); return
+                }
+                var cam = self.camera
+                self.glideVelocity.x    += (k * (target.x - cam.x)       - c * self.glideVelocity.x)    * dt
+                self.glideVelocity.y    += (k * (target.y - cam.y)       - c * self.glideVelocity.y)    * dt
+                self.glideVelocity.zoom += (k * (target.zoom - cam.zoom) - c * self.glideVelocity.zoom) * dt
+                cam.x    += self.glideVelocity.x * dt
+                cam.y    += self.glideVelocity.y * dt
+                cam.zoom += self.glideVelocity.zoom * dt
+
+                let settled =
+                    abs(target.x - cam.x) < 0.3 &&
+                    abs(target.y - cam.y) < 0.3 &&
+                    abs(target.zoom - cam.zoom) < 0.0005 &&
+                    abs(self.glideVelocity.x) < 6 &&
+                    abs(self.glideVelocity.y) < 6 &&
+                    abs(self.glideVelocity.zoom) < 0.01
+                if settled {
+                    self.camera = target
+                    self.cancelCameraGlide()
+                } else {
+                    self.camera = cam
+                }
+            }
+        }
+    }
+
+    func cancelCameraGlide() {
+        cameraGlideTimer?.invalidate()
+        cameraGlideTimer = nil
+        glideTarget = nil
+        glideVelocity = (0, 0, 0)
     }
 
     // MARK: - Pan-with-inertia (trackpad / mouse-wheel scroll)
@@ -2504,10 +2762,18 @@ final class CanvasState: ObservableObject {
         }
     }
 
-    /// Cancel any in-flight inertia + idle detection. Called whenever
-    /// a new pan tick arrives or the user starts a different gesture
-    /// (zoom, drag, mode switch).
+    /// Cancel ALL autonomous camera motion — inertia coasting and any
+    /// navigation glide. Called whenever a new pan tick arrives or the
+    /// user starts a different gesture (zoom, drag, mode switch): direct
+    /// input always seizes the camera mid-flight.
     func cancelPanInertia() {
+        cancelInertiaOnly()
+        cancelCameraGlide()
+    }
+
+    /// Inertia/idle teardown without touching a glide — used by
+    /// `glideCamera` itself, which replaces coasting but IS the glide.
+    private func cancelInertiaOnly() {
         panIdleTimer?.invalidate()
         panIdleTimer = nil
         panInertiaTimer?.invalidate()
@@ -2589,35 +2855,39 @@ final class CanvasState: ObservableObject {
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    /// Centre the camera on the given world rect with `padding` extra
-    /// breathing room on each side. Capped to zoom 1.5× max so a single
-    /// small card doesn't get magnified into a blur.
+    /// Glide the camera to frame the given world rect with `padding`
+    /// extra breathing room on each side. Capped to zoom 1.5× max so a
+    /// single small card doesn't get magnified into a blur.
     func frameRect(_ rect: CGRect, padding: CGFloat) {
         let worldW = max(1, rect.width + padding * 2)
         let worldH = max(1, rect.height + padding * 2)
         let raw = min(viewportSize.width / worldW, viewportSize.height / worldH)
         let z = max(Self.minZoom, min(Self.maxZoom, min(raw, 1.5)))
-        let centerX = rect.midX
-        let centerY = rect.midY
-        camera = Camera(
-            x: viewportSize.width / 2 - centerX * z,
-            y: viewportSize.height / 2 - centerY * z,
+        glideCamera(to: Camera(
+            x: viewportSize.width / 2 - rect.midX * z,
+            y: viewportSize.height / 2 - rect.midY * z,
             zoom: z
-        )
+        ))
     }
 
-    /// Jump the camera to an exact zoom value, recentred on the viewport
+    /// Glide the camera to an exact zoom value, recentred on the viewport
     /// centre so the user's eye doesn't lose its place.
     func setZoom(_ z: CGFloat) {
         let target = max(Self.minZoom, min(Self.maxZoom, z))
         guard camera.zoom > 0 else { camera.zoom = target; return }
-        zoom(by: target / camera.zoom, around: viewportCentre)
+        glideCamera(to: cameraZooming(by: target / camera.zoom, around: viewportCentre))
     }
 
-    /// Centre the camera on the given world point at the current zoom.
+    /// Glide the camera so the given world point sits at the viewport
+    /// centre (current zoom). Click-drag in the minimap retargets this
+    /// every tick — the glide's preserved velocity turns that into a
+    /// smooth pursuit of the cursor.
     func centerCamera(on worldPoint: CGPoint) {
-        camera.x = viewportSize.width / 2 - worldPoint.x * camera.zoom
-        camera.y = viewportSize.height / 2 - worldPoint.y * camera.zoom
+        glideCamera(to: Camera(
+            x: viewportSize.width / 2 - worldPoint.x * camera.zoom,
+            y: viewportSize.height / 2 - worldPoint.y * camera.zoom,
+            zoom: camera.zoom
+        ))
     }
 
     // MARK: - Coordinate helpers

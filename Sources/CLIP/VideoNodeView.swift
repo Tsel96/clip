@@ -66,9 +66,12 @@ struct VideoNodeView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
 
-                // Hover-revealed mute / play controls. Only mounted while
-                // the card is live — the user has no reason (or way) to
-                // interact with a paused-and-unmounted card.
+                // Mute / play / trim controls. Always faintly visible so
+                // they're discoverable without cursor-sweeping (hiding
+                // controls behind hover breaks spatial memory); hover or
+                // selection brings them to full strength. Only mounted
+                // while the card is live — the user has no reason (or
+                // way) to interact with a paused-and-unmounted card.
                 VStack {
                     Spacer()
                     HStack {
@@ -103,7 +106,7 @@ struct VideoNodeView: View {
                         .padding(8)
                     }
                 }
-                .opacity((hovering || isSelected) ? 1 : 0)
+                .opacity((hovering || isSelected) ? 1 : 0.45)
                 .animation(.easeOut(duration: 0.12), value: hovering)
                 .animation(.easeOut(duration: 0.12), value: isSelected)
             } else {

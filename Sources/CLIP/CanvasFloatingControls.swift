@@ -38,7 +38,8 @@ struct ZoomControlsPill: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 12, weight: .medium))
-                .frame(width: 26, height: 26)
+                // 30pt target — comfortably above the ~24pt Fitts floor.
+                .frame(width: 30, height: 30)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.hover)
@@ -70,7 +71,9 @@ private struct ZoomPercentMenu: View {
         } label: {
             HStack(spacing: 3) {
                 Text("\(Int(cameraStore.camera.zoom * 100)) %")
-                    .font(.clip(11.5))
+                    // Monospaced digits — the live readout must not change
+                    // width (and shift the pill) as the zoom level changes.
+                    .font(.clip(11.5).monospacedDigit())
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -117,7 +120,11 @@ struct CanvasTogglesPill: View {
     var body: some View {
         HStack(spacing: 0) {
             toggleButton(
-                systemName: "point.topleft.down.curvedto.point.bottomright.up",
+                // Connected-points glyph (filled when on) — reads as
+                // "connections" far better than a bare bezier curve.
+                systemName: state.showConnectors
+                    ? "point.3.filled.connected.trianglepath.dotted"
+                    : "point.3.connected.trianglepath.dotted",
                 isOn: state.showConnectors,
                 onToggle: { state.showConnectors.toggle() },
                 helpOn: "Hide connectors",
@@ -145,7 +152,9 @@ struct CanvasTogglesPill: View {
                 .padding(.horizontal, 2)
 
             toggleButton(
-                systemName: state.videosShowPreviewOnly ? "pause.rectangle.fill" : "play.rectangle",
+                // Slashed-play = playback disabled (previews only). The
+                // old pause glyph read backwards.
+                systemName: state.videosShowPreviewOnly ? "play.slash.fill" : "play.fill",
                 isOn: state.videosShowPreviewOnly,
                 onToggle: { state.videosShowPreviewOnly.toggle() },
                 helpOn: "Resume video playback",
@@ -177,10 +186,50 @@ struct CanvasTogglesPill: View {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(isOn ? Color.primary : Color.secondary)
-                .frame(width: 28, height: 26)
+                // 32×30 target — comfortably above the ~24pt Fitts floor.
+                .frame(width: 32, height: 30)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.hover)
         .help(isOn ? helpOn : helpOff)
+    }
+}
+
+// MARK: - Active tool chip (top-center)
+
+/// Acute mode visibility: while a non-Select tool is active, this chip
+/// floats at the top of the canvas so it's always clear WHY clicks now
+/// draw / place text / connect instead of selecting. Click it (or press
+/// V) to return to Select.
+struct ActiveToolChip: View {
+    @EnvironmentObject var state: CanvasState
+
+    var body: some View {
+        Button {
+            state.toolMode = .select
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: state.toolMode.systemImage)
+                    .font(.system(size: 12, weight: .medium))
+                Text("\(state.toolMode.label) tool")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("·  press V to select")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .background(.regularMaterial, in: Capsule(style: .continuous))
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
+        .help("Click to switch back to the Select tool (V)")
+        .accessibilityLabel("Active tool: \(state.toolMode.label). Click to return to Select.")
+        .accessibilityIdentifier("canvas.activeToolChip")
     }
 }

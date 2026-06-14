@@ -17,20 +17,34 @@ struct PagesSidebar: View {
                 .padding(.top, 10)
                 .padding(.bottom, 8)
 
-            List(selection: Binding<UUID?>(
-                get: { state.activePageID },
-                set: { newID in
-                    if let id = newID { state.switchTo(pageID: id) }
-                }
-            )) {
-                Section("Pages") {
-                    ForEach(state.pages) { page in
-                        row(for: page)
-                            .tag(page.id)
+            // Pages vs. Outline (flat list of every card across pages).
+            Picker("", selection: $state.sidebarTab) {
+                Text("Pages").tag(CanvasState.SidebarTab.pages)
+                Text("Outline").tag(CanvasState.SidebarTab.outline)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 10)
+            .padding(.bottom, 8)
+
+            if state.sidebarTab == .pages {
+                List(selection: Binding<UUID?>(
+                    get: { state.activePageID },
+                    set: { newID in
+                        if let id = newID { state.switchTo(pageID: id) }
+                    }
+                )) {
+                    Section("Pages") {
+                        ForEach(state.pages) { page in
+                            row(for: page)
+                                .tag(page.id)
+                        }
                     }
                 }
+                .listStyle(.sidebar)
+            } else {
+                OutlinePanel()
             }
-            .listStyle(.sidebar)
 
             Divider()
 
@@ -55,6 +69,21 @@ struct PagesSidebar: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
+        }
+        // Deleting a page destroys every card on it — confirm before the
+        // (undoable) removal in `confirmDeletePage()`.
+        .confirmationDialog(
+            "Delete “\(state.pageAwaitingDeletion?.name ?? "")”?",
+            isPresented: Binding(
+                get: { state.pageAwaitingDeletion != nil },
+                set: { if !$0 { state.pageAwaitingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Page", role: .destructive) { state.confirmDeletePage() }
+            Button("Cancel", role: .cancel) { state.pageAwaitingDeletion = nil }
+        } message: {
+            Text("All cards on this page will be deleted. You can undo with ⌘Z.")
         }
     }
 
@@ -107,7 +136,7 @@ struct PagesSidebar: View {
             if state.pages.count > 1 {
                 Divider()
                 Button("Delete", role: .destructive) {
-                    state.deletePage(page.id)
+                    state.requestDeletePage(page.id)
                 }
             }
         }

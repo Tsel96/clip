@@ -419,6 +419,11 @@ struct DraggableNode: View {
             // autoplay; not-live = static thumbnail poster, web view torn down.
             YouTubeNodeView(url: url, isLive: state.isLive(node))
 
+        case .webclip(let url):
+            // Arbitrary website. Same semantic-zoom lifecycle as Instagram:
+            // live = WKWebView; not-live = cached snapshot, web view torn down.
+            WebClipCardView(url: url, isLive: state.isLive(node), nodeID: node.id)
+
         case .text(let content, let fontSize):
             TextNodeView(
                 nodeID: node.id,

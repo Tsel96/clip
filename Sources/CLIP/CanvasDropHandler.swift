@@ -22,32 +22,55 @@ enum CanvasDrop {
     /// Called from `.onDrop(of:isTargeted:)` with the cursor position
     /// already converted to world coordinates. Returns `true` if at least
     /// one provider was claimed.
+    ///
+    /// NOTE: `canLoadObject(ofClass: URL.self)` returns false for Finder
+    /// file drags on macOS (an AppKit/SwiftUI gap — it works on iOS), so
+    /// file URLs are loaded via `loadItem(forTypeIdentifier:)` and
+    /// reconstructed from their data representation.
     @MainActor
     static func handle(providers: [NSItemProvider],
                        at world: CGPoint,
                        state: CanvasState) -> Bool {
+        var claimed = false
 
-        // Prefer the file-URL representation when present (Finder drops, image
-        // and video files dragged from anywhere on disk).
-        let fileProviders = providers.filter { $0.canLoadObject(ofClass: URL.self) }
-        if !fileProviders.isEmpty {
-            for provider in fileProviders {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url else { return }
+        for provider in providers {
+            // 1. File URLs (Finder, Desktop, Photos exports…).
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                claimed = true
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier,
+                                  options: nil) { item, _ in
+                    guard let url = Self.url(from: item) else { return }
+                    Task { @MainActor in handleURL(url, at: world, state: state) }
+                }
+                continue
+            }
+            // 2. Web URLs (Safari address bar, links dragged off pages).
+            if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+                claimed = true
+                provider.loadItem(forTypeIdentifier: UTType.url.identifier,
+                                  options: nil) { item, _ in
+                    guard let url = Self.url(from: item) else { return }
+                    Task { @MainActor in handleURL(url, at: world, state: state) }
+                }
+                continue
+            }
+            // 3. Raw image data (drags from browsers/apps that hand over
+            //    bitmap data without any backing file).
+            if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                claimed = true
+                provider.loadDataRepresentation(
+                    forTypeIdentifier: UTType.image.identifier
+                ) { data, _ in
+                    guard let data else { return }
                     Task { @MainActor in
-                        handleURL(url, at: world, state: state)
+                        state.addImage(data: data, filename: "Dropped image", at: world)
                     }
                 }
+                continue
             }
-            return true
-        }
-
-        // Plain text (URL serialised as a string from address bars, Notes, …).
-        let textProviders = providers.filter {
-            $0.canLoadObject(ofClass: NSString.self)
-        }
-        if !textProviders.isEmpty {
-            for provider in textProviders {
+            // 4. Plain text (URL serialised as a string from Notes, etc.).
+            if provider.canLoadObject(ofClass: NSString.self) {
+                claimed = true
                 _ = provider.loadObject(ofClass: NSString.self) { obj, _ in
                     guard let s = obj as? String else { return }
                     Task { @MainActor in
@@ -55,10 +78,19 @@ enum CanvasDrop {
                     }
                 }
             }
-            return true
         }
+        return claimed
+    }
 
-        return false
+    /// `loadItem` hands back different shapes depending on the source app:
+    /// a URL, its data representation, or a string. Accept all three.
+    private static func url(from item: NSSecureCoding?) -> URL? {
+        if let url = item as? URL { return url }
+        if let data = item as? Data {
+            return URL(dataRepresentation: data, relativeTo: nil)
+        }
+        if let s = item as? String { return URL(string: s) }
+        return nil
     }
 
     /// Dispatch a single URL — file or web — to the right `CanvasState` add-method.

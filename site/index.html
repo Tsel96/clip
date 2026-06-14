@@ -4,32 +4,223 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>CLIP — an infinite moodboard for macOS</title>
-<meta name="description" content="CLIP is an infinite-canvas moodboard for macOS. Drop in tweets, videos, images; send links from your phone." />
+<meta name="description" content="CLIP is an infinite-canvas moodboard for macOS. Collect tweets, videos, images and notes on one endless surface. For Apple Silicon." />
 <link rel="icon" href="icon.png" />
 <link rel="stylesheet" href="style.css" />
+<meta property="og:title" content="CLIP — an infinite moodboard for macOS" />
+<meta property="og:description" content="Collect tweets, videos, images and ideas on one endless canvas. For Apple Silicon Macs." />
+<meta property="og:image" content="assets/mark.png" />
 </head>
 <body>
-  <main class="stage">
-    <img class="mark" src="icon.png" alt="CLIP" width="120" height="120" />
-    <h1>CLIP</h1>
-    <p class="tag">An infinite moodboard for macOS — tweets, videos and images on one endless canvas.</p>
 
-    <div class="actions">
-      <a class="btn primary" id="download" href="https://github.com/Tsel96/clip/releases/latest/download/CLIP.dmg" download>
-        Download for macOS
-      </a>
-      <!-- TODO: paste your iCloud Shortcut share link -->
-      <a class="btn ghost" id="shortcut" href="SHORTCUT_URL_HERE">
-        Send links from iPhone
-      </a>
-    </div>
+  <header class="nav">
+    <a class="nav-brand" href="/">
+      <img src="assets/mark.png" alt="" width="28" height="28" />
+      <span>CLIP</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#formats">Formats</a>
+      <a href="manual.html#iphone">iPhone</a>
+      <a href="manual.html">Manual</a>
+      <a href="https://github.com/Tsel96/clip">GitHub</a>
+      <a class="nav-cta" href="install.html">Download</a>
+    </nav>
+  </header>
 
-    <p class="note">
-      macOS 13+ · Apple silicon &amp; Intel. Open the <code>.dmg</code> and drag <b>CLIP</b> into Applications.
-      It's an unsigned build, so the first launch is blocked: double-click CLIP once, then open
-      <b>System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security</b>, scroll down and click <b>Open&nbsp;Anyway</b> → <b>Open</b>.
-      You only do this once — CLIP keeps itself up to date after that.
-    </p>
+  <main>
+    <!-- ===================== HERO ===================== -->
+    <section class="hero">
+      <a class="pill reveal" href="install.html">
+        <span class="pill-dot"></span> Free for Apple Silicon · self-updating <span class="pill-arrow">→</span>
+      </a>
+
+      <div class="t-stagger" id="heroText">
+        <h1 class="hero-title t-stagger-line t-stagger-line--1">
+          Visually collect what you<br>see, think and want to keep.
+        </h1>
+        <p class="hero-metaphor t-stagger-line t-stagger-line--2">Like an infinite pinboard.</p>
+        <p class="hero-sub t-stagger-line t-stagger-line--3">
+          CLIP is an infinite-canvas moodboard for macOS. Drop in tweets, videos,
+          images and notes — and arrange them however your mind works.
+        </p>
+      </div>
+
+      <div class="hero-actions reveal d3">
+        <a class="btn primary" href="install.html">Download for macOS</a>
+        <a class="btn ghost" href="manual.html">See how it works</a>
+      </div>
+      <p class="hero-reqs reveal d3">For Apple&nbsp;Silicon Macs (M1 or later) · macOS&nbsp;13+ · free</p>
+
+      <!-- Product window. Swap assets/hero-shot.png for a real screenshot. -->
+      <div class="window reveal d4">
+        <div class="window-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="window-title">CLIP</span>
+        </div>
+        <div class="window-body">
+          <div class="canvas-scene">
+            <span class="card card-a"></span>
+            <span class="card card-b"></span>
+            <span class="card card-c"></span>
+            <span class="card card-d"></span>
+            <img class="scene-coin sc1 float-a" src="assets/letters/C.svg" alt="" />
+            <img class="scene-coin sc2 float-b" src="assets/letters/L.svg" alt="" />
+            <img class="scene-coin sc3 float-c" src="assets/letters/I.svg" alt="" />
+            <img class="scene-coin sc4 float-a" src="assets/letters/P.svg" alt="" />
+            <img class="scene-blob sb1 float-b" src="assets/badge-2.svg" alt="" />
+            <img class="scene-blob sb2 float-c" src="assets/badge-5.svg" alt="" />
+            <img class="scene-mark float-a" src="assets/mark.png" alt="" />
+            <div class="scene-toolbar"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== ALPHABET MARQUEE ===================== -->
+    <section class="marquee" aria-hidden="true">
+      <div class="marquee-track" id="marqueeTrack"></div>
+    </section>
+
+    <!-- ===================== FEATURES ===================== -->
+    <section id="features" class="features">
+      <p class="eyebrow">One canvas, every kind of thing</p>
+      <h2 class="section-title">Everything in its place,<br>and the place is endless.</h2>
+
+      <div class="feature-row">
+        <div class="feature-copy">
+          <img class="feat-coin" src="assets/letters/C.svg" alt="" width="64" height="64" />
+          <h3>The canvas</h3>
+          <p>One endless surface. Pan, zoom, and place anything anywhere. Drag
+          files straight from Finder or paste a link — it lands exactly where
+          your cursor is.</p>
+        </div>
+        <div class="feature-visual">
+          <div class="mini-canvas">
+            <span class="m-card a"></span><span class="m-card b"></span><span class="m-card c"></span>
+            <img src="assets/badge-1.svg" alt="" class="m-coin float-a" />
+          </div>
+        </div>
+      </div>
+
+      <div class="feature-row reverse">
+        <div class="feature-copy">
+          <img class="feat-coin" src="assets/letters/L.svg" alt="" width="64" height="64" />
+          <h3>Live embeds</h3>
+          <p>Tweets, Instagram and YouTube embed live — videos play right on the
+          canvas. Trim a clip in place without ever leaving the board.</p>
+        </div>
+        <div class="feature-visual">
+          <div class="mini-canvas alt">
+            <span class="m-card wide"></span><span class="m-card tall"></span>
+            <img src="assets/badge-3.svg" alt="" class="m-coin float-b" />
+          </div>
+        </div>
+      </div>
+
+      <div class="feature-row">
+        <div class="feature-copy">
+          <img class="feat-coin" src="assets/letters/I.svg" alt="" width="64" height="64" />
+          <h3>Stacks</h3>
+          <p>Group related cards into a tidy deck with ⌘G. Double-click to fan it
+          open like an album; drag the head to move the whole pile at once.</p>
+        </div>
+        <div class="feature-visual">
+          <div class="mini-canvas">
+            <span class="m-stack s1"></span><span class="m-stack s2"></span><span class="m-stack s3"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="feature-row reverse">
+        <div class="feature-copy">
+          <img class="feat-coin" src="assets/letters/P.svg" alt="" width="64" height="64" />
+          <h3>Colorform &amp; Archive</h3>
+          <p>See your board by colour — CLIP clusters every card into soft clouds
+          of its dominant hue. Or switch to the Archive: everything you've added,
+          newest first, with the exact time you saved it.</p>
+        </div>
+        <div class="feature-visual">
+          <div class="color-clouds">
+            <span class="cloud y"></span><span class="cloud g"></span><span class="cloud w"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== USE CASES ===================== -->
+    <section class="usecases">
+      <h2 class="section-title">What to use it for.</h2>
+      <div class="usecase-grid t-avatar-group" id="usecaseGroup">
+        <article class="usecase t-avatar"><img src="assets/letters/M.svg" alt="" /><h4>Moodboards</h4><p>Pull a look together from posts, photos and frames.</p></article>
+        <article class="usecase t-avatar"><img src="assets/letters/R.svg" alt="" /><h4>Research</h4><p>Keep every source on one surface you can actually see.</p></article>
+        <article class="usecase t-avatar"><img src="assets/letters/B.svg" alt="" /><h4>Second brain</h4><p>Park ideas, scraps and references as they come.</p></article>
+        <article class="usecase t-avatar"><img src="assets/letters/S.svg" alt="" /><h4>Inspiration</h4><p>A living wall of things worth remembering.</p></article>
+      </div>
+    </section>
+
+    <!-- ===================== iPHONE ===================== -->
+    <section id="iphone" class="iphone">
+      <div class="iphone-copy">
+        <p class="eyebrow">iPhone → Mac</p>
+        <h2 class="section-title left">From your phone,<br>onto your canvas.</h2>
+        <p>Share any link from your iPhone — a post, a video, an image — and it
+        lands on your pinned inbox page within seconds. Set it up once.</p>
+        <a class="btn ghost" href="manual.html#iphone">How it works</a>
+      </div>
+      <div class="iphone-coins" aria-hidden="true">
+        <img class="float-a" src="assets/badge-2.svg" alt="" />
+        <img class="float-c" src="assets/badge-4.svg" alt="" />
+        <img class="float-b" src="assets/badge-6.svg" alt="" />
+      </div>
+    </section>
+
+    <!-- ===================== FORMATS ===================== -->
+    <section id="formats" class="formats">
+      <h2 class="section-title">Add almost anything.</h2>
+      <p class="formats-sub">CLIP takes the formats you already use — and the links you already share.</p>
+      <div class="format-grid">
+        <div class="format-col">
+          <h5>Images</h5>
+          <div class="chips"><span>png</span><span>jpg</span><span>heic</span><span>webp</span><span>gif</span><span>tiff</span><span>bmp</span><span>svg</span></div>
+        </div>
+        <div class="format-col">
+          <h5>Video</h5>
+          <div class="chips"><span>mp4</span><span>mov</span><span>m4v</span></div>
+        </div>
+        <div class="format-col">
+          <h5>Links</h5>
+          <div class="chips"><span>X / Twitter</span><span>Instagram</span><span>YouTube</span><span>any url</span></div>
+        </div>
+        <div class="format-col">
+          <h5>Make</h5>
+          <div class="chips"><span>text</span><span>sticky notes</span><span>drawings</span><span>sections</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== CLOSER ===================== -->
+    <section class="closer">
+      <img class="closer-mark float-a" src="assets/mark.png" alt="" width="104" height="104" />
+      <h2 class="section-title">Start your canvas.</h2>
+      <p>Free, for Apple Silicon Macs. Installs in seconds and keeps itself up to date.</p>
+      <a class="btn primary big" href="install.html">Download for macOS</a>
+    </section>
   </main>
+
+  <footer class="foot">
+    <div class="foot-brand"><img src="assets/mark.png" alt="" width="22" height="22" /><span>CLIP</span></div>
+    <nav class="foot-links">
+      <a href="install.html">Download</a>
+      <a href="#features">Features</a>
+      <a href="#formats">Formats</a>
+      <a href="manual.html">Manual</a>
+      <a href="manual.html#iphone">iPhone setup</a>
+      <a href="https://github.com/Tsel96/clip">GitHub</a>
+    </nav>
+    <p class="foot-fine">Apple Silicon · macOS 13+</p>
+  </footer>
+
+  <script src="app.js" defer></script>
 </body>
 </html>
