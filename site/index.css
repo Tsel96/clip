@@ -148,12 +148,34 @@ html, body {
   font: inherit;
   cursor: pointer;
   background: var(--yellow);
-  border: 1px solid var(--green);
+  border: none;
   border-radius: 9999px;
   text-decoration: none;
   -webkit-appearance: none;
   appearance: none;
-  /* hover/press transforms are driven by Motion (gestures) */
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.45),   /* top gloss */
+    0 2px 4px -1px rgba(61,167,38,.70),    /* green glow */
+    0 0 0 1px var(--green);                /* green outline */
+  transition:
+    transform   .13s ease,
+    box-shadow  .13s ease,
+    filter      .13s ease;
+}
+.ui-pill:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.45),
+    0 4px 8px -1px rgba(61,167,38,.60),
+    0 0 0 1px var(--green);
+}
+.ui-pill:active {
+  transform: translateY(1px);
+  filter: brightness(.96);
+  box-shadow:
+    inset 0 2px 4px rgba(0,0,0,.10),
+    0 0 0 1px var(--green);
 }
 .ui-pill:focus-visible {
   outline: 2px solid var(--green);
