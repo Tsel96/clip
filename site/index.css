@@ -280,6 +280,14 @@ html, body {
   width: 100%;
   aspect-ratio: 1 / 1;
   display: flex;
+  position: relative;   /* anchor for the WebGL reveal canvas overlay */
+}
+/* DopeDrop-style wavefront reveal canvas, mounted over the QR on modal open */
+.reveal-gl {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
 }
 .modal-qr img {
   /* SVG already includes the light-gray rounded square from Figma */

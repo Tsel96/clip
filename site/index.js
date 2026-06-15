@@ -6,6 +6,8 @@
      · origin-aware modal · blur bridges states · springs for feel
    ========================================================== */
 
+import { revealImage } from './reveal-gl.js';
+
 const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const EASE_OUT = [0.22, 1, 0.36, 1];   // energetic expo-out
 const EASE_IN  = [0.4, 0, 1, 1];
@@ -143,6 +145,9 @@ function wireModal() {
           { duration: 0.5, ease: EASE_OUT, delay: 0.14 + i * 0.06 }
         )
       );
+      // QR materialises with DopeDrop's wavefront reveal (style 0 = AURORA)
+      const qr = document.getElementById('qrImage');
+      if (qr) revealImage(qr, { duration: 1500 });
     }
     document.addEventListener('keydown', onKey);
     closeBtn.focus({ preventScroll: true });
@@ -198,6 +203,8 @@ function wireModalFallback() {
     modal.style.transform = 'none'; modal.style.opacity = '1';
     backdrop.style.opacity = '1';
     trigger.setAttribute('aria-expanded', 'true');
+    const qr = document.getElementById('qrImage');
+    if (qr) revealImage(qr, { duration: 1500 });
   };
   const hide = () => {
     modal.hidden = true; backdrop.hidden = true;
