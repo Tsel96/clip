@@ -249,8 +249,30 @@ html, body {
   color: var(--ink);
   line-height: 1.35;
 }
+.modal-steps {
+  margin-top: calc(18 / 2340 * 100vw);
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: calc(10 / 2340 * 100vw);
+}
+.modal-steps li {
+  font-size: clamp(11px, calc(15 / 2340 * 100vw), 24px);
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: rgba(0, 0, 0, 0.66);
+}
+.modal-steps li b { color: var(--ink); font-weight: 400; }
+
+.modal-note {
+  margin-top: calc(16 / 2340 * 100vw);
+  font-size: clamp(10px, calc(13 / 2340 * 100vw), 20px);
+  letter-spacing: 0.04em;
+  color: rgba(0, 0, 0, 0.40);
+}
+
 .modal-link {
-  margin-top: calc(34 / 2340 * 100vw);
+  margin-top: calc(28 / 2340 * 100vw);
   font-size: var(--fs);
   letter-spacing: var(--ls);
   text-transform: uppercase;
