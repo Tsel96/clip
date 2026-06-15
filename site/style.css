@@ -358,3 +358,5 @@ section { position: relative; }
 
 code { font-family: var(--mono); color: var(--dim); background: var(--surface2);
   border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-size: .9em; }
+pre.cmd { margin: 10px 0; overflow-x: auto; }
+pre.cmd code { display: block; padding: 10px 12px; white-space: pre; }
