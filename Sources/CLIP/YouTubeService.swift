@@ -38,13 +38,16 @@ enum YouTubeService {
         return String(urlString[idRange])
     }
 
-    /// Muted-autoplay inline embed — matches the app's tweet/IG video
-    /// behaviour. `rel=0`/`modestbranding=1` keep it tidy; the nocookie
-    /// host avoids tracking cookies.
+    /// Inline embed. Autoplay is OFF (`autoplay=0`): an autoplaying embed
+    /// keeps a video decoding inside the window's display-cycle, which on
+    /// the macOS 26/27 beta seed re-enters AppKit constraint layout and
+    /// trips the depth-16 recursion guard. The user presses play in the
+    /// embed to start it. `rel=0`/`modestbranding=1` keep it tidy; the
+    /// nocookie host avoids tracking cookies.
     static func embedURL(from urlString: String) -> URL? {
         guard let id = videoID(from: urlString) else { return nil }
         return URL(string:
-            "https://www.youtube-nocookie.com/embed/\(id)?playsinline=1&autoplay=1&mute=1&rel=0&modestbranding=1")
+            "https://www.youtube-nocookie.com/embed/\(id)?playsinline=1&autoplay=0&mute=1&rel=0&modestbranding=1")
     }
 
     /// Thumbnail used by the static (non-live) poster card.

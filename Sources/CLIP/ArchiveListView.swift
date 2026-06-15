@@ -216,6 +216,7 @@ private struct ArchiveListRow: View {
         case .tweet(let url):       return Self.compactURL(url)
         case .instagram(let url):   return Self.compactURL(url)
         case .youtube(let url):     return Self.compactURL(url)
+        case .webclip(let url):     return Self.compactURL(url)
         case .image(_, let file):   return file
         case .video(_, let file):   return file
         case .text(let content, _),
@@ -240,6 +241,7 @@ private struct ArchiveListRow: View {
         case .tweet:      return "X / Twitter"
         case .instagram:  return "Instagram"
         case .youtube:    return "YouTube"
+        case .webclip:    return "Web"
         case .image:      return "Image"
         case .video:      return "Video"
         case .text:       return "Text"
@@ -254,6 +256,7 @@ private struct ArchiveListRow: View {
         case .tweet:      return "bubble.left"
         case .instagram:  return "camera"
         case .youtube:    return "play.rectangle"
+        case .webclip:    return "globe"
         case .image:      return "photo"
         case .video:      return "film"
         case .text:       return "textformat"
@@ -269,6 +272,7 @@ private struct ArchiveListRow: View {
         case .tweet:      return Color(nsColor: .controlAccentColor)
         case .instagram:  return Color(red: 0.91, green: 0.21, blue: 0.45)
         case .youtube:    return Color(red: 1.0, green: 0.0, blue: 0.0)
+        case .webclip:    return .blue
         case .image:      return .green
         case .video:      return .orange
         case .text:       return .secondary

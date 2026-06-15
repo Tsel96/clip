@@ -1441,6 +1441,8 @@ final class CanvasState: ObservableObject {
             return "An Instagram post, square crop, vibrant social-media aesthetic."
         case .youtube:
             return "A YouTube thumbnail, bold focal subject, high contrast, punchy color."
+        case .webclip:
+            return "A web page screenshot, clean readable layout, informative content."
         case .video:
             return "A \(aspect) video still, cinematic lighting, gentle natural motion."
         case .text(let content, _):
@@ -2247,7 +2249,17 @@ final class CanvasState: ObservableObject {
         guard !heightFlushScheduled else { return }
         heightFlushScheduled = true
         // Defer the @Published write off the current layout pass.
-        Task { @MainActor in self.flushMeasuredHeights() }
+        // DispatchQueue.main.async is required here rather than
+        // Task { @MainActor in }: on macOS 27 beta, CA::Transaction::flush
+        // can drain Swift Concurrency tasks mid-layout, so the Task-based
+        // deferral fires while _layoutSubtreeWithOldSize is still on the
+        // stack, writing measuredHeights re-enters layout, and AppKit's
+        // recursion guard trips at depth 16. DispatchQueue.main.async
+        // always defers to the NEXT main queue drain (after the display
+        // callback has returned to the runloop), breaking the cycle.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.flushMeasuredHeights() }
+        }
     }
 
     /// Apply buffered height reports in one batch (one `objectWillChange`),
@@ -2671,53 +2683,16 @@ final class CanvasState: ObservableObject {
     private var glideVelocity: (x: CGFloat, y: CGFloat, zoom: CGFloat) = (0, 0, 0)
 
     func glideCamera(to target: Camera) {
-        // Honour Reduce Motion: jump, exactly like the pre-glide behavior.
-        guard !lightboxReduceMotion else {
-            cancelPanInertia()
-            camera = target
-            return
-        }
-        cancelInertiaOnly()
-        glideTarget = target
-        guard cameraGlideTimer == nil else { return }   // retarget mid-flight
-
-        // Critically-damped-ish spring, integrated semi-implicitly at 60 Hz.
-        let omega = 2 * CGFloat.pi / Motion.glideResponse
-        let k = omega * omega
-        let c = 2 * Motion.glideDampingRatio * omega
-        let dt: CGFloat = 1.0 / 60.0
-
-        cameraGlideTimer = Timer.scheduledTimer(
-            withTimeInterval: 1.0 / 60.0, repeats: true
-        ) { [weak self] timer in
-            guard let self else { timer.invalidate(); return }
-            Task { @MainActor in
-                guard let target = self.glideTarget else {
-                    self.cancelCameraGlide(); return
-                }
-                var cam = self.camera
-                self.glideVelocity.x    += (k * (target.x - cam.x)       - c * self.glideVelocity.x)    * dt
-                self.glideVelocity.y    += (k * (target.y - cam.y)       - c * self.glideVelocity.y)    * dt
-                self.glideVelocity.zoom += (k * (target.zoom - cam.zoom) - c * self.glideVelocity.zoom) * dt
-                cam.x    += self.glideVelocity.x * dt
-                cam.y    += self.glideVelocity.y * dt
-                cam.zoom += self.glideVelocity.zoom * dt
-
-                let settled =
-                    abs(target.x - cam.x) < 0.3 &&
-                    abs(target.y - cam.y) < 0.3 &&
-                    abs(target.zoom - cam.zoom) < 0.0005 &&
-                    abs(self.glideVelocity.x) < 6 &&
-                    abs(self.glideVelocity.y) < 6 &&
-                    abs(self.glideVelocity.zoom) < 0.01
-                if settled {
-                    self.camera = target
-                    self.cancelCameraGlide()
-                } else {
-                    self.camera = cam
-                }
-            }
-        }
+        // macOS 26/27 beta (26A5353q): the 60 Hz Timer this method used to
+        // schedule mutated the @Published `camera` every tick, and that
+        // per-tick write re-entered AppKit's constraint-based layout until
+        // it tripped the depth-16 recursion guard (EXC_BREAKPOINT in
+        // -[NSView _layoutSubtreeWithOldSize:]). Any continuous camera
+        // animation is therefore unsafe on this OS, so navigation jumps
+        // straight to the target — exactly the pre-motion-system behavior
+        // (and what Reduce Motion already did). No autonomous layout loop.
+        cancelPanInertia()
+        camera = target
     }
 
     func cancelCameraGlide() {
@@ -2786,6 +2761,15 @@ final class CanvasState: ObservableObject {
     /// — enough to feel inertial without overshooting the user's
     /// intent.
     private func startPanInertiaIfNeeded() {
+        // Disabled on macOS 26/27 beta: the inertia decay ran a 60 Hz
+        // Timer that mutated the @Published `camera` each tick, the same
+        // continuous-layout driver that trips AppKit's depth-16 recursion
+        // guard. Scrolling still pans directly (see `panWithInertia`);
+        // only the autonomous coast after release is removed.
+        if #available(macOS 26.0, *) {
+            recentPanDeltas.removeAll(keepingCapacity: true)
+            return
+        }
         let deltas = recentPanDeltas
         recentPanDeltas.removeAll(keepingCapacity: true)
         guard !deltas.isEmpty else { return }

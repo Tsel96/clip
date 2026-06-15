@@ -44,7 +44,18 @@ struct VideoNodeView: View {
     /// User's explicit play/pause preference. Wins over `isLive` only as
     /// an off-switch (paused + zoomed-in stays paused). On-switch alone
     /// is not enough — must also be in viewport at adequate size.
-    @State private var userPlaying = true
+    ///
+    /// Defaults to PAUSED on macOS 26/27 beta: an autoplaying AVPlayer
+    /// continuously updates its layer contents inside the window's
+    /// display-cycle, which on the 26A5353q seed re-enters AppKit's
+    /// constraint-based layout and trips the depth-16 recursion guard
+    /// (EXC_BREAKPOINT in _layoutSubtreeWithOldSize). With no video
+    /// decoding at rest, the layout pass stays stable; the user taps play
+    /// to start a single clip deliberately.
+    @State private var userPlaying = {
+        if #available(macOS 26.0, *) { return false }
+        return true
+    }()
     @State private var isMuted = true
     @State private var hovering = false
     /// Decoded first-frame poster, shown by the resting placeholder.
