@@ -14,6 +14,17 @@
   --ink:    #000000;
   --dim:    rgba(0, 0, 0, 0.30);
 
+  /* ── Motion system (animations.dev / Emil Kowalski) ──
+     enter/exit → ease-out · on-screen move → ease-in-out · hover → ease */
+  --ease-out:    cubic-bezier(0.22, 1, 0.36, 1);     /* energetic expo-out */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);    /* gentle overshoot */
+  --ease-hover:  cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:    0.13s;   /* hovers — fast, responsive */
+  --dur:         0.2s;
+  --dur-modal:   0.42s;   /* panel slide — generous but interruptible */
+  --dur-reveal:  0.55s;   /* content blur-rise */
+
   /* Design reference width for vw math */
   --ref: 2340;        /* px */
 
@@ -80,10 +91,28 @@ html, body {
   z-index: 10;
 }
 
+/* Entrance: hide overlay UI before Motion animates it in (no flash).
+   Only applies when JS is on; falls back to visible otherwise. */
+.js .enter { opacity: 0; }
+
 /* ── Brand — top left ── */
 .ui-brand {
   top: var(--gap);
   left: var(--gap);
+  --bul: 0;            /* underline progress, animated by Motion */
+}
+/* draw-in underline on hover */
+.ui-brand::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -0.28em;
+  width: 100%;
+  height: 1.5px;
+  background: currentColor;
+  /* scaleX is driven by Motion via the --bul custom property */
+  transform: scaleX(var(--bul, 0));
+  transform-origin: left center;
 }
 
 /* ── Top-right cluster ── */
@@ -120,11 +149,11 @@ html, body {
   -webkit-appearance: none;
   appearance: none;
   overflow: hidden;                 /* clip circle to pill — flush left cap */
-  transition: background 0.14s ease, transform 0.14s ease;
+  /* hover/press transforms are driven by Motion (gestures) */
 }
-.ui-pill:hover {
-  background: #f8f400;
-  transform: translateY(-1px);
+.ui-pill:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
 }
 
 .ui-pill-icon {
@@ -174,11 +203,12 @@ html, body {
   position: fixed;
   inset: 0;
   z-index: 20;
-  background: transparent;
-  opacity: 0;
-  transition: opacity 0.4s ease;
+  /* soft scrim so the panel reads as a sheet, page still visible */
+  background: rgba(20, 18, 0, 0.10);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  /* opacity is driven by Motion */
 }
-.modal-backdrop.open { opacity: 1; }
 
 .modal {
   position: fixed;
@@ -195,11 +225,11 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transform: translateX(calc(100% + var(--modal-inset) + 30px));
-  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
+  /* origin-aware: grows from the top-right trigger (Emil tip #5) */
+  transform-origin: 100% 0;
+  will-change: transform, opacity;
+  /* transform / opacity are driven by Motion (spring slide-in) */
 }
-.modal.open { transform: none; }
 
 .modal-close {
   position: absolute;
@@ -215,9 +245,9 @@ html, body {
   background: transparent;
   color: rgba(0, 0, 0, 0.45);
   cursor: pointer;
-  transition: background 0.14s ease, color 0.14s ease;
+  /* hover rotate / press are driven by Motion */
 }
-.modal-close:hover { background: rgba(0, 0, 0, 0.06); color: var(--ink); }
+.modal-close:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 
 .modal-qr {
   width: 100%;
@@ -269,8 +299,8 @@ html, body {
   letter-spacing: var(--ls);
   text-transform: uppercase;
   line-height: 1.4;
-  color: var(--ink);
-  opacity: 0.3;
+  /* dim via colour, not opacity (Motion animates opacity on reveal) */
+  color: rgba(0, 0, 0, 0.32);
 }
 
 .modal-link {
@@ -281,13 +311,16 @@ html, body {
   color: var(--ink);
   text-decoration: underline;
   text-decoration-color: rgba(0, 0, 0, 0.20);
+  text-decoration-thickness: 1.5px;
   text-underline-offset: 0.15em;
   width: max-content;
+  /* underline offset/color + press are driven by Motion */
 }
-.modal-link:hover { text-decoration-color: var(--ink); }
 
 @media (prefers-reduced-motion: reduce) {
-  .modal, .modal-backdrop { transition: none; }
+  /* JS also detects this and skips Motion; these are CSS-side safety nets */
+  .js .enter { opacity: 1; }
+  .m-reveal { opacity: 1 !important; transform: none !important; filter: none !important; }
 }
 
 /* ── Git link — bottom right ── */
@@ -296,8 +329,7 @@ html, body {
   right: var(--gap);
   text-decoration: underline;
   text-decoration-color: rgba(0, 0, 0, 0.20);
+  text-decoration-thickness: 1.5px;
   text-underline-offset: 0.15em;
-}
-.ui-git:hover {
-  text-decoration-color: var(--ink);
+  /* underline offset/color are driven by Motion */
 }
