@@ -1,0 +1,169 @@
+/* ==========================================================
+   CLIP — full-screen 4K homepage
+   Design canvas: 2340 × 1316 px
+   All sizing is vw-relative so it scales from 1080p → 4K.
+   ========================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --yellow: #f0ec00;
+  --green:  #3da726;
+  --ink:    #000000;
+  --dim:    rgba(0, 0, 0, 0.30);
+
+  /* Design reference width for vw math */
+  --ref: 2340;        /* px */
+
+  /* Typography — 17px at 2340px wide */
+  --fs: clamp(12px, calc(17 / 2340 * 100vw), 28px);
+  --ls: 0.1em;        /* letter-spacing: 1.7 / 17 ≈ 0.1 */
+
+  /* Spacing — 26px margin at 2340px wide */
+  --gap: clamp(14px, calc(26 / 2340 * 100vw), 44px);
+
+  /* Pill */
+  --pill-h:    clamp(36px,  calc(52  / 2340 * 100vw), 72px);
+  --pill-icon: clamp(28px,  calc(40  / 2340 * 100vw), 60px);
+  --pill-gap:  clamp(6px,   calc(10  / 2340 * 100vw), 16px);
+  --pill-pr:   clamp(12px,  calc(18  / 2340 * 100vw), 28px);
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--yellow);
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Background media ── */
+.bg-media {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-media img,
+.bg-media video {
+  /* Fill the viewport while keeping aspect ratio */
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Shared UI overlay text style ── */
+.ui-brand,
+.ui-platform,
+.ui-pill-label,
+.ui-description,
+.ui-git {
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--fs);
+  font-weight: 400;
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--ink);
+  line-height: 1;
+  position: fixed;
+  z-index: 10;
+}
+
+/* ── Brand — top left ── */
+.ui-brand {
+  top: var(--gap);
+  left: var(--gap);
+}
+
+/* ── Top-right cluster ── */
+.ui-top-right {
+  position: fixed;
+  top: var(--gap);
+  right: var(--gap);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, calc(20 / 2340 * 100vw), 32px);
+}
+
+.ui-platform {
+  position: static;
+  opacity: 0.30;
+}
+
+/* ── Download pill ── */
+.ui-pill {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pill-gap);
+  height: var(--pill-h);
+  padding-right: var(--pill-pr);
+  background: var(--yellow);
+  border: 1px solid var(--green);
+  border-radius: 9999px;
+  text-decoration: none;
+  transition: background 0.14s ease, transform 0.14s ease;
+}
+.ui-pill:hover {
+  background: #f8f400;
+  transform: translateY(-1px);
+}
+
+.ui-pill-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--pill-icon);
+  height: var(--pill-icon);
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--green);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.ui-pill-icon img {
+  width: 60%;
+  height: 60%;
+  object-fit: contain;
+  display: block;
+}
+
+.ui-pill-label {
+  position: static;
+  font-size: var(--fs);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* ── Description — bottom left ── */
+.ui-description {
+  bottom: var(--gap);
+  left: var(--gap);
+  /* 817 / 2340 ≈ 34.9 vw; clamp keeps it readable */
+  max-width: clamp(260px, 34.9vw, 640px);
+  text-transform: uppercase;
+  line-height: 1.45;
+}
+
+/* ── Git link — bottom right ── */
+.ui-git {
+  bottom: clamp(14px, calc(38 / 2340 * 100vw), 56px);
+  right: var(--gap);
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 0, 0, 0.20);
+  text-underline-offset: 0.15em;
+}
+.ui-git:hover {
+  text-decoration-color: var(--ink);
+}
