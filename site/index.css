@@ -246,25 +246,31 @@ html, body {
   line-height: 1.35;
 }
 .modal-steps {
-  margin-top: calc(18 / 2340 * 100vw);
-  padding-left: 1.4em;
+  margin-top: calc(20 / 2340 * 100vw);
+  padding-left: 1.5em;
   display: flex;
   flex-direction: column;
-  gap: calc(10 / 2340 * 100vw);
+  gap: calc(14 / 2340 * 100vw);
 }
 .modal-steps li {
-  font-size: clamp(11px, calc(15 / 2340 * 100vw), 24px);
-  line-height: 1.5;
-  letter-spacing: 0.02em;
-  color: rgba(0, 0, 0, 0.66);
+  /* same editorial treatment as the rest of the site */
+  font-size: var(--fs);
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--ink);
 }
+.modal-steps li::marker { color: rgba(0, 0, 0, 0.32); }
 .modal-steps li b { color: var(--ink); font-weight: 400; }
 
 .modal-note {
-  margin-top: calc(16 / 2340 * 100vw);
-  font-size: clamp(10px, calc(13 / 2340 * 100vw), 20px);
-  letter-spacing: 0.04em;
-  color: rgba(0, 0, 0, 0.40);
+  margin-top: calc(22 / 2340 * 100vw);
+  font-size: var(--fs);
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--ink);
+  opacity: 0.3;
 }
 
 .modal-link {
