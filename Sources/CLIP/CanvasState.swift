@@ -56,7 +56,35 @@ final class CanvasState: ObservableObject {
     var smartSelection: SmartSelectionController!
     var camera: Camera {
         get { cameraStore.camera }
-        set { cameraStore.camera = newValue }
+        set {
+            cameraStore.camera = newValue
+            markCameraInteracting()
+        }
+    }
+
+    /// True while the camera is actively moving (pan / zoom / glide). While
+    /// set, `isLive` drops every NSView-backed media card (WKWebView /
+    /// AVPlayer) to its static SwiftUI poster, so none of those views is
+    /// transformed inside the hosting hierarchy — that transform-during-
+    /// layout is what re-enters AppKit's constraint engine and trips the
+    /// depth-16 recursion guard on macOS 26/27 (EXC_BREAKPOINT in
+    /// -[NSView _layoutSubtreeWithOldSize:]). Flips once at gesture start
+    /// and once ~0.15 s after it ends — not per pan tick.
+    @Published private(set) var isCameraInteracting = false
+    private var cameraSettleTimer: Timer?
+
+    /// Mark the camera as moving and (re)arm the settle timer. Default
+    /// runloop mode is deliberate: the timer cannot fire during
+    /// `.eventTracking`, so the flag stays true for the whole gesture and
+    /// clears only once the runloop returns to `.default` (gesture ended).
+    private func markCameraInteracting() {
+        if !isCameraInteracting { isCameraInteracting = true }
+        cameraSettleTimer?.invalidate()
+        cameraSettleTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.15, repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in self?.isCameraInteracting = false }
+        }
     }
 
     /// Bumped whenever `camera.zoom` changes (never on pan). Node views
@@ -1861,7 +1889,7 @@ final class CanvasState: ObservableObject {
         // Wrap the geometry mutations + camera reset in one spring so
         // every member visibly springs from its stack-anchor position
         // out to its grid slot in a single coordinated animation.
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             self.focusedStackID = groupID
             self.focusPositions = layout.positions
             self.focusSizes     = layout.sizes
@@ -1881,7 +1909,7 @@ final class CanvasState: ObservableObject {
         cancelPanInertia()   // the restore owns the camera from here
         let restoreCamera = focusOriginCamera ?? cameraStore.camera
         // Animate the dismissal — same spring as entry for symmetry.
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             self.focusedStackID = nil
             self.focusPositions = [:]
             self.focusSizes = [:]
@@ -2415,7 +2443,7 @@ final class CanvasState: ObservableObject {
         // world coords, so we don't need the camera. Park it at neutral
         // values so any leak-through has predictable behaviour.
         let neutral = Camera(x: 0, y: 0, zoom: 1.0)
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             canvasMode = .archive
             archiveLevel = .calendar
             setArchiveDays(days)
@@ -2441,7 +2469,7 @@ final class CanvasState: ObservableObject {
     func popArchiveLevel() {
         switch archiveLevel {
         case .card(let cardID):
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+            withAnimation(Motion.structure) {
                 // O(1) reverse lookup: which day owns this card?
                 if let dayForCard = cardToDay[cardID] {
                     archiveLevel = .day(dayForCard)
@@ -2450,7 +2478,7 @@ final class CanvasState: ObservableObject {
                 }
             }
         case .day:
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+            withAnimation(Motion.structure) {
                 archiveLevel = .calendar
                 archivePositions = [:]
                 archiveSizes = [:]
@@ -2477,7 +2505,7 @@ final class CanvasState: ObservableObject {
                 ? viewportSize
                 : CGSize(width: 1200, height: 800)
         )
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             archiveLevel = .day(normalized)
             archivePositions = positions
             archiveSizes = sizes
@@ -2498,7 +2526,7 @@ final class CanvasState: ObservableObject {
             renderedHeight: renderedHeight(of: node),
             viewportSize: viewport
         )
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             archiveLevel = .card(id)
             // Replace overrides with just the focused card's layout —
             // the rest of the day's cards aren't rendered in lightbox.
@@ -2576,7 +2604,7 @@ final class CanvasState: ObservableObject {
     func exitArchive() {
         guard canvasMode == .archive else { return }
         let restored = preArchiveCamera
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             canvasMode = .canvas
             archiveLevel = .calendar
             setArchiveDays([:])
@@ -2786,8 +2814,10 @@ final class CanvasState: ObservableObject {
         // extra shove.
         velocity.x *= 1.6
         velocity.y *= 1.6
-        panInertiaTimer = Timer.scheduledTimer(
-            withTimeInterval: 1.0 / 60.0, repeats: true
+        // `.common` mode so the coast keeps ticking during `.eventTracking`
+        // (a follow-on trackpad gesture) instead of stalling in `.default`.
+        let inertiaTimer = Timer(
+            timeInterval: 1.0 / 60.0, repeats: true
         ) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
             velocity.x *= 0.92
@@ -2800,6 +2830,8 @@ final class CanvasState: ObservableObject {
             let vx = velocity.x, vy = velocity.y
             Task { @MainActor in self.pan(deltaX: vx, deltaY: vy) }
         }
+        RunLoop.main.add(inertiaTimer, forMode: .common)
+        panInertiaTimer = inertiaTimer
     }
 
     /// Frame all nodes within the viewport. If empty, just resets.
@@ -2950,10 +2982,21 @@ final class CanvasState: ObservableObject {
         // seekable player, so tear down its background loop player.
         if trimmingCardID == node.id { return false }
         switch node.kind {
-        case .video, .tweet, .instagram, .image:
+        case .video, .tweet, .instagram, .image, .youtube, .webclip:
             break               // gated below
         default:
             return true
+        }
+        // While the camera is actively moving, force every NSView-backed
+        // media card (WKWebView / AVPlayer) to its static poster so none is
+        // transformed inside the hosting hierarchy during a pan/zoom — the
+        // macOS 26/27 AppKit layout-recursion trigger. Images are pure
+        // SwiftUI (no AppKit layout), so they stay live.
+        if isCameraInteracting {
+            switch node.kind {
+            case .video, .tweet, .instagram, .youtube, .webclip: return false
+            default: break
+            }
         }
         // "Show video previews only" — force every video-bearing kind to
         // its resting (poster) state regardless of zoom / viewport. Images
@@ -2961,7 +3004,7 @@ final class CanvasState: ObservableObject {
         // actual pixels and an image has no playback to stop.
         if videosShowPreviewOnly {
             switch node.kind {
-            case .video, .tweet, .instagram: return false
+            case .video, .tweet, .instagram, .youtube: return false
             default: break
             }
         }
