@@ -24,11 +24,12 @@
   /* Spacing — 26px margin at 2340px wide */
   --gap: clamp(14px, calc(26 / 2340 * 100vw), 44px);
 
-  /* Pill */
-  --pill-h:    clamp(36px,  calc(52  / 2340 * 100vw), 72px);
-  --pill-icon: clamp(28px,  calc(40  / 2340 * 100vw), 60px);
-  --pill-gap:  clamp(6px,   calc(10  / 2340 * 100vw), 16px);
-  --pill-pr:   clamp(12px,  calc(18  / 2340 * 100vw), 28px);
+  /* Pill — Figma: 40px tall, 40px circle flush left, 10px gap, 24px QR icon */
+  --pill-h:     clamp(36px, calc(40 / 2340 * 100vw), 60px);
+  --pill-icon:  var(--pill-h);                                   /* circle == pill height (flush) */
+  --pill-glyph: clamp(22px, calc(24 / 2340 * 100vw), 36px);      /* 24px QR mark */
+  --pill-gap:   clamp(8px,  calc(10 / 2340 * 100vw), 16px);
+  --pill-pr:    clamp(14px, calc(20 / 2340 * 100vw), 30px);
 }
 
 html, body {
@@ -113,6 +114,7 @@ html, body {
   border: 1px solid var(--green);
   border-radius: 9999px;
   text-decoration: none;
+  overflow: hidden;                 /* clip circle to pill — flush left cap */
   transition: background 0.14s ease, transform 0.14s ease;
 }
 .ui-pill:hover {
@@ -129,12 +131,13 @@ html, body {
   border-radius: 50%;
   background: #fff;
   border: 1px solid var(--green);
-  overflow: hidden;
   flex-shrink: 0;
+  /* pull circle flush to the pill's left/top/bottom edges */
+  margin: -1px;
 }
 .ui-pill-icon img {
-  width: 60%;
-  height: 60%;
+  width: var(--pill-glyph);
+  height: var(--pill-glyph);
   object-fit: contain;
   display: block;
 }
