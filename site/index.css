@@ -150,34 +150,33 @@ html, body {
   margin: 0;
   font: inherit;
   cursor: pointer;
-  background: var(--yellow);
+  /* iOS-polished finish (matches the orange ref button, in yellow):
+     top-lit gradient → pillowy body */
+  background: linear-gradient(180deg, #F6F22A, #E4E000);
   border: none;
   border-radius: 9999px;
   text-decoration: none;
   -webkit-appearance: none;
   appearance: none;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.45),   /* top gloss */
-    0 2px 4px -1px rgba(61,167,38,.70),    /* green glow */
-    0 0 0 1px var(--green);                /* green outline */
+    inset 0 1px 0 rgba(255,255,255,.55),   /* bright top gloss */
+    0 1px 1px rgba(80,74,0,.16),           /* tight contact shadow */
+    0 5px 16px -5px rgba(61,167,38,.48),   /* soft green glow */
+    0 0 0 1px var(--green);                /* crisp green edge */
   transition:
-    transform   .13s ease,
-    box-shadow  .13s ease,
-    filter      .13s ease;
+    box-shadow  .13s ease;
 }
 .ui-pill:hover {
-  filter: brightness(1.04);
-  transform: translateY(-1px);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.45),
-    0 4px 8px -1px rgba(61,167,38,.60),
+    inset 0 1px 0 rgba(255,255,255,.55),
+    0 2px 2px rgba(80,74,0,.14),
+    0 9px 22px -6px rgba(61,167,38,.50),
     0 0 0 1px var(--green);
 }
 .ui-pill:active {
-  transform: translateY(1px);
-  filter: brightness(.96);
   box-shadow:
-    inset 0 2px 4px rgba(0,0,0,.10),
+    inset 0 2px 5px rgba(80,74,0,.22),     /* pressed-in shadow */
+    0 1px 2px rgba(61,167,38,.35),
     0 0 0 1px var(--green);
 }
 .ui-pill:focus-visible {

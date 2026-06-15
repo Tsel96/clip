@@ -64,19 +64,12 @@ function gestures() {
   // Download pill — lift + warm fill on hover, tactile press, icon lean-in
   const pill = document.getElementById('downloadBtn');
   const icon = pill.querySelector('.ui-pill-icon img');
+  // Only animate the lift + icon — CSS owns the gradient/gloss/glow/edge finish
   hover(pill, () => {
-    animate(pill, {
-      y: -2,
-      backgroundColor: '#f8f400',
-      boxShadow: '0 8px 22px rgba(61,167,38,0.22)'
-    }, SPRING_HOVER);
+    animate(pill, { y: -2 }, SPRING_HOVER);
     animate(icon, { scale: 1.08 }, SPRING_HOVER);
     return () => {
-      animate(pill, {
-        y: 0,
-        backgroundColor: '#f0ec00',
-        boxShadow: '0 0px 0px rgba(61,167,38,0)'
-      }, SPRING_HOVER);
+      animate(pill, { y: 0 }, SPRING_HOVER);
       animate(icon, { scale: 1 }, SPRING_HOVER);
     };
   });
