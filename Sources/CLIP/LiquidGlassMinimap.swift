@@ -91,14 +91,20 @@ struct LiquidGlassMinimap: View {
     /// with a slight white lift elsewhere.
     @ViewBuilder
     private var baseMaterial: some View {
-        if #available(macOS 26.0, *) {
-            Color.clear
-                .glassEffect(.clear, in: .circle)
-        } else {
-            Circle()
-                .fill(.ultraThinMaterial)
-                .background(Circle().fill(Color.white.opacity(0.05)))
-        }
+        // macOS 26/27 beta (26A5353q): `.glassEffect` (and SwiftUI
+        // materials like `.ultraThinMaterial`) are AppKit/CoreAnimation-
+        // backed views. This minimap re-renders on EVERY pan — its viewport
+        // indicator tracks the camera — and re-laying out an AppKit-backed
+        // view ~60x/sec inside a panning canvas re-enters AppKit's
+        // constraint layout until the depth-16 recursion guard fires
+        // (EXC_BREAKPOINT in -[NSView _layoutSubtreeWithOldSize:] on canvas
+        // pan; no app frames in the stack). Render the dome with a pure-
+        // SwiftUI translucent fill so nothing AppKit-backed sits in the
+        // transformed hierarchy during a pan. Restore the live glass once
+        // Apple fixes the beta layout engine.
+        Circle()
+            .fill(Color(nsColor: .windowBackgroundColor).opacity(0.72))
+            .overlay(Circle().fill(Color.white.opacity(0.06)))
     }
 
     private var dome: some View {
