@@ -39,15 +39,7 @@ struct TweetCardView: View {
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
     @State private var isMuted = true
-    /// Defaults to PAUSED on macOS 26+: an autoplaying in-process AVPlayer
-    /// continuously mutates its layer in the window's display-cycle, which
-    /// on the 26A5353q beta re-enters AppKit constraint layout and trips
-    /// the depth-16 recursion guard (EXC_BREAKPOINT). User taps play to
-    /// start the clip. Same fix as VideoNodeView.
-    @State private var userPlaying = {
-        if #available(macOS 26.0, *) { return false }
-        return true
-    }()
+    @State private var userPlaying = true
     @State private var hovering = false
 
     private var tweetID: String? { TweetService.extractTweetID(from: url) }
