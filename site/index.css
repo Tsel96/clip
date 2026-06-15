@@ -109,11 +109,16 @@ html, body {
   align-items: center;
   gap: var(--pill-gap);
   height: var(--pill-h);
-  padding-right: var(--pill-pr);
+  padding: 0 var(--pill-pr) 0 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
   background: var(--yellow);
   border: 1px solid var(--green);
   border-radius: 9999px;
   text-decoration: none;
+  -webkit-appearance: none;
+  appearance: none;
   overflow: hidden;                 /* clip circle to pill — flush left cap */
   transition: background 0.14s ease, transform 0.14s ease;
 }
@@ -157,6 +162,108 @@ html, body {
   max-width: clamp(260px, 34.9vw, 640px);
   text-transform: uppercase;
   line-height: 1.45;
+}
+
+/* ── Download modal ── */
+:root {
+  --modal-inset:  clamp(8px,  calc(15 / 2340 * 100vw), 26px);
+  --modal-radius: clamp(22px, calc(48 / 2340 * 100vw), 80px);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.modal-backdrop.open { opacity: 1; }
+
+.modal {
+  position: fixed;
+  top: var(--modal-inset);
+  right: var(--modal-inset);
+  bottom: var(--modal-inset);
+  z-index: 30;
+  width: clamp(300px, calc(693 / 2340 * 100vw), 1140px);
+  background: #fff;
+  border-radius: var(--modal-radius);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.18), 0 4px 20px rgba(0, 0, 0, 0.08);
+  /* top padding + horizontal QR margins (99px at 2340) */
+  padding: calc(98 / 2340 * 100vw) calc(99 / 2340 * 100vw) 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateX(calc(100% + var(--modal-inset) + 30px));
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.modal.open { transform: none; }
+
+.modal-close {
+  position: absolute;
+  top: clamp(14px, calc(28 / 2340 * 100vw), 44px);
+  right: clamp(14px, calc(28 / 2340 * 100vw), 44px);
+  width: clamp(30px, calc(40 / 2340 * 100vw), 56px);
+  height: clamp(30px, calc(40 / 2340 * 100vw), 56px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.modal-close:hover { background: rgba(0, 0, 0, 0.06); color: var(--ink); }
+
+.modal-qr {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #ebebeb;
+  border-radius: clamp(16px, calc(36 / 2340 * 100vw), 56px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-qr img {
+  width: 86%;
+  height: 86%;
+  display: block;
+  image-rendering: pixelated;   /* crisp QR modules */
+}
+
+.modal-text {
+  /* shift left to the panel's 25px text margin (QR sits at 99px) */
+  margin-left: calc(-74 / 2340 * 100vw);
+  margin-top: calc(73 / 2340 * 100vw);
+  display: flex;
+  flex-direction: column;
+}
+.modal-lead {
+  font-size: var(--fs);
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
+  color: var(--ink);
+  line-height: 1.35;
+}
+.modal-link {
+  margin-top: calc(34 / 2340 * 100vw);
+  font-size: var(--fs);
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 0, 0, 0.20);
+  text-underline-offset: 0.15em;
+  width: max-content;
+}
+.modal-link:hover { text-decoration-color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .modal, .modal-backdrop { transition: none; }
 }
 
 /* ── Git link — bottom right ── */
