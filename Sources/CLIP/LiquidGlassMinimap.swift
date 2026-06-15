@@ -91,20 +91,32 @@ struct LiquidGlassMinimap: View {
     /// with a slight white lift elsewhere.
     @ViewBuilder
     private var baseMaterial: some View {
-        // macOS 26/27 beta (26A5353q): `.glassEffect` (and SwiftUI
-        // materials like `.ultraThinMaterial`) are AppKit/CoreAnimation-
-        // backed views. This minimap re-renders on EVERY pan — its viewport
-        // indicator tracks the camera — and re-laying out an AppKit-backed
-        // view ~60x/sec inside a panning canvas re-enters AppKit's
-        // constraint layout until the depth-16 recursion guard fires
-        // (EXC_BREAKPOINT in -[NSView _layoutSubtreeWithOldSize:] on canvas
-        // pan; no app frames in the stack). Render the dome with a pure-
-        // SwiftUI translucent fill so nothing AppKit-backed sits in the
-        // transformed hierarchy during a pan. Restore the live glass once
-        // Apple fixes the beta layout engine.
-        Circle()
-            .fill(Color(nsColor: .windowBackgroundColor).opacity(0.72))
-            .overlay(Circle().fill(Color.white.opacity(0.06)))
+        // macOS 26/27 beta (26A5353q): `.glassEffect` is an AppKit/
+        // CoreAnimation-backed view, and this minimap re-renders on every
+        // pan tick (its viewport indicator tracks the camera). Re-laying out
+        // a glass view ~60x/sec during a pan re-enters AppKit's constraint
+        // layout and trips the depth-16 recursion guard (EXC_BREAKPOINT in
+        // -[NSView _layoutSubtreeWithOldSize:] on canvas pan). But the glass
+        // is perfectly safe at REST — it lays out exactly once. So show the
+        // real Liquid Glass whenever the camera is still, and swap to a flat
+        // pure-SwiftUI fill only for the brief moment the camera is actively
+        // moving (`state.isCameraInteracting`, cleared ~0.15 s after the
+        // last move). Beauty at rest, no 60x/sec glass re-layout during a
+        // pan. Remove the gate once Apple fixes the beta layout engine.
+        if #available(macOS 26.0, *), !state.isCameraInteracting {
+            Color.clear
+                .glassEffect(.clear, in: .circle)
+        } else if #available(macOS 26.0, *) {
+            // 26/27 while panning: flat fill, no AppKit-backed glass.
+            Circle()
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.72))
+                .overlay(Circle().fill(Color.white.opacity(0.06)))
+        } else {
+            // Pre-26 has no depth-16 guard — keep the frosted material.
+            Circle()
+                .fill(.ultraThinMaterial)
+                .background(Circle().fill(Color.white.opacity(0.05)))
+        }
     }
 
     private var dome: some View {

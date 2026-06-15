@@ -2987,17 +2987,15 @@ final class CanvasState: ObservableObject {
         default:
             return true
         }
-        // While the camera is actively moving, force every NSView-backed
-        // media card (WKWebView / AVPlayer) to its static poster so none is
-        // transformed inside the hosting hierarchy during a pan/zoom — the
-        // macOS 26/27 AppKit layout-recursion trigger. Images are pure
-        // SwiftUI (no AppKit layout), so they stay live.
-        if isCameraInteracting {
-            switch node.kind {
-            case .video, .tweet, .instagram, .youtube, .webclip: return false
-            default: break
-            }
-        }
+        // NOTE: media is intentionally NOT suppressed during a pan. The
+        // pan-crash culprit was the minimap's `.glassEffect` re-laying out
+        // every tick (an AppKit constraint view), not the media cards — a
+        // build with media fully suppressed during pan still crashed until
+        // the glass was removed. SwiftUI `.scaleEffect`/`.offset` transform
+        // the media layers without an AppKit constraint pass, so live
+        // players during a pan are safe; suppressing them only made cards
+        // blink (poster<->live) on every pan. `isCameraInteracting` now
+        // gates only the minimap glass (see LiquidGlassMinimap).
         // "Show video previews only" — force every video-bearing kind to
         // its resting (poster) state regardless of zoom / viewport. Images
         // are left to the normal gate below: isLive controls an image's
