@@ -36,7 +36,7 @@
     <a class="ui-pill enter" id="downloadBtn" href="install.html"
        role="button" aria-haspopup="dialog" aria-expanded="false">
       <span class="ui-pill-icon">
-        <img src="assets/qr.svg" alt="" />
+        <img src="assets/qr-icon.svg" alt="" />
       </span>
       <span class="ui-pill-label">Stahnout</span>
     </a>
@@ -61,7 +61,9 @@
         <li>Přetáhněte <b>CLIP</b> do složky <b>Aplikace</b>.</li>
         <li>Při prvním spuštění klikněte na CLIP pravým tlačítkem → <b>Otevřít</b>.</li>
       </ol>
+      <div class="modal-img-placeholder" aria-hidden="true"></div>
       <p class="modal-note m-reveal">Vyžaduje Mac s Apple&nbsp;Silicon (M1 a novější) · macOS&nbsp;13+</p>
+      <div class="modal-img-placeholder" aria-hidden="true"></div>
       <a class="modal-link m-reveal" href="install.html">Stahnout na svůj Mac</a>
     </div>
   </aside>
@@ -77,5 +79,38 @@
   <a class="ui-git enter" href="https://github.com/Tsel96/clip">GIT repozitář</a>
 
   <script type="module" src="index.js"></script>
+
+  <!-- transitions.dev #06 — is-closing exit for the modal -->
+  <script>
+    (function () {
+      var CLOSE_DUR = 300;
+      var modal = document.getElementById('downloadModal');
+      if (!modal) return;
+      var orig = window.__clipModalClose;
+      // Patch: intercept Motion's close by observing hidden attribute
+      var observer = new MutationObserver(function (muts) {
+        muts.forEach(function (m) {
+          if (m.attributeName === 'hidden' && modal.hidden) {
+            modal.hidden = false;
+            modal.classList.add('is-closing');
+            setTimeout(function () {
+              modal.classList.remove('is-closing');
+              modal.hidden = true;
+            }, CLOSE_DUR);
+          }
+        });
+      });
+      observer.observe(modal, { attributes: true });
+    })();
+  </script>
+
+  <!-- Agentation visual-feedback toolbar — localhost only, never ships to prod -->
+  <script>
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      var s = document.createElement('script');
+      s.src = '/agentation-toolbar.js';
+      document.body.appendChild(s);
+    }
+  </script>
 </body>
 </html>

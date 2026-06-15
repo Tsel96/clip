@@ -35,12 +35,17 @@
   /* Spacing — 26px margin at 2340px wide */
   --gap: clamp(14px, calc(26 / 2340 * 100vw), 44px);
 
-  /* Pill — Figma: 40px tall, 40px circle flush left, 10px gap, 24px QR icon */
-  --pill-h:     clamp(36px, calc(40 / 2340 * 100vw), 60px);
-  --pill-icon:  var(--pill-h);                                   /* circle == pill height (flush) */
-  --pill-glyph: clamp(22px, calc(24 / 2340 * 100vw), 36px);      /* 24px QR mark */
-  --pill-gap:   clamp(8px,  calc(10 / 2340 * 100vw), 16px);
-  --pill-pr:    clamp(14px, calc(20 / 2340 * 100vw), 30px);
+  /* Pill — inset drives equal gap on all sides around the icon circle */
+  --pill-h:      clamp(36px, calc(40 / 2340 * 100vw), 60px);
+  --pill-inset:  clamp(4px,  calc(5  / 2340 * 100vw), 8px);
+  --pill-icon:   calc(var(--pill-h) - 2 * var(--pill-inset));
+  --pill-glyph:  clamp(16px, calc(24 / 2340 * 100vw), 36px);
+  --pill-gap:    clamp(8px,  calc(10 / 2340 * 100vw), 16px);
+  --pill-pr:     clamp(14px, calc(20 / 2340 * 100vw), 30px);
+
+  /* transitions.dev #06 — modal close */
+  --modal-close-dur: 300ms;
+  --modal-ease:      cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html, body {
@@ -138,7 +143,7 @@ html, body {
   align-items: center;
   gap: var(--pill-gap);
   height: var(--pill-h);
-  padding: 0 var(--pill-pr) 0 0;
+  padding: 0 var(--pill-pr) 0 var(--pill-inset);
   margin: 0;
   font: inherit;
   cursor: pointer;
@@ -148,7 +153,6 @@ html, body {
   text-decoration: none;
   -webkit-appearance: none;
   appearance: none;
-  overflow: hidden;                 /* clip circle to pill — flush left cap */
   /* hover/press transforms are driven by Motion (gestures) */
 }
 .ui-pill:focus-visible {
@@ -166,8 +170,6 @@ html, body {
   background: #fff;
   border: 1px solid var(--green);
   flex-shrink: 0;
-  /* pull circle flush to the pill's left/top/bottom edges */
-  margin: -1px;
 }
 .ui-pill-icon img {
   width: var(--pill-glyph);
@@ -224,11 +226,20 @@ html, body {
   padding: calc(98 / 2340 * 100vw) calc(99 / 2340 * 100vw) 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   /* origin-aware: grows from the top-right trigger (Emil tip #5) */
   transform-origin: 100% 0;
   will-change: transform, opacity;
   /* transform / opacity are driven by Motion (spring slide-in) */
+}
+/* transitions.dev #06 — snappy exit (different from Motion's open spring) */
+.modal.is-closing {
+  transform: translateX(110%) !important;
+  opacity: 0 !important;
+  transition:
+    transform var(--modal-close-dur) var(--modal-ease),
+    opacity   var(--modal-close-dur) var(--modal-ease) !important;
 }
 
 .modal-close {
@@ -302,6 +313,17 @@ html, body {
   /* dim via colour, not opacity (Motion animates opacity on reveal) */
   color: rgba(0, 0, 0, 0.32);
 }
+
+.modal-img-placeholder {
+  width: 100%;
+  border-radius: clamp(8px, calc(12 / 2340 * 100vw), 18px);
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px dashed rgba(0, 0, 0, 0.18);
+  aspect-ratio: 16 / 9;
+  margin-top: calc(16 / 2340 * 100vw);
+}
+
+.modal-text { padding-bottom: clamp(24px, calc(60 / 2340 * 100vw), 60px); }
 
 .modal-link {
   margin-top: calc(28 / 2340 * 100vw);

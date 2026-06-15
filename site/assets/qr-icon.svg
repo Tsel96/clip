@@ -1,0 +1,24 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="24" height="24" fill="#828282" style="fill:#828282;fill:color(display-p3 0.5117 0.5117 0.5117);fill-opacity:1;"/>
+<g id="Website">
+<rect width="2340" height="1316" transform="translate(-2174 -20)" fill="white" style="fill:white;fill-opacity:1;"/>
+<g id="Frame 32">
+<g clip-path="url(#clip0_0_1)">
+<rect x="-8" y="-8" width="162" height="40" rx="20" fill="#F0EC00" style="fill:#F0EC00;fill:color(display-p3 0.9426 0.9257 0.0015);fill-opacity:1;"/>
+<g id="Frame 33">
+<rect x="-8.5" y="-8.5" width="41" height="41" rx="20.5" fill="white" style="fill:white;fill-opacity:1;"/>
+<rect x="-8.5" y="-8.5" width="41" height="41" rx="20.5" stroke="#3DA726" style="stroke:#3DA726;stroke:color(display-p3 0.2404 0.6546 0.1474);stroke-opacity:1;"/>
+<g id="Frame">
+<path id="Vector" d="M13.75 13.75V16.25H16.25M17.75 13.75H20.25M20.25 17.75H17.75V20.25M13.75 19.75V20.25M5.75 20.25H8.25C9.35457 20.25 10.25 19.3546 10.25 18.25V15.75C10.25 14.6454 9.35457 13.75 8.25 13.75H5.75C4.64543 13.75 3.75 14.6454 3.75 15.75V18.25C3.75 19.3546 4.64543 20.25 5.75 20.25ZM15.75 10.25H18.25C19.3546 10.25 20.25 9.35457 20.25 8.25V5.75C20.25 4.64543 19.3546 3.75 18.25 3.75H15.75C14.6454 3.75 13.75 4.64543 13.75 5.75V8.25C13.75 9.35457 14.6454 10.25 15.75 10.25ZM5.75 10.25H8.25C9.35457 10.25 10.25 9.35457 10.25 8.25V5.75C10.25 4.64543 9.35457 3.75 8.25 3.75H5.75C4.64543 3.75 3.75 4.64543 3.75 5.75V8.25C3.75 9.35457 4.64543 10.25 5.75 10.25Z" stroke="black" style="stroke:black;stroke-opacity:1;" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</g>
+</g>
+<rect x="-8.5" y="-8.5" width="163" height="41" rx="20.5" stroke="#3DA726" style="stroke:#3DA726;stroke:color(display-p3 0.2404 0.6546 0.1474);stroke-opacity:1;"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_0_1">
+<rect x="-8" y="-8" width="162" height="40" rx="20" fill="white" style="fill:white;fill-opacity:1;"/>
+</clipPath>
+</defs>
+</svg>
