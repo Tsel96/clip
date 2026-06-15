@@ -8,6 +8,9 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Restore hidden attribute — author display rules (like .modal{display:flex}) beat UA stylesheet */
+[hidden] { display: none !important; }
+
 :root {
   --yellow: #f0ec00;
   --green:  #3da726;
