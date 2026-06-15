@@ -255,14 +255,6 @@ html, body {
   will-change: transform, opacity;
   /* transform / opacity are driven by Motion (spring slide-in) */
 }
-/* transitions.dev #06 — snappy exit (different from Motion's open spring) */
-.modal.is-closing {
-  transform: translateX(110%) !important;
-  opacity: 0 !important;
-  transition:
-    transform var(--modal-close-dur) var(--modal-ease),
-    opacity   var(--modal-close-dur) var(--modal-ease) !important;
-}
 
 .modal-close {
   position: absolute;
@@ -337,12 +329,16 @@ html, body {
 }
 
 .modal-img-placeholder {
-  width: 100%;
-  border-radius: clamp(8px, calc(12 / 2340 * 100vw), 18px);
+  /* stretch edge-to-edge inside the modal, ignoring its padding */
+  width: calc(100% + 2 * calc(99 / 2340 * 100vw));
+  margin-left: calc(-1 * calc(99 / 2340 * 100vw));
+  border-radius: 0;
   background: rgba(0, 0, 0, 0.06);
-  border: 1px dashed rgba(0, 0, 0, 0.18);
+  border-top: 1px dashed rgba(0, 0, 0, 0.14);
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.14);
   aspect-ratio: 16 / 9;
-  margin-top: calc(16 / 2340 * 100vw);
+  margin-top: calc(20 / 2340 * 100vw);
+  flex-shrink: 0;
 }
 
 .modal-text { padding-bottom: clamp(24px, calc(60 / 2340 * 100vw), 60px); }
