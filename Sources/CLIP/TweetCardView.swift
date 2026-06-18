@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import ImageIO
 
 /// A tweet card on the canvas. Per the Figma spec, the card is JUST the
 /// media — video, photo, or a centered text excerpt for text-only tweets.
@@ -38,16 +39,11 @@ struct TweetCardView: View {
     @State private var tweet: TweetData? = nil
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
+    /// width / height of the tweet's media, derived from the poster so the card
+    /// sizes to the video/photo aspect (shows it fully instead of cropping it).
+    @State private var mediaAspect: CGFloat? = nil
     @State private var isMuted = true
-    /// Defaults to PAUSED on macOS 26+: an autoplaying in-process AVPlayer
-    /// continuously mutates its layer in the window's display-cycle, which
-    /// on the 26A5353q beta re-enters AppKit constraint layout and trips
-    /// the depth-16 recursion guard (EXC_BREAKPOINT). User taps play to
-    /// start the clip. Same fix as VideoNodeView.
-    @State private var userPlaying = {
-        if #available(macOS 26.0, *) { return false }
-        return true
-    }()
+    @State private var userPlaying = true
     @State private var hovering = false
 
     private var tweetID: String? { TweetService.extractTweetID(from: url) }
@@ -64,7 +60,10 @@ struct TweetCardView: View {
 
     var body: some View {
         content
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Size the card to the media's aspect ratio so the whole video /
+            // photo shows. `nil` (text tweet, or not-yet-loaded) → natural size.
+            .aspectRatio(mediaAspect, contentMode: .fit)
+            .frame(maxWidth: .infinity)
             .figmaCardStyle(isElevated: hovering)
             .overlay(alignment: .bottomTrailing) { videoControls }
             // Inline trim editor — covers the card while active. Hosted here
@@ -73,6 +72,22 @@ struct TweetCardView: View {
             .overlay { trimEditor }
             .onHover { hovering = $0 }
             .task(id: url) { await load() }
+            .task(id: tweet?.posterURL) { await loadMediaAspect() }
+    }
+
+    /// Read just the pixel dimensions of the poster (cheap header read) to learn
+    /// the media's aspect ratio, off the main thread.
+    private func loadMediaAspect() async {
+        guard let posterURL = tweet?.posterURL else { return }
+        let aspect = await Task.detached(priority: .utility) { () -> CGFloat? in
+            guard let src = CGImageSourceCreateWithURL(posterURL as CFURL, nil),
+                  let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+                  let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
+                  let h = props[kCGImagePropertyPixelHeight] as? CGFloat,
+                  w > 0, h > 0 else { return nil }
+            return w / h
+        }.value
+        if let aspect { mediaAspect = aspect }
     }
 
     // MARK: - Card body
@@ -166,7 +181,7 @@ struct TweetCardView: View {
     @ViewBuilder
     private func videoPlaceholder(posterURL: URL?) -> some View {
         ZStack {
-            Color.black
+            Color(nsColor: .windowBackgroundColor)
             if let posterURL {
                 AsyncImage(url: posterURL) { phase in
                     switch phase {
@@ -175,7 +190,7 @@ struct TweetCardView: View {
                     case .empty, .failure:
                         Image(systemName: "film")
                             .font(.system(size: 18, weight: .light))
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(.secondary)
                     @unknown default:
                         Color.clear
                     }
@@ -184,7 +199,7 @@ struct TweetCardView: View {
             } else {
                 Image(systemName: "film")
                     .font(.system(size: 18, weight: .light))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(.secondary)
             }
         }
     }

@@ -22,6 +22,9 @@ struct InstagramCardView: View {
     /// viewport AND is projected at ≥ `livePlaybackMinScreenSide`. Default
     /// true keeps preview/test sites that don't pass the prop unaffected.
     var isLive: Bool = true
+    /// While true (camera zooming), force the poster instead of the live
+    /// `WKWebView` — WebKit renders black under SwiftUI's zoom transform.
+    var suppressLive: Bool = false
 
     @State private var hovering = false
     @State private var isLoading = true
@@ -30,7 +33,7 @@ struct InstagramCardView: View {
     var body: some View {
         ZStack {
             if let embedURL = InstagramService.embedURL(from: url) {
-                if isLive {
+                if isLive && !suppressLive {
                     InstagramWebView(
                         url: embedURL,
                         isLoading: $isLoading,

@@ -105,7 +105,13 @@ final class PlayerHostView: NSView {
         wantsLayer = true
         layerContentsRedrawPolicy = .duringViewResize
         playerLayer.videoGravity = .resizeAspectFill
-        playerLayer.backgroundColor = NSColor.black.cgColor
+        // Clear (not black): during a zoom SwiftUI rasterizes the card and the
+        // AVPlayerLayer's video frame isn't captured by that snapshot — a black
+        // backing then shows as the "video goes black while zooming" flash.
+        // Transparent lets the poster behind (VideoNodeView's `.background`)
+        // show through instead. Video fills the layer (resizeAspectFill) in
+        // normal playback, so the clear backing is only ever seen mid-zoom/load.
+        playerLayer.backgroundColor = NSColor.clear.cgColor
         playerLayer.frame = bounds
         layer?.addSublayer(playerLayer)
     }

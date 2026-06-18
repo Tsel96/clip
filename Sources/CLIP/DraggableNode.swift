@@ -17,6 +17,12 @@ struct DraggableNode: View {
     /// creation-pop replay or hover/selection glitches.
     var isTiny: Bool = false
 
+    /// When false, the card renders at its own origin with no world-position
+    /// offset and no drag/tap — used by the native `NSCollectionView` canvas,
+    /// which positions the item and owns selection/scroll. Defaults true so the
+    /// existing SwiftUI canvas is unchanged.
+    var positioned: Bool = true
+
     /// True for the entire lightbox session of THIS card (open + the close
     /// animation, since `lightboxCardID` stays set until the hero unmounts).
     /// Hidden so the full-window hero — which grows out of, and shrinks back
@@ -79,9 +85,10 @@ struct DraggableNode: View {
     /// → 1.0 bounce so picking a card has a perceptible "snap on" beat
     /// (Tier B2).
 
-    init(node: CanvasNode, isTiny: Bool = false) {
+    init(node: CanvasNode, isTiny: Bool = false, positioned: Bool = true) {
         self.node = node
         self.isTiny = isTiny
+        self.positioned = positioned
         let isFresh = Date().timeIntervalSince(node.addedAt) < 1.0
         _appearProgress = State(initialValue: isFresh ? 0 : 1)
     }
@@ -90,6 +97,7 @@ struct DraggableNode: View {
     /// cardinality-aware tiles; other modes use the node's natural
     /// width × renderedHeight.
     private var effectiveSize: CGSize { state.effectiveSize(of: node) }
+
     /// True while the user is looking at one day's Bento — cards become
     /// click-to-drill targets and drags are disabled (read-only review).
     private var inArchiveBento: Bool {
@@ -151,8 +159,12 @@ struct DraggableNode: View {
             .frame(width: effectiveSize.width, height: effectiveSize.height)
             .clipShape(RoundedRectangle(cornerRadius: chromeCornerRadius, style: .continuous))
             .opacity(isHiddenForLightbox ? 0 : 1)
-            .offset(x: state.effectivePosition(of: node).x,
-                    y: state.effectivePosition(of: node).y)
+            .offset(x: positioned ? state.effectivePosition(of: node).x : 0,
+                    y: positioned ? state.effectivePosition(of: node).y : 0)
+            // Whole-frame hit target (text/transparent cards are otherwise only
+            // hittable on their glyphs) + select on tap. On the native canvas
+            // `positioned` is false but the item still needs to select.
+            .contentShape(Rectangle())
             .onTapGesture { handleTap() }
     }
 
@@ -258,9 +270,13 @@ struct DraggableNode: View {
         // The `connectorTug` adds a tiny offset toward any currently-
         // dragged peer this node is connected to — gives "rubber band"
         // tactility to connector relationships during drag.
-        .offset(worldOffset)
+        .offset(positioned ? worldOffset : .zero)
         // While trimming this card, suppress its own drag so the timeline
-        // handles (subviews) can be dragged without moving the card.
+        // handles (subviews) can be dragged without moving the card. In the
+        // native canvas the drag updates `node.position`; the collection layout
+        // re-positions the item smoothly (no reload), so the card follows the
+        // cursor. A no-movement click falls through to the canvas's click
+        // recognizer (select / deselect).
         .gesture(dragGesture, including: isTrimming ? .subviews : .all)
         // Double-click on a stack head opens focus mode (Apple Photos
         // album style). Wired BEFORE the single-tap so SwiftUI's tap
@@ -269,6 +285,13 @@ struct DraggableNode: View {
         .onTapGesture(count: 2) {
             // While trimming this card, the overlay owns interaction.
             if isTrimming { return }
+            // Text frames edit in place on double-click (TextNodeView observes
+            // `pendingFocusNodeID` and enters edit mode).
+            if case .text = node.kind {
+                state.select(node.id)
+                state.pendingFocusNodeID = node.id
+                return
+            }
             // Stack head → focus mode (Apple Photos album style).
             if state.isStackHead(node.id), state.focusedStackID == nil {
                 state.enterStackFocus(headID: node.id)
@@ -380,13 +403,19 @@ struct DraggableNode: View {
         return false
     }
 
+    /// Whether media in this card runs live. In the native collection canvas
+    /// (`positioned == false`) cards are always live — semantic-zoom teardown
+    /// would require re-rendering on zoom, which is the gesture-boundary blink.
+    /// The SwiftUI canvas keeps the viewport/size-aware gate.
+    private var liveGate: Bool { positioned ? state.isLive(node) : true }
+
     @ViewBuilder
     private var nodeContent: some View {
         switch node.kind {
         case .tweet(let url):
             TweetCardView(
                 url: url,
-                isLive: state.isLive(node),
+                isLive: liveGate,
                 trimStart: node.trimStart,
                 trimEnd: node.trimEnd,
                 isSelected: state.selectedNodeIDs.contains(node.id),
@@ -405,6 +434,7 @@ struct DraggableNode: View {
                 },
                 onCancelTrim: { state.trimmingCardID = nil }
             )
+            .revealOnAdd(state: state, node: node)
 
         case .instagram(let url):
             // WKWebView-backed. We can't pause the JS-driven autoplay
@@ -412,17 +442,23 @@ struct DraggableNode: View {
             // for AVPlayer cards: when not "live," `InstagramCardView`
             // unmounts the web view entirely and shows a static poster,
             // freeing the WebKit content process.
-            InstagramCardView(url: url, isLive: state.isLive(node))
+            InstagramCardView(url: url, isLive: liveGate,
+                              suppressLive: state.isCameraInteracting)
+                .revealOnAdd(state: state, node: node)
 
         case .youtube(let url):
             // Same WKWebView lifecycle as Instagram: live = embedded muted
             // autoplay; not-live = static thumbnail poster, web view torn down.
-            YouTubeNodeView(url: url, isLive: state.isLive(node))
+            YouTubeNodeView(url: url, isLive: liveGate,
+                            suppressLive: state.isCameraInteracting)
+                .revealOnAdd(state: state, node: node)
 
         case .webclip(let url):
             // Arbitrary website. Same semantic-zoom lifecycle as Instagram:
             // live = WKWebView; not-live = cached snapshot, web view torn down.
-            WebClipCardView(url: url, isLive: state.isLive(node), nodeID: node.id)
+            WebClipCardView(url: url, isLive: liveGate,
+                            suppressLive: state.isCameraInteracting, nodeID: node.id)
+                .revealOnAdd(state: state, node: node)
 
         case .text(let content, let fontSize):
             TextNodeView(
@@ -440,17 +476,20 @@ struct DraggableNode: View {
             )
 
         case .image(let data, let filename):
-            ImageNodeView(
+            RevealingImageNode(
                 data: data,
                 filename: filename,
-                isLive: state.isLive(node)
+                isLive: liveGate,
+                shouldReveal: state.pendingRevealNodeIDs.contains(node.id),
+                onConsumed: { state.pendingRevealNodeIDs.remove(node.id) }
             )
 
         case .video(let fileURL, let filename):
             VideoNodeView(
                 fileURL: fileURL,
                 filename: filename,
-                isLive: state.isLive(node),
+                isLive: liveGate,
+                suppressLive: state.isCameraInteracting,
                 trimStart: node.trimStart,
                 trimEnd: node.trimEnd,
                 // Offer trim only on the canvas (not in the lightbox), and
@@ -585,9 +624,13 @@ struct DraggableNode: View {
     private var selectionRing: some View {
         if state.selectedNodeIDs.contains(node.id) {
             ZStack {
+                // Spatial-style selection: a crisp WHITE ring with a soft white
+                // glow (not a flat accent-blue stroke).
                 RoundedRectangle(cornerRadius: chromeCornerRadius, style: .continuous)
-                    .strokeBorder(Color.accentColor,
-                                  lineWidth: chromeLineWidth * chromeInverseZoom)
+                    .strokeBorder(Color.white,
+                                  lineWidth: 2.5 * chromeInverseZoom)
+                    .shadow(color: Color.white.opacity(0.9), radius: 3 * chromeInverseZoom)
+                    .shadow(color: Color.white.opacity(0.5), radius: 8 * chromeInverseZoom)
                     .allowsHitTesting(false)
                 // Four square corner handles when this node is the SOLE
                 // selection and a resizable kind (text auto-sizes, excluded).
@@ -597,7 +640,8 @@ struct DraggableNode: View {
                         renderedSize: CGSize(
                             width: node.width,
                             height: state.renderedHeight(of: node)
-                        )
+                        ),
+                        insetHandles: !positioned
                     )
                 }
             }
@@ -669,6 +713,9 @@ struct DraggableNode: View {
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
+                // A corner resize is in flight (handle gesture set this) — never
+                // also move the card, so the two never fight for the drag.
+                if state.activeResizeStart != nil { return }
                 // Archive Bento is read-only — drags would fight its
                 // imposed layout. Communicate "this is a review view"
                 // with a tiny wiggle (audit S3) instead of a silent

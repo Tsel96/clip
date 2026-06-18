@@ -56,7 +56,57 @@ final class CanvasState: ObservableObject {
     var smartSelection: SmartSelectionController!
     var camera: Camera {
         get { cameraStore.camera }
-        set { cameraStore.camera = newValue }
+        set {
+            let zoomChanged = abs(newValue.zoom - cameraStore.camera.zoom) > 0.0001
+            cameraStore.camera = newValue
+            markCameraInteracting()
+            if zoomChanged { markZoomInteracting() }
+        }
+    }
+
+    /// True while the camera is actively moving (pan / zoom / glide). While
+    /// set, `isLive` drops every NSView-backed media card (WKWebView /
+    /// AVPlayer) to its static SwiftUI poster, so none of those views is
+    /// transformed inside the hosting hierarchy — that transform-during-
+    /// layout is what re-enters AppKit's constraint engine and trips the
+    /// depth-16 recursion guard on macOS 26/27 (EXC_BREAKPOINT in
+    /// -[NSView _layoutSubtreeWithOldSize:]). Flips once at gesture start
+    /// and once ~0.15 s after it ends — not per pan tick.
+    @Published private(set) var isCameraInteracting = false
+    private var cameraSettleTimer: Timer?
+
+    /// Mark the camera as moving and (re)arm the settle timer. Default
+    /// runloop mode is deliberate: the timer cannot fire during
+    /// `.eventTracking`, so the flag stays true for the whole gesture and
+    /// clears only once the runloop returns to `.default` (gesture ended).
+    private func markCameraInteracting() {
+        if !isCameraInteracting { isCameraInteracting = true }
+        cameraSettleTimer?.invalidate()
+        cameraSettleTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.15, repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in self?.isCameraInteracting = false }
+        }
+    }
+
+    /// True only while the *zoom* is actively changing (not pan). Drives
+    /// dropping `AVPlayerLayer`-backed video cards to their poster *during a
+    /// zoom*: SwiftUI's `.scaleEffect` renders the live player black, and an
+    /// NSView-backed player composites above any SwiftUI cover, so the only
+    /// reliable fix is to unmount it for the duration of the zoom. Scoped to
+    /// zoom (pan leaves video live, as the team intends). Same `.default`-mode
+    /// settle-timer trick as `isCameraInteracting`.
+    @Published private(set) var isZoomInteracting = false
+    private var zoomSettleTimer: Timer?
+
+    private func markZoomInteracting() {
+        if !isZoomInteracting { isZoomInteracting = true }
+        zoomSettleTimer?.invalidate()
+        zoomSettleTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.2, repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in self?.isZoomInteracting = false }
+        }
     }
 
     /// Bumped whenever `camera.zoom` changes (never on pan). Node views
@@ -234,13 +284,21 @@ final class CanvasState: ObservableObject {
     /// Watch the camera store; bump `zoomEpoch` only when the *zoom*
     /// changes (panning leaves it untouched), so node views re-evaluate
     /// `isLive` on zoom without re-rendering on every pan tick.
+    /// When true (native NSCollectionView canvas active), don't bump
+    /// `zoomEpoch` on zoom: the native cards are always-live and positioned by
+    /// the collection layout, so a zoom must NOT re-render them (that re-render
+    /// — swapping poster↔live — is the card-blink at gesture boundaries). The
+    /// minimap / zoom readout still update because they observe `cameraStore`
+    /// directly, not `zoomEpoch`.
+    var suppressZoomEpoch = false
+
     private func setupZoomWatch() {
         lastObservedZoom = cameraStore.camera.zoom
         cameraCancellable = cameraStore.$camera
             .sink { [weak self] cam in
                 guard let self, cam.zoom != self.lastObservedZoom else { return }
                 self.lastObservedZoom = cam.zoom
-                self.zoomEpoch &+= 1
+                if !self.suppressZoomEpoch { self.zoomEpoch &+= 1 }
             }
     }
 
@@ -631,6 +689,10 @@ final class CanvasState: ObservableObject {
     /// auto-focus its editor on appear. Cleared once consumed.
     @Published var pendingFocusNodeID: UUID? = nil
 
+    /// ids of freshly added image nodes that should play the wavefront
+    /// reveal once when they appear. Cleared by the node view once consumed.
+    @Published var pendingRevealNodeIDs: Set<UUID> = []
+
     /// In-flight drag-to-connect (live preview line).
     @Published var pendingConnector: PendingConnector? = nil
 
@@ -702,11 +764,10 @@ final class CanvasState: ObservableObject {
             y: centre.y - 120 + jitter
         )
 
-        withUndoable {
-            var node = CanvasNode.tweet(url: trimmed, position: position, width: cardWidth)
-            node.origin = origin
-            nodes.append(node)
-        }
+        var node = CanvasNode.tweet(url: trimmed, position: position, width: cardWidth)
+        node.origin = origin
+        withUndoable { nodes.append(node) }
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     func pasteFromClipboard() {
@@ -764,12 +825,11 @@ final class CanvasState: ObservableObject {
         let jitter: CGFloat = worldPoint == nil ? CGFloat.random(in: -40...40) : 0
         let position = CGPoint(x: centre.x - cardWidth / 2 + jitter,
                                y: centre.y - cardHeight / 2 + jitter)
-        withUndoable {
-            var node = CanvasNode.webclip(url: trimmed, position: position,
-                                          width: cardWidth, height: cardHeight)
-            node.origin = origin
-            nodes.append(node)
-        }
+        var node = CanvasNode.webclip(url: trimmed, position: position,
+                                      width: cardWidth, height: cardHeight)
+        node.origin = origin
+        withUndoable { nodes.append(node) }
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     // MARK: - Local file imports
@@ -851,10 +911,13 @@ final class CanvasState: ObservableObject {
             x: centre.x - cardSize.width  / 2,
             y: centre.y - cardSize.height / 2
         )
+        let node = CanvasNode.image(data: data, filename: filename,
+                                    position: position, size: cardSize)
         withUndoable {
-            nodes.append(.image(data: data, filename: filename,
-                                position: position, size: cardSize))
+            nodes.append(node)
         }
+        // Mark it so its view plays the wavefront reveal once on appear.
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     /// Add a local video by URL. Lets AVPlayer stream from disk (no decode
@@ -943,14 +1006,13 @@ final class CanvasState: ObservableObject {
             y: centre.y - cardHeight / 2 + jitter
         )
 
-        withUndoable {
-            var node = CanvasNode.instagram(url: trimmed,
-                                            position: position,
-                                            width: cardWidth,
-                                            height: cardHeight)
-            node.origin = origin
-            nodes.append(node)
-        }
+        var node = CanvasNode.instagram(url: trimmed,
+                                        position: position,
+                                        width: cardWidth,
+                                        height: cardHeight)
+        node.origin = origin
+        withUndoable { nodes.append(node) }
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     func addYouTube(url: String, at worldPoint: CGPoint? = nil,
@@ -975,12 +1037,11 @@ final class CanvasState: ObservableObject {
             y: centre.y - cardHeight / 2 + jitter
         )
 
-        withUndoable {
-            let node = CanvasNode(position: position, width: cardWidth,
-                                  height: cardHeight, kind: .youtube(url: trimmed),
-                                  origin: origin)
-            nodes.append(node)
-        }
+        let node = CanvasNode(position: position, width: cardWidth,
+                              height: cardHeight, kind: .youtube(url: trimmed),
+                              origin: origin)
+        withUndoable { nodes.append(node) }
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     // MARK: - iPhone share inbox
@@ -1861,7 +1922,7 @@ final class CanvasState: ObservableObject {
         // Wrap the geometry mutations + camera reset in one spring so
         // every member visibly springs from its stack-anchor position
         // out to its grid slot in a single coordinated animation.
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             self.focusedStackID = groupID
             self.focusPositions = layout.positions
             self.focusSizes     = layout.sizes
@@ -1881,7 +1942,7 @@ final class CanvasState: ObservableObject {
         cancelPanInertia()   // the restore owns the camera from here
         let restoreCamera = focusOriginCamera ?? cameraStore.camera
         // Animate the dismissal — same spring as entry for symmetry.
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             self.focusedStackID = nil
             self.focusPositions = [:]
             self.focusSizes = [:]
@@ -2415,7 +2476,7 @@ final class CanvasState: ObservableObject {
         // world coords, so we don't need the camera. Park it at neutral
         // values so any leak-through has predictable behaviour.
         let neutral = Camera(x: 0, y: 0, zoom: 1.0)
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             canvasMode = .archive
             archiveLevel = .calendar
             setArchiveDays(days)
@@ -2441,7 +2502,7 @@ final class CanvasState: ObservableObject {
     func popArchiveLevel() {
         switch archiveLevel {
         case .card(let cardID):
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+            withAnimation(Motion.structure) {
                 // O(1) reverse lookup: which day owns this card?
                 if let dayForCard = cardToDay[cardID] {
                     archiveLevel = .day(dayForCard)
@@ -2450,7 +2511,7 @@ final class CanvasState: ObservableObject {
                 }
             }
         case .day:
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+            withAnimation(Motion.structure) {
                 archiveLevel = .calendar
                 archivePositions = [:]
                 archiveSizes = [:]
@@ -2477,7 +2538,7 @@ final class CanvasState: ObservableObject {
                 ? viewportSize
                 : CGSize(width: 1200, height: 800)
         )
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             archiveLevel = .day(normalized)
             archivePositions = positions
             archiveSizes = sizes
@@ -2498,7 +2559,7 @@ final class CanvasState: ObservableObject {
             renderedHeight: renderedHeight(of: node),
             viewportSize: viewport
         )
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             archiveLevel = .card(id)
             // Replace overrides with just the focused card's layout —
             // the rest of the day's cards aren't rendered in lightbox.
@@ -2576,7 +2637,7 @@ final class CanvasState: ObservableObject {
     func exitArchive() {
         guard canvasMode == .archive else { return }
         let restored = preArchiveCamera
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
+        withAnimation(Motion.structure) {
             canvasMode = .canvas
             archiveLevel = .calendar
             setArchiveDays([:])
@@ -2786,8 +2847,10 @@ final class CanvasState: ObservableObject {
         // extra shove.
         velocity.x *= 1.6
         velocity.y *= 1.6
-        panInertiaTimer = Timer.scheduledTimer(
-            withTimeInterval: 1.0 / 60.0, repeats: true
+        // `.common` mode so the coast keeps ticking during `.eventTracking`
+        // (a follow-on trackpad gesture) instead of stalling in `.default`.
+        let inertiaTimer = Timer(
+            timeInterval: 1.0 / 60.0, repeats: true
         ) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
             velocity.x *= 0.92
@@ -2800,6 +2863,8 @@ final class CanvasState: ObservableObject {
             let vx = velocity.x, vy = velocity.y
             Task { @MainActor in self.pan(deltaX: vx, deltaY: vy) }
         }
+        RunLoop.main.add(inertiaTimer, forMode: .common)
+        panInertiaTimer = inertiaTimer
     }
 
     /// Frame all nodes within the viewport. If empty, just resets.
@@ -2950,18 +3015,27 @@ final class CanvasState: ObservableObject {
         // seekable player, so tear down its background loop player.
         if trimmingCardID == node.id { return false }
         switch node.kind {
-        case .video, .tweet, .instagram, .image:
+        case .video, .tweet, .instagram, .image, .youtube, .webclip:
             break               // gated below
         default:
             return true
         }
+        // NOTE: media is intentionally NOT suppressed during a pan. The
+        // pan-crash culprit was the minimap's `.glassEffect` re-laying out
+        // every tick (an AppKit constraint view), not the media cards — a
+        // build with media fully suppressed during pan still crashed until
+        // the glass was removed. SwiftUI `.scaleEffect`/`.offset` transform
+        // the media layers without an AppKit constraint pass, so live
+        // players during a pan are safe; suppressing them only made cards
+        // blink (poster<->live) on every pan. `isCameraInteracting` now
+        // gates only the minimap glass (see LiquidGlassMinimap).
         // "Show video previews only" — force every video-bearing kind to
         // its resting (poster) state regardless of zoom / viewport. Images
         // are left to the normal gate below: isLive controls an image's
         // actual pixels and an image has no playback to stop.
         if videosShowPreviewOnly {
             switch node.kind {
-            case .video, .tweet, .instagram: return false
+            case .video, .tweet, .instagram, .youtube: return false
             default: break
             }
         }

@@ -14,6 +14,9 @@ struct CanvasEventMonitor: NSViewRepresentable {
     /// canvas (hover *and* drag); `nil` once it leaves. Drives the grid
     /// spotlight — never consumes the event.
     var onPointerMove: (_ location: CGPoint?) -> Void
+    /// When false (native NSScrollView canvas), don't consume scroll/magnify —
+    /// let the scroll view own pan/zoom. Pointer-move + background-click stay.
+    var capturesScrollMagnify: Bool = true
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onScroll: onScroll, onMagnify: onMagnify,
@@ -32,6 +35,7 @@ struct CanvasEventMonitor: NSViewRepresentable {
         context.coordinator.onMagnify = onMagnify
         context.coordinator.onBackgroundClick = onBackgroundClick
         context.coordinator.onPointerMove = onPointerMove
+        context.coordinator.capturesScrollMagnify = capturesScrollMagnify
         if let v = nsView as? BackgroundClickView { v.onClick = onBackgroundClick }
         // Re-attach in case the host view moved windows after creation.
         context.coordinator.attach(toWindowOf: nsView)
@@ -46,6 +50,7 @@ struct CanvasEventMonitor: NSViewRepresentable {
         var onMagnify: (CGFloat, CGPoint) -> Void
         var onBackgroundClick: () -> Void
         var onPointerMove: (CGPoint?) -> Void
+        var capturesScrollMagnify = true
 
         private weak var ownerWindow: NSWindow?
         private weak var ownerView: NSView?
@@ -90,7 +95,7 @@ struct CanvasEventMonitor: NSViewRepresentable {
                         self.onPointerMove(inside ? pointInView : nil)
                         return event
                     case .scrollWheel:
-                        guard inside else { return event }
+                        guard inside, self.capturesScrollMagnify else { return event }
                         // AppKit returns scrolls with positive dy = scroll up. Our flipped
                         // canvas (top-left origin) wants positive y = move down. Pass the
                         // raw deltas through; the camera math handles the sign.
@@ -102,7 +107,7 @@ struct CanvasEventMonitor: NSViewRepresentable {
                         )
                         return nil   // consume — we panned/zoomed
                     case .magnify:
-                        guard inside else { return event }
+                        guard inside, self.capturesScrollMagnify else { return event }
                         self.onMagnify(event.magnification, pointInView)
                         return nil
                     default:

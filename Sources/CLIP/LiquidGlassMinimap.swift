@@ -88,17 +88,14 @@ struct LiquidGlassMinimap: View {
 
     /// Base material under the canvas content. Real clear Liquid Glass on
     /// macOS 26+ (refracts the canvas behind the dome); frosted fallback
-    /// with a slight white lift elsewhere.
-    @ViewBuilder
+    /// elsewhere. Lives in `MinimapGlassBase` — a view with NO camera/state
+    /// input — so SwiftUI evaluates and lays out the AppKit-backed
+    /// `.glassEffect` exactly once and never re-runs it as the camera moves.
+    /// That's what keeps it live during pan without tripping the beta layout
+    /// engine's depth-16 recursion guard (the old fix swapped it for a flat
+    /// fill while `state.isCameraInteracting`).
     private var baseMaterial: some View {
-        if #available(macOS 26.0, *) {
-            Color.clear
-                .glassEffect(.clear, in: .circle)
-        } else {
-            Circle()
-                .fill(.ultraThinMaterial)
-                .background(Circle().fill(Color.white.opacity(0.05)))
-        }
+        MinimapGlassBase()
     }
 
     private var dome: some View {
@@ -232,3 +229,21 @@ private struct PointerTriangle: Shape {
     }
 }
 
+
+/// The minimap's glass base, deliberately given NO camera/state input. Because
+/// its value never changes, SwiftUI evaluates its body and lays out the
+/// AppKit-backed `.glassEffect` exactly once — so panning/zooming the canvas
+/// (which re-renders the surrounding minimap) never re-lays-out the glass, and
+/// the depth-16 layout recursion that used to crash on pan can't trigger.
+private struct MinimapGlassBase: View {
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear.glassEffect(.clear, in: .circle)
+        } else {
+            // Pre-26 has no depth-16 guard — frosted material with a white lift.
+            Circle()
+                .fill(.ultraThinMaterial)
+                .background(Circle().fill(Color.white.opacity(0.05)))
+        }
+    }
+}

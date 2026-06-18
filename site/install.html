@@ -57,6 +57,15 @@
           <b>System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security</b>,
           scroll down, and click <b>Open&nbsp;Anyway</b> → <b>Open</b>.
           You only ever do this once.</p>
+          <p class="sub">Still says <b>“CLIP is damaged and can’t be
+          opened”</b>? That’s macOS quarantining an app it can’t verify —
+          clear the quarantine flag once. Open <b>Terminal</b>
+          (<b>Applications → Utilities → Terminal</b>), paste the line
+          below, and press&nbsp;Return:</p>
+          <pre class="cmd"><code>xattr -dr com.apple.quarantine /Applications/CLIP.app</code></pre>
+          <p class="sub">Then open CLIP normally. (CLIP is ad-hoc signed,
+          not yet notarized by Apple — this is the expected one-time step
+          for indie apps distributed outside the App Store.)</p>
         </div>
       </li>
     </ol>
