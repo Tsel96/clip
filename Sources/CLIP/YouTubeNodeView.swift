@@ -13,6 +13,9 @@ struct YouTubeNodeView: View {
     /// Live iff the card intersects the viewport AND is projected at a
     /// large-enough size (and the user hasn't forced previews-only).
     var isLive: Bool = true
+    /// While true (camera zooming), force the thumbnail poster instead of the
+    /// live `WKWebView` — WebKit renders black under SwiftUI's zoom transform.
+    var suppressLive: Bool = false
 
     @State private var hovering = false
     @State private var isLoading = true
@@ -21,7 +24,7 @@ struct YouTubeNodeView: View {
     var body: some View {
         ZStack {
             if YouTubeService.embedURL(from: url) != nil {
-                if isLive, let embedURL = YouTubeService.embedURL(from: url) {
+                if isLive && !suppressLive, let embedURL = YouTubeService.embedURL(from: url) {
                     YouTubeWebView(url: embedURL, isLoading: $isLoading, didFail: $didFail)
                         // Non-interactive so the whole card surface drags via
                         // DraggableNode (WKWebView would otherwise eat events).
@@ -48,7 +51,7 @@ struct YouTubeNodeView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .background(Color(nsColor: .windowBackgroundColor))
         .figmaCardStyle(isElevated: hovering)
         .onHover { hovering = $0 }
     }
@@ -63,11 +66,11 @@ struct YouTubeNodeView: View {
                     if case .success(let img) = phase {
                         img.resizable().aspectRatio(contentMode: .fill)
                     } else {
-                        Color.black
+                        Color(nsColor: .windowBackgroundColor)
                     }
                 }
             } else {
-                Color.black
+                Color(nsColor: .windowBackgroundColor)
             }
             Image(systemName: "play.circle.fill")
                 .font(.system(size: 42))

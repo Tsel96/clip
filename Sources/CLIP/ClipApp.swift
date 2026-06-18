@@ -6,6 +6,7 @@ struct ClipApp: App {
     @StateObject private var state = CanvasState()
 
     init() {
+        setbuf(stdout, nil)   // unbuffered stdout so diagnostics flush immediately
         NSApplication.shared.setActivationPolicy(.regular)
         ClipFont.register()      // make ONY Semimono resolvable via Font.custom
         UpdateChecker.shared.start()   // silent self-update (inert in dev builds)

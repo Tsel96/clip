@@ -262,6 +262,42 @@ struct CanvasView: View {
         state.canvasMode == .colorform ? 14 * CGFloat(bulbsOpacity) : 0
     }
 
+    /// Phase 1 — route the node layer through the native `NSScrollView` canvas
+    /// core. Off by default; flip on to test the new pan/zoom.
+    /// First-pass issues to fix before re-enabling: (1) coordinate sync — cards
+    /// land offset from the camera-derived overlays; (2) card drag math (÷zoom +
+    /// `.global`) is wrong inside a magnified scroll view; (3) pan/zoom feel.
+    /// Now points at the NSCollectionView core (milestone 1 = placeholder cards).
+    /// Native canvas rewrite (Spatial-style NSScrollView + NSCollectionView).
+    /// Zoom-anchor coordinate bug fixed (document-view coords). Placeholder
+    /// boxes for now — validating pan/zoom smoothness before card hosting.
+    private let useNativeCanvas = true
+
+    /// World extent for the native scroll view: all content plus a generous
+    /// margin so you can pan well past the edges.
+    private var worldBounds: CGRect {
+        let margin: CGFloat = 6000
+        if let r = state.boundingRect(of: Set(state.nodes.map(\.id))), r.width > 0, r.height > 0 {
+            return r.insetBy(dx: -margin, dy: -margin)
+        }
+        return CGRect(x: -margin, y: -margin, width: 2 * margin, height: 2 * margin)
+    }
+
+    /// Content-coordinate camera for the native canvas's world-space overlay
+    /// (connectors): maps world → (world − worldBounds.origin) so the overlay
+    /// lines up with the collection's item frames. Kept in sync by
+    /// `syncOverlayCamera()`.
+    @StateObject private var overlayCamera = CameraStore()
+
+    /// A deliberately frozen camera injected into the native collection cards so
+    /// the live camera sync (which feeds the minimap) never re-renders them —
+    /// the layout positions them and they're always-live, so they need no camera.
+    @StateObject private var cardCamera = CameraStore()
+
+    private func syncOverlayCamera() {
+        overlayCamera.camera = Camera(x: -worldBounds.minX, y: -worldBounds.minY, zoom: 1)
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
@@ -329,19 +365,100 @@ struct CanvasView: View {
                 // "apply scale changes directly to the whole graphics
                 // context.")
                 if state.canvasMode != .archive {
-                    Group { nodeLayer }
-                    .scaleEffect(cameraStore.camera.zoom, anchor: .topLeading)
-                    .offset(x: cameraStore.camera.x, y: cameraStore.camera.y)
-                    .opacity(cardsOpacity)
-                    .blur(radius: cardsBlur)
-                    .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
+                    if useNativeCanvas {
+                        // Phase 1 — native NSScrollView core (zoom = magnification,
+                        // pan = scrolling). Only the node layer moves in; the
+                        // overlays below stay screen-space and track the camera
+                        // we sync back out.
+                        CollectionCanvas(
+                            worldBounds: worldBounds,
+                            nodes: state.nodes,
+                            camera: cameraStore.camera,
+                            minZoom: 0.05, maxZoom: 8,
+                            onCameraChange: { cameraStore.camera = $0 },
+                            content: { node in
+                                // Each collection item hosts a real card. It's a
+                                // separate NSHostingView, so re-inject the env
+                                // objects the card tree needs.
+                                AnyView(
+                                    DraggableNode(node: node, positioned: false)
+                                        .environmentObject(state)
+                                        .environmentObject(cardCamera)
+                                        .environmentObject(state.smartSelection)
+                                )
+                            },
+                            // World-space connectors, drawn inside the scrolled
+                            // content so they pan/zoom with the cards. No camera
+                            // here — CollectionCanvas supplies the content-coord one.
+                            overlay: AnyView(
+                                ConnectorsLayer()
+                                    .frame(width: worldBounds.width,
+                                           height: worldBounds.height,
+                                           alignment: .topLeading)
+                                    .environmentObject(state)
+                                    .environmentObject(state.smartSelection)
+                                    .environmentObject(overlayCamera)
+                            ),
+                            onBackgroundClick: {
+                                if state.toolMode == .select { state.deselectAll() }
+                            },
+                            selectedNodeID: state.selectedNodeIDs.count == 1
+                                ? state.selectedNodeIDs.first : nil,
+                            selectedNodeIDs: state.selectedNodeIDs,
+                            onResizeBegan: {
+                                state.activeResizeUndoSnapshot = state.snapshotForUndo()
+                            },
+                            onResize: { id, frame in
+                                state.resize(id: id, frame: frame)
+                            },
+                            onResizeEnded: {
+                                if let snap = state.activeResizeUndoSnapshot {
+                                    state.commitUndoable(from: snap)
+                                }
+                                state.activeResizeUndoSnapshot = nil
+                            },
+                            onMarquee: { contentRect in
+                                // Content → world, then select every node the box touches.
+                                let world = contentRect.offsetBy(dx: worldBounds.minX,
+                                                                 dy: worldBounds.minY)
+                                let hits = state.nodes.filter { n in
+                                    world.intersects(CGRect(x: n.position.x, y: n.position.y,
+                                                            width: n.width, height: n.height ?? 120))
+                                }.map(\.id)
+                                state.selectNodes(Set(hits))
+                            },
+                            onSelect: { id, shift in
+                                guard state.toolMode == .select else { return }
+                                if shift { state.toggleNodeSelection(id) }
+                                else { state.select(id) }
+                            }
+                        )
+                        .onAppear {
+                            syncOverlayCamera()
+                            // Native cards are always-live + layout-positioned, so
+                            // a zoom must not re-render them (the gesture-boundary
+                            // blink). Minimap/readout still update via cameraStore.
+                            state.suppressZoomEpoch = true
+                        }
+                        .onChange(of: worldBounds) { _ in syncOverlayCamera() }
+                        .opacity(cardsOpacity)
+                        .blur(radius: cardsBlur)
+                        .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
+                    } else {
+                        Group { nodeLayer }
+                        .scaleEffect(cameraStore.camera.zoom, anchor: .topLeading)
+                        .offset(x: cameraStore.camera.x, y: cameraStore.camera.y)
+                        .opacity(cardsOpacity)
+                        .blur(radius: cardsBlur)
+                        .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
+                    }
                 }
 
                 // Connectors (arrows) — drawn above nodes so the live preview
                 // and arrowheads stay visible during a drag-to-connect.
                 // Hidden in Colorform because the re-laid-out cards make
                 // their endpoints meaningless.
-                if state.showConnectors && state.canvasMode == .canvas {
+                if state.showConnectors && state.canvasMode == .canvas && !useNativeCanvas {
                     ConnectorsLayer()
                         .allowsHitTesting(state.toolMode == .select)
                 }
@@ -404,12 +521,25 @@ struct CanvasView: View {
                         onBackgroundClick: {
                             if state.toolMode == .select { state.deselectAll() }
                         },
-                        onPointerMove: { pointerLocation = $0 }
+                        onPointerMove: { pointerLocation = $0 },
+                        // Native canvas owns pan/zoom — don't consume scroll/magnify.
+                        capturesScrollMagnify: !useNativeCanvas
                     )
                     .zIndex(-1)
                 }
             }
             .background(backgroundColor)
+            // Pre-decode every video's first-frame poster as nodes load, so the
+            // during-zoom poster cover (VideoNodeView) always has a real frame
+            // instead of falling back to black on a cold cache — the "videos go
+            // black while zooming" symptom. Re-runs when the node set changes.
+            .task(id: state.nodes.count) {
+                let urls = state.nodes.compactMap { node -> URL? in
+                    if case .video(let url, _) = node.kind { return url }
+                    return nil
+                }
+                VideoPosterStore.warm(urls)
+            }
             // Publish this container's window-global frame so the lightbox can
             // map a node's camera-local position to its real on-screen rect
             // (the camera offset is relative to this ZStack). Plain write — not

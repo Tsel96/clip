@@ -19,33 +19,18 @@ struct FigmaCardStyle: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return content
             .clipShape(shape)
+            // Spatial-style chrome: just the clipped media + a clean hairline
+            // edge so the card reads against a same-colored backdrop. The float
+            // shadow lives on the native item's CALayer (`CardItemView`) so it
+            // isn't clipped by the collection item — a SwiftUI `.shadow` here
+            // would be cut off at the card's bounds.
             .overlay(
-                shape.stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(colorScheme == .dark ? 0.12 : 0.25),
-                            Color.clear,
-                            Color.clear,
-                            Color.black.opacity(colorScheme == .dark ? 0.35 : 0.15)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
+                shape.strokeBorder(
+                    Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                    lineWidth: 0.5
                 )
-                .blendMode(.plusLighter)
                 .allowsHitTesting(false)
             )
-            .overlay(
-                shape.strokeBorder(Color.primary.opacity(0.4), lineWidth: 0.5)
-            )
-            // Hover elevation — multi-layer drop shadow matching the
-            // `Card_Hovered` Figma frame.
-            .shadow(color: .black.opacity(isElevated ? 0.10 : 0), radius: 1.5, x: 0, y: 1)
-            .shadow(color: .black.opacity(isElevated ? 0.09 : 0), radius: 3,   x: 0, y: 6)
-            .shadow(color: .black.opacity(isElevated ? 0.05 : 0), radius: 4,   x: 0, y: 13)
-            .shadow(color: .black.opacity(isElevated ? 0.01 : 0), radius: 4.5, x: 0, y: 23)
-            .animation(.easeOut(duration: 0.15), value: isElevated)
     }
 }
 

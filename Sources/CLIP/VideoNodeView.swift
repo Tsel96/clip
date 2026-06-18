@@ -19,6 +19,12 @@ struct VideoNodeView: View {
     let fileURL: URL
     let filename: String
     let isLive: Bool
+    /// While true (camera panning/zooming), cover the live player with its
+    /// poster. The `AVPlayerLayer` renders BLACK under SwiftUI's `.scaleEffect`
+    /// (the canvas zoom transform), so during a camera move we show the decoded
+    /// frame instead — sharp, scales smoothly, and the player stays mounted so
+    /// there's no teardown/reload thrash when the camera settles.
+    var suppressLive: Bool = false
     /// Non-destructive trim (seconds). When both are set the player loops
     /// only `[trimStart, trimEnd]`; otherwise the whole clip.
     var trimStart: Double? = nil
@@ -56,8 +62,35 @@ struct VideoNodeView: View {
     /// Composited gate the player obeys when it's mounted.
     private var effectivePlaying: Bool { userPlaying && isLive }
 
+    /// Best poster available *right now*: the loaded one, else a synchronous
+    /// process-wide cache hit. The cache fallback is what kills the black flash
+    /// during zoom — when a card remounts (its `@State poster` reset to nil) or
+    /// the live player is still loading its first frame, the decoded frame is
+    /// already warm in `VideoPosterStore`, so we show it instead of black.
+    private var posterImage: NSImage? {
+        poster ?? VideoPosterStore.cachedPoster(for: fileURL)
+    }
+
+    /// Poster (or black) shown *behind* the live player while it (re)loads its
+    /// first frame, and as the resting backdrop — never a bare black box.
+    @ViewBuilder private var posterBackdrop: some View {
+        if let img = posterImage {
+            Image(nsImage: img)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else {
+            // Neutral, never black: a cold card reads as a light placeholder
+            // tile instead of a black hole while its frame decodes.
+            Color(nsColor: .windowBackgroundColor)
+        }
+    }
+
     var body: some View {
         ZStack {
+            // Keep the player live through camera moves so video keeps playing
+            // while you zoom. The clear AVPlayerLayer background means that if
+            // SwiftUI rasterizes the card mid-zoom, the poster behind shows
+            // through instead of black — never a black tile.
             if isLive {
                 TweetVideoPlayer(
                     url: fileURL,
@@ -67,7 +100,7 @@ struct VideoNodeView: View {
                     timeRange: trimRange
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
+                .background(posterBackdrop)
 
                 // Mute / play / trim controls. Always faintly visible so
                 // they're discoverable without cursor-sweeping (hiding
@@ -132,15 +165,15 @@ struct VideoNodeView: View {
     @ViewBuilder
     private var placeholder: some View {
         ZStack {
-            Color.black
-            if let poster {
-                Image(nsImage: poster)
+            Color(nsColor: .windowBackgroundColor)
+            if let img = posterImage {
+                Image(nsImage: img)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
                 Image(systemName: "film")
                     .font(.system(size: 18, weight: .light))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -170,6 +203,16 @@ enum VideoPosterStore {
     /// the placeholder fallback.
     static func cachedPoster(for url: URL) -> NSImage? {
         cache[url]
+    }
+
+    /// Proactively decode posters for any of `urls` not already cached. Called
+    /// as nodes load so a clip's first frame is ready *before* a zoom needs it:
+    /// the camera-move poster cover (`VideoNodeView`) falls back to black on a
+    /// cold cache, which is the "videos go black while zooming" symptom.
+    static func warm(_ urls: [URL]) {
+        for url in urls where cache[url] == nil {
+            Task { _ = await poster(for: url) }
+        }
     }
 
     private static func decodeFirstFrame(_ url: URL) async -> NSImage? {

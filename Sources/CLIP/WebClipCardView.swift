@@ -16,6 +16,11 @@ struct WebClipCardView: View {
     /// Live iff the card intersects the viewport AND is projected at
     /// ≥ `livePlaybackMinScreenSide`. Default true keeps test sites unaffected.
     var isLive: Bool = true
+    /// While true (camera zooming), force the cached-snapshot poster instead of
+    /// the live `WKWebView`. WebKit is NSView-backed, so it renders black under
+    /// SwiftUI's `.scaleEffect` zoom transform (and composites above any SwiftUI
+    /// cover) — the snapshot is a plain bitmap that scales cleanly.
+    var suppressLive: Bool = false
     let nodeID: UUID
 
     @State private var hovering = false
@@ -27,7 +32,7 @@ struct WebClipCardView: View {
     var body: some View {
         ZStack {
             if let url = URL(string: url) {
-                if isLive {
+                if isLive && !suppressLive {
                     WebClipWebView(
                         url: url,
                         nodeID: nodeID,

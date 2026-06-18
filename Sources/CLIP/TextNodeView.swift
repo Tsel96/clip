@@ -30,7 +30,10 @@ struct TextNodeView: View {
             }
         }
         .font(.system(size: fontSize))
-        .contentShape(Rectangle())
+        // NO `.contentShape(Rectangle())` here and no tap gesture: on the canvas
+        // those capture the click and stop the node from being SELECTED. The
+        // node's own hit region (DraggableNode) handles select + double-click,
+        // which routes back here via `pendingFocusNodeID` to enter edit mode.
         .onAppear {
             editingText = content
             if state.pendingFocusNodeID == nodeID {
@@ -38,7 +41,11 @@ struct TextNodeView: View {
             }
         }
         .onChange(of: state.pendingFocusNodeID) { newID in
-            if newID == nodeID && !isEditing { startEditing() }
+            if newID == nodeID && !isEditing {
+                startEditing()
+                // Reset so a later double-click can re-trigger the change.
+                DispatchQueue.main.async { state.pendingFocusNodeID = nil }
+            }
         }
         // Click-out / Esc / clicking another node all deselect this node.
         // When we leave the selection while editing, commit & exit edit mode
@@ -95,11 +102,13 @@ struct TextNodeView: View {
             if content.isEmpty {
                 Text("Text").foregroundStyle(.tertiary)
             } else {
-                Text(content).textSelection(.enabled)
+                // NOT `.textSelection(.enabled)` — on the canvas that intercepts
+                // the click for character-highlighting, so the node never gets
+                // selected. Double-click still enters edit mode.
+                Text(content)
             }
         }
         .fixedSize(horizontal: true, vertical: true)
-        .onTapGesture(count: 2) { startEditing() }
     }
 
     // MARK: - Helpers

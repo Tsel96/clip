@@ -57,8 +57,10 @@ final class CanvasState: ObservableObject {
     var camera: Camera {
         get { cameraStore.camera }
         set {
+            let zoomChanged = abs(newValue.zoom - cameraStore.camera.zoom) > 0.0001
             cameraStore.camera = newValue
             markCameraInteracting()
+            if zoomChanged { markZoomInteracting() }
         }
     }
 
@@ -84,6 +86,26 @@ final class CanvasState: ObservableObject {
             withTimeInterval: 0.15, repeats: false
         ) { [weak self] _ in
             Task { @MainActor in self?.isCameraInteracting = false }
+        }
+    }
+
+    /// True only while the *zoom* is actively changing (not pan). Drives
+    /// dropping `AVPlayerLayer`-backed video cards to their poster *during a
+    /// zoom*: SwiftUI's `.scaleEffect` renders the live player black, and an
+    /// NSView-backed player composites above any SwiftUI cover, so the only
+    /// reliable fix is to unmount it for the duration of the zoom. Scoped to
+    /// zoom (pan leaves video live, as the team intends). Same `.default`-mode
+    /// settle-timer trick as `isCameraInteracting`.
+    @Published private(set) var isZoomInteracting = false
+    private var zoomSettleTimer: Timer?
+
+    private func markZoomInteracting() {
+        if !isZoomInteracting { isZoomInteracting = true }
+        zoomSettleTimer?.invalidate()
+        zoomSettleTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.2, repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in self?.isZoomInteracting = false }
         }
     }
 
@@ -262,13 +284,21 @@ final class CanvasState: ObservableObject {
     /// Watch the camera store; bump `zoomEpoch` only when the *zoom*
     /// changes (panning leaves it untouched), so node views re-evaluate
     /// `isLive` on zoom without re-rendering on every pan tick.
+    /// When true (native NSCollectionView canvas active), don't bump
+    /// `zoomEpoch` on zoom: the native cards are always-live and positioned by
+    /// the collection layout, so a zoom must NOT re-render them (that re-render
+    /// — swapping poster↔live — is the card-blink at gesture boundaries). The
+    /// minimap / zoom readout still update because they observe `cameraStore`
+    /// directly, not `zoomEpoch`.
+    var suppressZoomEpoch = false
+
     private func setupZoomWatch() {
         lastObservedZoom = cameraStore.camera.zoom
         cameraCancellable = cameraStore.$camera
             .sink { [weak self] cam in
                 guard let self, cam.zoom != self.lastObservedZoom else { return }
                 self.lastObservedZoom = cam.zoom
-                self.zoomEpoch &+= 1
+                if !self.suppressZoomEpoch { self.zoomEpoch &+= 1 }
             }
     }
 
@@ -659,6 +689,10 @@ final class CanvasState: ObservableObject {
     /// auto-focus its editor on appear. Cleared once consumed.
     @Published var pendingFocusNodeID: UUID? = nil
 
+    /// ids of freshly added image nodes that should play the wavefront
+    /// reveal once when they appear. Cleared by the node view once consumed.
+    @Published var pendingRevealNodeIDs: Set<UUID> = []
+
     /// In-flight drag-to-connect (live preview line).
     @Published var pendingConnector: PendingConnector? = nil
 
@@ -730,11 +764,10 @@ final class CanvasState: ObservableObject {
             y: centre.y - 120 + jitter
         )
 
-        withUndoable {
-            var node = CanvasNode.tweet(url: trimmed, position: position, width: cardWidth)
-            node.origin = origin
-            nodes.append(node)
-        }
+        var node = CanvasNode.tweet(url: trimmed, position: position, width: cardWidth)
+        node.origin = origin
+        withUndoable { nodes.append(node) }
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     func pasteFromClipboard() {
@@ -792,12 +825,11 @@ final class CanvasState: ObservableObject {
         let jitter: CGFloat = worldPoint == nil ? CGFloat.random(in: -40...40) : 0
         let position = CGPoint(x: centre.x - cardWidth / 2 + jitter,
                                y: centre.y - cardHeight / 2 + jitter)
-        withUndoable {
-            var node = CanvasNode.webclip(url: trimmed, position: position,
-                                          width: cardWidth, height: cardHeight)
-            node.origin = origin
-            nodes.append(node)
-        }
+        var node = CanvasNode.webclip(url: trimmed, position: position,
+                                      width: cardWidth, height: cardHeight)
+        node.origin = origin
+        withUndoable { nodes.append(node) }
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     // MARK: - Local file imports
@@ -879,10 +911,13 @@ final class CanvasState: ObservableObject {
             x: centre.x - cardSize.width  / 2,
             y: centre.y - cardSize.height / 2
         )
+        let node = CanvasNode.image(data: data, filename: filename,
+                                    position: position, size: cardSize)
         withUndoable {
-            nodes.append(.image(data: data, filename: filename,
-                                position: position, size: cardSize))
+            nodes.append(node)
         }
+        // Mark it so its view plays the wavefront reveal once on appear.
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     /// Add a local video by URL. Lets AVPlayer stream from disk (no decode
@@ -971,14 +1006,13 @@ final class CanvasState: ObservableObject {
             y: centre.y - cardHeight / 2 + jitter
         )
 
-        withUndoable {
-            var node = CanvasNode.instagram(url: trimmed,
-                                            position: position,
-                                            width: cardWidth,
-                                            height: cardHeight)
-            node.origin = origin
-            nodes.append(node)
-        }
+        var node = CanvasNode.instagram(url: trimmed,
+                                        position: position,
+                                        width: cardWidth,
+                                        height: cardHeight)
+        node.origin = origin
+        withUndoable { nodes.append(node) }
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     func addYouTube(url: String, at worldPoint: CGPoint? = nil,
@@ -1003,12 +1037,11 @@ final class CanvasState: ObservableObject {
             y: centre.y - cardHeight / 2 + jitter
         )
 
-        withUndoable {
-            let node = CanvasNode(position: position, width: cardWidth,
-                                  height: cardHeight, kind: .youtube(url: trimmed),
-                                  origin: origin)
-            nodes.append(node)
-        }
+        let node = CanvasNode(position: position, width: cardWidth,
+                              height: cardHeight, kind: .youtube(url: trimmed),
+                              origin: origin)
+        withUndoable { nodes.append(node) }
+        pendingRevealNodeIDs.insert(node.id)
     }
 
     // MARK: - iPhone share inbox
