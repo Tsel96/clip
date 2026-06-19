@@ -26,13 +26,7 @@ import AppKit
 /// at the gesture location keeps the point under your fingers fixed — the
 /// expected canvas-zoom feel.
 final class CenterZoomScrollView: NSScrollView {
-    /// Reports the live pinch phase. Our magnify is programmatic, so the system
-    /// `…LiveMagnify…` notifications don't fire — the coordinator uses this to
-    /// freeze the camera sync (and thus SwiftUI card re-renders) mid-gesture.
-    var onMagnifyPhase: ((NSEvent.Phase) -> Void)?
-
     override func magnify(with event: NSEvent) {
-        onMagnifyPhase?(event.phase)
         let target = max(minMagnification,
                          min(maxMagnification, magnification * (1 + event.magnification)))
         let point = documentView?.convert(event.locationInWindow, from: nil)
@@ -552,17 +546,9 @@ struct CollectionCanvas: NSViewRepresentable {
         private(set) var nodes: [CanvasNode] = []
         weak var inputView: CanvasInputView?
         var boundsObserver: NSObjectProtocol?
-        var magnifyObserver: NSObjectProtocol?
-        var liveScrollStart: NSObjectProtocol?
-        var liveScrollEnd: NSObjectProtocol?
         var escMonitor: Any?
         var colorKeyMonitor: Any?
         var colorPicker: RadialColorPicker?
-        /// While true (a live pan/pinch is in flight), the scroll→camera sync is
-        /// frozen so the SwiftUI cards don't re-render every frame. The scroll
-        /// view still scales the content natively; we sync the camera once the
-        /// gesture (incl. momentum) ends.
-        var suppressPush = false
         private var lastCamera: Camera?
         private var applyingProgrammatic = false
         // Card appear animation: track which node IDs we've already shown so a
@@ -575,9 +561,7 @@ struct CollectionCanvas: NSViewRepresentable {
         init(_ parent: CollectionCanvas) { self.parent = parent }
 
         func detach() {
-            for o in [boundsObserver, magnifyObserver, liveScrollStart, liveScrollEnd] {
-                if let o { NotificationCenter.default.removeObserver(o) }
-            }
+            if let o = boundsObserver { NotificationCenter.default.removeObserver(o) }
             if let m = escMonitor { NSEvent.removeMonitor(m) }
             if let m = colorKeyMonitor { NSEvent.removeMonitor(m) }
         }
@@ -711,21 +695,15 @@ struct CollectionCanvas: NSViewRepresentable {
         /// (it re-applies its cached layout every pass, which is why direct frame
         /// sets "did nothing"), but it does NOT touch the layer transform — so a
         /// translate rides on top of the layout and actually moves the card.
-        @discardableResult
-        func liveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) -> Int {
-            guard let cv = collection else { return -2 }
+        func liveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
+            guard let cv = collection else { return }
             let t = CATransform3DMakeTranslation(dx, dy, 0)
-            var applied = 0
             CATransaction.begin(); CATransaction.setDisableActions(true)
             for id in startPos.keys {
                 guard let idx = nodes.firstIndex(where: { $0.id == id }) else { continue }
-                if let v = cv.item(at: IndexPath(item: idx, section: 0))?.view {
-                    v.layer?.transform = t
-                    applied += 1
-                }
+                cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = t
             }
             CATransaction.commit()
-            return applied
         }
 
         /// End of a move: write each dragged item's final frame into the layout
@@ -743,6 +721,9 @@ struct CollectionCanvas: NSViewRepresentable {
                 let n = nodes[idx]
                 layout.itemFrames[idx] = CGRect(x: sp.x + dx - minX, y: sp.y + dy - minY,
                                                 width: max(1, n.width), height: max(1, n.height ?? 120))
+                // Clear the live drag transform explicitly (don't rely on reloadData
+                // to discard it — required if item recycling is ever enabled).
+                cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = CATransform3DIdentity
             }
             layout.invalidateLayout()
             cv.reloadData()
@@ -1176,12 +1157,12 @@ final class HostingCollectionItem: NSCollectionViewItem {
     var usesNativeContent: Bool { nativeContent != nil }
     /// The installed native content view (for in-place content refresh).
     var nativeContentView: NSView? { nativeContent }
-    var cardView: CardItemView { view as! CardItemView }
+    /// Typed item view, set in `loadView` — avoids a force-cast on a hot accessor.
+    private(set) var cardView = CardItemView()
 
     override func loadView() {
-        let v = CardItemView()
-        v.wantsLayer = true
-        view = v
+        cardView.wantsLayer = true
+        view = cardView
     }
 
     /// Install native content for the node if a native renderer exists; else
