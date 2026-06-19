@@ -75,6 +75,33 @@ final class PassthroughHostingView: NSHostingView<AnyView> {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// Hosts the screen-space tool overlays (tool-input / selection / guides) ABOVE
+/// the scroll. In **select** mode it is click-transparent (returns `nil`) so
+/// clicks fall straight through to `CanvasInputView`; in a **tool** mode it
+/// hit-tests normally so draw/text/connect route through `ToolInputLayer`.
+/// Scroll/magnify always forward to the scroll view so pan/zoom works in any
+/// mode (its `CLIPCanvasView` host also forwards bubbled scroll events).
+final class ToolOverlayHostingView: NSHostingView<AnyView> {
+    /// Reads the LIVE select-mode flag (from the coordinator's current config).
+    var isSelectMode: () -> Bool = { true }
+    weak var scrollRef: NSScrollView?
+    required init(rootView: AnyView) { super.init(rootView: rootView) }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isSelectMode() ? nil : super.hitTest(point)
+    }
+    override func scrollWheel(with event: NSEvent) { scrollRef?.scrollWheel(with: event) }
+    override func magnify(with event: NSEvent) { scrollRef?.magnify(with: event) }
+}
+
+/// Live cursor position (screen-space, SwiftUI top-left coords) for the native
+/// shell's dot-grid spotlight. Updated by the canvas event monitor and observed
+/// ONLY by the behind-island — so pointer moves re-render the grid in isolation,
+/// never the whole `CanvasView` body.
+final class CanvasPointerStore: ObservableObject {
+    @Published var location: CGPoint?
+}
+
 
 /// Pure-data inputs to the native canvas engine, shared by the SwiftUI bridge
 /// (`CollectionCanvas`) and the `Coordinator`. Carrying these as a value
