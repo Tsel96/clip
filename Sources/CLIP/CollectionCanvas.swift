@@ -127,7 +127,6 @@ final class CanvasInputView: NSView {
     private var resizeStartFrame: CGRect = .zero    // world coords
     private var moveStartPos: [UUID: CGPoint] = [:] // world coords
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
-    private var moveLogged = false                  // one diagnostic log per move gesture
     private var primaryMoveID: UUID?
     private var didBegin = false
     private var clickedSelectedNoShift: UUID?       // collapse-to-one on a no-drag click
@@ -610,9 +609,6 @@ struct CollectionCanvas: NSViewRepresentable {
             let countChanged = nodes.count != p.nodes.count
             let oldFrames = layout?.itemFrames ?? []
             let framesChanged = oldFrames != frames
-            if framesChanged {
-                NSLog("CLIP APPLY framesChanged: cc=\(countChanged) old0=\(oldFrames.first.map{"\(Int($0.minX)),\(Int($0.minY))"} ?? "-") new0=\(frames.first.map{"\(Int($0.minX)),\(Int($0.minY))"} ?? "-")")
-            }
             // Flag genuinely-new cards (added after the first load) to scale in,
             // and snapshot just-removed cards so they can scale OUT (the item is
             // gone after reloadData, so we animate a snapshot in its place).
@@ -741,19 +737,15 @@ struct CollectionCanvas: NSViewRepresentable {
         func endLiveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
             guard let cv = collection, let layout = layout else { return }
             let minX = parent.worldBounds.minX, minY = parent.worldBounds.minY
-            var n0Before = CGRect.null, n0After = CGRect.null
             for (id, sp) in startPos {
                 guard let idx = nodes.firstIndex(where: { $0.id == id }), idx < layout.itemFrames.count
                 else { continue }
                 let n = nodes[idx]
-                if n0Before.isNull { n0Before = layout.itemFrames[idx] }
                 layout.itemFrames[idx] = CGRect(x: sp.x + dx - minX, y: sp.y + dy - minY,
                                                 width: max(1, n.width), height: max(1, n.height ?? 120))
-                if n0After.isNull { n0After = layout.itemFrames[idx] }
             }
             layout.invalidateLayout()
             cv.reloadData()
-            NSLog("CLIP COMMIT move: delta=(\(Int(dx)),\(Int(dy))) items=\(startPos.count) frame0 \(Int(n0Before.minX)),\(Int(n0Before.minY)) → \(Int(n0After.minX)),\(Int(n0After.minY))")
         }
 
         /// Spatial-style zoom-OUT on delete: the collection removes the item
