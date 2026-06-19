@@ -751,7 +751,7 @@ final class CardItemView: NSView {
         switch kind {
         case .image, .video, .tweet, .instagram, .youtube, .webclip, .stickyNote:
             return true
-        case .text, .drawing, .section:
+        case .text, .drawing, .section, .folder:
             return false
         }
     }

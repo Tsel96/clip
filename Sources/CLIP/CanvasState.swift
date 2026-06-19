@@ -1461,6 +1461,7 @@ final class CanvasState: ObservableObject {
         case .stickyNote: derived.append("note")
         case .drawing:    derived.append("drawing")
         case .section:    break
+        case .folder:     derived.append("folder")
         }
         if let host = sourceURL(of: node).flatMap({ URL(string: $0)?.host })?
             .replacingOccurrences(of: "www.", with: ""),
@@ -1526,6 +1527,8 @@ final class CanvasState: ObservableObject {
             return "A loose freehand ink sketch, minimal expressive line art."
         case .section:
             return "A labeled grouping frame."
+        case .folder:
+            return "A folder holding a set of saved items."
         }
     }
 
@@ -2310,6 +2313,7 @@ final class CanvasState: ObservableObject {
         case .webclip:    return 320
         case .section:    return 200
         case .stickyNote: return 200
+        case .folder:     return 224
         }
     }
 

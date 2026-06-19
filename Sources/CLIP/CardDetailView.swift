@@ -427,6 +427,7 @@ final class CardDetailView: NSView {
         case .drawing:   return "Drawing"
         case .section:   return "Section"
         case .stickyNote: return "Note"
+        case .folder:    return "Folder"
         }
     }
 

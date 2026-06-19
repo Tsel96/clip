@@ -24,6 +24,8 @@ func makeNativeCardContent(for node: CanvasNode) -> NSView? {
         return CardSectionContentView(title: title, color: color)
     case .stickyNote(let content, let color):
         return CardStickyContentView(content: content, color: color)
+    case .folder:
+        let v = FolderCardView(); v.update(for: node); return v
     default:
         // tweet / instagram / youtube / webclip / text — still SwiftUI for now.
         // (Web cards keep their semantic-zoom live↔poster lifecycle; text keeps
@@ -42,6 +44,7 @@ func nativeContentKey(for node: CanvasNode) -> String? {
     case .section(let t, let c):    return "section|\(t)|\(c.rawValue)"
     case .stickyNote(let t, let c): return "sticky|\(t)|\(c.rawValue)"
     case .text(let t, let s):       return "text|\(t)|\(s)"
+    case .folder(let t, let i, let c): return "folder|\(t)|\(i)|\(c.count)"
     default:                        return nil
     }
 }

@@ -641,6 +641,7 @@ private struct DetailsInspector: View {
         case .stickyNote: return "NOTE"
         case .drawing:   return "DRAW"
         case .section:   return "SECTION"
+        case .folder:    return "FOLDER"
         }
     }
 }
@@ -707,6 +708,8 @@ struct CardContentView: View {
             SectionNodeView(node: node, title: title, color: color)
         case .stickyNote(let content, let color):
             StickyNodeView(node: node, content: content, color: color)
+        case .folder:
+            Color.clear   // folders render natively via makeNativeCardContent
         }
     }
 }

@@ -240,6 +240,8 @@ struct MinimapView: View {
                     fill = color.swiftUIColor.opacity(isSel ? 0.7 : 0.35)
                 case .stickyNote(_, let color):
                     fill = color.swiftUIColor.opacity(isSel ? 1 : 0.85)
+                case .folder:
+                    fill = isSel ? .secondary : .secondary.opacity(0.5)
                 }
                 let r = min(4, w * 0.18, h * 0.18)
                 let path = Path(roundedRect: rect, cornerSize: CGSize(width: r, height: r))

@@ -510,6 +510,9 @@ struct DraggableNode: View {
                 color: color
             )
 
+        case .folder:
+            Color.clear   // folders render natively via makeNativeCardContent
+
         case .stickyNote(let content, let color):
             StickyNodeView(
                 node: node,
@@ -665,7 +668,7 @@ struct DraggableNode: View {
         case .text:       return 2
         case .stickyNote: return StickyNodeView.cornerRadius
         case .section:    return SectionNodeView.cornerRadius
-        case .tweet, .instagram, .youtube, .webclip, .image, .video, .drawing:
+        case .tweet, .instagram, .youtube, .webclip, .image, .video, .drawing, .folder:
             return 19.375
         }
     }
@@ -693,7 +696,7 @@ struct DraggableNode: View {
         case .text:                        return false
         case .tweet, .instagram, .youtube, .webclip,
              .image, .video, .drawing,
-             .section, .stickyNote:        return true
+             .section, .stickyNote, .folder: return true
         }
     }
 
