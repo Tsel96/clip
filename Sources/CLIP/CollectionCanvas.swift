@@ -457,8 +457,7 @@ struct CollectionCanvas: NSViewRepresentable {
                 hosting.cardView.updateShadow()
                 hosting.cardView.updateChrome()
                 if pendingAppearIDs.remove(node.id) != nil {
-                    let card = hosting.cardView
-                    DispatchQueue.main.async { card.playAppear() }   // after layout sets bounds
+                    hosting.cardView.wantsAppear = true   // fired in layout() when bounds are set
                 }
             }
             return item
@@ -698,6 +697,11 @@ final class CardItemView: NSView {
 
     private var magnification: CGFloat { max(enclosingScrollView?.magnification ?? 1, 0.0001) }
 
+    /// Set when this item represents a freshly-added node; the scale-in fires
+    /// from `layout()` once the collection view has given the item real bounds
+    /// (the async path raced the collection-view layout and could no-op).
+    var wantsAppear = false
+
     private var liveNode: CanvasNode? {
         guard let id = nodeID else { return nil }
         return coordinator?.config.nodes.first { $0.id == id }
@@ -742,6 +746,10 @@ final class CardItemView: NSView {
         super.layout()
         updateShadow()
         updateChrome()
+        if wantsAppear, bounds.width > 1, bounds.height > 1 {
+            wantsAppear = false
+            playAppear()
+        }
     }
 
     /// Only solid card tiles cast a float shadow. Drawings, text frames and
