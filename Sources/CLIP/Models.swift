@@ -647,6 +647,12 @@ extension CanvasNode.Kind: Codable {
                 content: try c.decode(String.self, forKey: .content),
                 color: try c.decode(StickyColor.self, forKey: .color)
             )
+        case "folder":
+            self = .folder(
+                title: try c.decode(String.self, forKey: .title),
+                icon: try c.decodeIfPresent(String.self, forKey: .icon) ?? "",
+                childIDs: try c.decodeIfPresent([UUID].self, forKey: .childIDs) ?? []
+            )
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: c,
@@ -693,6 +699,11 @@ extension CanvasNode.Kind: Codable {
             try c.encode("stickyNote", forKey: .type)
             try c.encode(content, forKey: .content)
             try c.encode(color, forKey: .color)
+        case .folder(let title, let icon, let childIDs):
+            try c.encode("folder", forKey: .type)
+            try c.encode(title, forKey: .title)
+            try c.encode(icon, forKey: .icon)
+            try c.encode(childIDs, forKey: .childIDs)
         }
     }
 }

@@ -227,6 +227,7 @@ private struct ArchiveListRow: View {
             return line.isEmpty ? "Empty note" : line
         case .drawing:              return "Drawing"
         case .section(let title, _): return title
+        case .folder(let title, _, _): return title.isEmpty ? "Untitled" : title
         }
     }
 
@@ -248,6 +249,7 @@ private struct ArchiveListRow: View {
         case .stickyNote: return "Sticky note"
         case .drawing:    return "Drawing"
         case .section:    return "Section"
+        case .folder:     return "Folder"
         }
     }
 
@@ -263,6 +265,7 @@ private struct ArchiveListRow: View {
         case .stickyNote: return "note.text"
         case .drawing:    return "pencil.tip"
         case .section:    return "rectangle.dashed"
+        case .folder:     return "folder"
         }
     }
 
@@ -279,6 +282,7 @@ private struct ArchiveListRow: View {
         case .stickyNote(_, let color): return color.swiftUIColor
         case .drawing(let s):           return s.color.swiftUIColor
         case .section(_, let color):    return color.swiftUIColor
+        case .folder:                   return Color(nsColor: .secondaryLabelColor)
         }
     }
 

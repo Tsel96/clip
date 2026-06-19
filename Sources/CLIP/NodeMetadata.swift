@@ -68,6 +68,10 @@ enum NodeMetadata {
             }
             return rows
 
+        case .folder(_, _, let childIDs):
+            return [.init(label: "Type",  value: "Folder"),
+                    .init(label: "Items", value: "\(childIDs.count)")]
+
         case .text, .drawing, .section, .stickyNote, .webclip:
             return []
         }
