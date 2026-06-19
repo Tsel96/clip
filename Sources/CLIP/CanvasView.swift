@@ -367,7 +367,7 @@ struct CanvasView: View {
                         // pan = scrolling). Only the node layer moves in; the
                         // overlays below stay screen-space and track the camera
                         // we sync back out.
-                        CollectionCanvas(
+                        CollectionCanvas(config: CanvasConfig(
                             worldBounds: worldBounds,
                             nodes: state.nodes,
                             camera: cameraStore.camera,
@@ -461,7 +461,7 @@ struct CanvasView: View {
                                         to: RadialColorPicker.nearestSectionColor(to: nsColor))
                                 }
                             }
-                        )
+                        ))
                         .onAppear {
                             syncOverlayCamera()
                             // Native cards are always-live + layout-positioned, so

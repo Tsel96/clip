@@ -66,14 +66,14 @@ final class CanvasInputView: NSView {
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    private var config: CollectionCanvas? { coordinator?.config }
+    private var config: CanvasConfig? { coordinator?.config }
     private var mag: CGFloat { max(enclosingScrollView?.magnification ?? 1, 0.0001) }
 
-    private func contentFrame(_ n: CanvasNode, _ p: CollectionCanvas) -> CGRect {
+    private func contentFrame(_ n: CanvasNode, _ p: CanvasConfig) -> CGRect {
         CGRect(x: n.position.x - p.worldBounds.minX, y: n.position.y - p.worldBounds.minY,
                width: n.width, height: n.height ?? 120)
     }
-    private func hitNode(at pt: NSPoint, _ p: CollectionCanvas) -> CanvasNode? {
+    private func hitNode(at pt: NSPoint, _ p: CanvasConfig) -> CanvasNode? {
         p.nodes.reversed().first { contentFrame($0, p).contains(pt) }   // topmost-first
     }
     private func isResizable(_ n: CanvasNode) -> Bool {
@@ -89,7 +89,7 @@ final class CanvasInputView: NSView {
     /// Resize grip on `n` near `pt` (content coords): the edges within grab range.
     /// Returns nil when the point isn't near any edge. Grab radius scales with
     /// zoom but is capped so the grips never cover the whole card.
-    private func grip(at pt: NSPoint, of n: CanvasNode, _ p: CollectionCanvas) -> Grip? {
+    private func grip(at pt: NSPoint, of n: CanvasNode, _ p: CanvasConfig) -> Grip? {
         let f = contentFrame(n, p)
         let r = min(26 / mag, min(f.width, f.height) * 0.25)
         var g = Grip()
@@ -229,13 +229,13 @@ final class CanvasInputView: NSView {
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
     }
 
-    private func beginIfNeeded(_ p: CollectionCanvas, primary: UUID?) {
+    private func beginIfNeeded(_ p: CanvasConfig, primary: UUID?) {
         guard !didBegin else { return }
         didBegin = true
         p.onInteractionBegan(primary)
     }
 
-    private func applyResize(dx: CGFloat, dy: CGFloat, event: NSEvent, p: CollectionCanvas) {
+    private func applyResize(dx: CGFloat, dy: CGFloat, event: NSEvent, p: CanvasConfig) {
         guard let g = resizeGrip, let id = resizeNodeID,
               let n = p.nodes.first(where: { $0.id == id }) else { return }
         let start = resizeStartFrame

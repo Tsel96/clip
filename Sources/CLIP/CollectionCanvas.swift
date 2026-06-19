@@ -150,7 +150,7 @@ struct CollectionCanvas: NSViewRepresentable {
         let layout = CanvasWorldLayout()
 
         let collection = WideCollectionView()
-        collection.contentWidth = worldBounds.size.width
+        collection.contentWidth = config.worldBounds.size.width
         collection.collectionViewLayout = layout
         collection.isSelectable = false
         collection.allowsMultipleSelection = false
@@ -167,8 +167,8 @@ struct CollectionCanvas: NSViewRepresentable {
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
         scroll.allowsMagnification = true
-        scroll.minMagnification = minZoom
-        scroll.maxMagnification = maxZoom
+        scroll.minMagnification = config.minZoom
+        scroll.maxMagnification = config.maxZoom
         scroll.usesPredominantAxisScrolling = false
         scroll.verticalScrollElasticity = .allowed
         scroll.horizontalScrollElasticity = .allowed
@@ -178,7 +178,7 @@ struct CollectionCanvas: NSViewRepresentable {
         // content coordinates, so the scroll view's magnification scales them
         // together — connectors pan/zoom with the cards.
         let container = FlippedContainer()
-        container.frame = CGRect(origin: .zero, size: worldBounds.size)
+        container.frame = CGRect(origin: .zero, size: config.worldBounds.size)
         collection.frame = container.bounds
         collection.autoresizingMask = [.width, .height]
         container.addSubview(collection)
@@ -187,7 +187,7 @@ struct CollectionCanvas: NSViewRepresentable {
         // The overlay already carries its content-coordinate camera (injected by
         // the caller, which knows worldBounds on the main actor).
         let overlayHost = PassthroughHostingView(
-            rootView: AnyView(overlay.allowsHitTesting(false)))
+            rootView: AnyView(config.overlay.allowsHitTesting(false)))
         overlayHost.frame = container.bounds
         overlayHost.autoresizingMask = [.width, .height]
         container.addSubview(overlayHost, positioned: .above, relativeTo: collection)
@@ -206,7 +206,7 @@ struct CollectionCanvas: NSViewRepresentable {
         coord.scroll = scroll
         coord.collection = collection
         coord.layout = layout
-        coord.apply(self)
+        coord.apply(config)
 
         scroll.contentView.postsBoundsChangedNotifications = true
         coord.boundsObserver = NotificationCenter.default.addObserver(
@@ -254,16 +254,16 @@ struct CollectionCanvas: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coord = context.coordinator
-        coord.config = self
-        scroll.minMagnification = minZoom
-        scroll.maxMagnification = maxZoom
-        coord.apply(self)
+        coord.config = config
+        scroll.minMagnification = config.minZoom
+        scroll.maxMagnification = config.maxZoom
+        coord.apply(config)
         // Re-enabled: push the model camera into the scroll view so the zoom pill,
         // ⌘±, fit, zoom-to-selection, reset and minimap jumps actually move the
         // canvas (they were severed). `applyCameraIfChanged` compares against the
         // scroll view's LIVE state and no-ops echoes of our own pinch/scroll, so
         // the round-trip can't fight the cursor-anchored `magnify`.
-        coord.applyCameraIfChanged(camera)
+        coord.applyCameraIfChanged(config.camera)
     }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
@@ -318,7 +318,7 @@ struct CollectionCanvas: NSViewRepresentable {
 
         /// Recompute item frames (content coords) + content size from the nodes,
         /// then refresh. Cheap structural compare avoids needless reloads.
-        func apply(_ p: CollectionCanvas) {
+        func apply(_ p: CanvasConfig) {
             let minX = p.worldBounds.minX, minY = p.worldBounds.minY
             let frames = p.nodes.map { n in
                 CGRect(x: n.position.x - minX, y: n.position.y - minY,
