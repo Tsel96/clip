@@ -638,12 +638,13 @@ struct CanvasView: View {
         // against the actual window bounds — not the inner ZStack's
         // potentially-extended frame. This is what makes them stay
         // visible when the user resizes the window (in any direction).
+        // Bottom-LEFT: connectors / grid / play toggles (Figma 51:12692).
         .overlay(alignment: .bottomLeading) {
             if state.canvasMode != .archive {
-                NativeZoomControlsPill()
+                NativeCanvasTogglesPill()
                     .fixedSize()
-                    .padding(.leading, 16)
-                    .padding(.bottom, 16)
+                    .padding(.leading, 18)
+                    .padding(.bottom, 18)
             }
         }
         // Liquid-glass minimap dome — anchored to the bottom-right corner
@@ -658,12 +659,13 @@ struct CanvasView: View {
                     .ignoresSafeArea()
             }
         }
+        // Bottom-RIGHT: zoom −/NN%/+ pill (Figma 51:12692).
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive {
-                NativeCanvasTogglesPill()
+                NativeZoomControlsPill()
                     .fixedSize()
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 16)
+                    .padding(.trailing, 18)
+                    .padding(.bottom, 18)
             }
         }
         // Acute tool-mode visibility — while a non-Select tool is active,
