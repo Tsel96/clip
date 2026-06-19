@@ -3128,6 +3128,20 @@ final class CanvasState: ObservableObject {
         }
     }
 
+    /// A media card (tweet) resolved its real media aspect asynchronously —
+    /// snap the node's height to it so the aspect-fit card fills its frame
+    /// instead of leaving a gray gap around it. Routed through `resize` so it
+    /// persists + re-lays out (not a separate undoable action). Idempotent:
+    /// no-ops once the height already matches, so it can't fight a user's
+    /// aspect-locked resize.
+    func snapMediaAspect(_ id: UUID, aspect: CGFloat) {
+        guard aspect > 0.01, let n = nodeByID[id] else { return }
+        let target = (n.width / aspect).rounded()
+        guard abs((n.height ?? -1) - target) > 1 else { return }
+        resize(id: id, frame: CGRect(x: n.position.x, y: n.position.y,
+                                     width: n.width, height: target))
+    }
+
     /// Insert a copy of `id` at the same position with a fresh UUID.
     /// Used by Option-drag and ⌘D duplicate.
     @discardableResult

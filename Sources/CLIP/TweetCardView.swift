@@ -35,6 +35,9 @@ struct TweetCardView: View {
     var onSaveTrim: ((Double, Double) -> Void)? = nil
     var onResetTrim: (() -> Void)? = nil
     var onCancelTrim: (() -> Void)? = nil
+    /// Called once the media aspect is known (loaded from the poster) so the
+    /// node can size to it — kills the gray gap around the aspect-fit card.
+    var onMediaAspect: ((CGFloat) -> Void)? = nil
 
     @State private var tweet: TweetData? = nil
     @State private var isLoading = false
@@ -87,7 +90,7 @@ struct TweetCardView: View {
                   w > 0, h > 0 else { return nil }
             return w / h
         }.value
-        if let aspect { mediaAspect = aspect }
+        if let aspect { mediaAspect = aspect; onMediaAspect?(aspect) }
     }
 
     // MARK: - Card body
