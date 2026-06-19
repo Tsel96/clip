@@ -218,10 +218,11 @@ struct CanvasView: View {
     /// SwiftUI ZStack siblings — so the canvas is one native view with one input
     /// owner. Flip to `false` to fall back to the proven ZStack shell (kept
     /// intact below as the `!useNativeShell` branches).
-    /// TEMPORARILY OFF: the above-island hit-testing regressed select/tools in
-    /// ways that need hands-on visual debugging (not possible in this headless
-    /// env). The collapse code stays intact behind this flag for that session.
-    private let useNativeShell = false
+    /// Re-enabled for the debug-together: the palette rework fixes tool-mode
+    /// switching (the cursor button reliably returns to select) and the
+    /// ToolInputLayer coordinate space is declared on the island. Flip to
+    /// `false` for the proven ZStack shell if select/tools misbehave.
+    private let useNativeShell = true
 
     /// Live cursor for the native-shell dot-grid spotlight. The behind-island
     /// observes this; `CanvasView.body` does NOT, so pointer moves re-render the
