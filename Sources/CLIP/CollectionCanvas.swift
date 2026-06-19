@@ -227,6 +227,7 @@ struct CollectionCanvas: NSViewRepresentable {
             // Snapshot the OLD nodes by id so we can detect content-only edits
             // (text/colour) on native cards, which don't change count or frame.
             let oldByID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            let oldOrderedIDs = nodes.map(\.id)   // OLD order, before `nodes` is replaced below
             let countChanged = nodes.count != p.nodes.count
             let oldFrames = layout?.itemFrames ?? []
             let framesChanged = oldFrames != frames
@@ -253,9 +254,34 @@ struct CollectionCanvas: NSViewRepresentable {
                 overlayHost?.setFrameSize(p.worldBounds.size)
             }
             if countChanged {
-                // Items added/removed: full reload.
-                layout?.invalidateLayout()
-                collection?.reloadData()
+                // Items added/removed. A full `reloadData` recreates EVERY item,
+                // which re-mounts every video/web player — the "all videos blink"
+                // when a folder (or any card) is added/deleted. Instead, diff to
+                // the exact inserted / removed index paths and apply an incremental
+                // batch update so the SURVIVING items (and their live players) are
+                // left untouched. Fall back to reloadData only when it isn't a clean
+                // insert/delete (e.g. a z-order reorder), which batch updates can't
+                // express.
+                let oldIDset = Set(oldOrderedIDs)
+                let removed = oldOrderedIDs.enumerated()
+                    .filter { !currentIDs.contains($0.element) }
+                    .map { IndexPath(item: $0.offset, section: 0) }
+                let inserted = p.nodes.enumerated()
+                    .filter { !oldIDset.contains($0.element.id) }
+                    .map { IndexPath(item: $0.offset, section: 0) }
+                let oldSurvivors = oldOrderedIDs.filter { currentIDs.contains($0) }
+                let newSurvivors = p.nodes.map(\.id).filter { oldIDset.contains($0) }
+                let isCleanDiff = oldSurvivors == newSurvivors &&
+                    oldOrderedIDs.count - removed.count + inserted.count == p.nodes.count
+                if isCleanDiff, let cv = collection {
+                    cv.performBatchUpdates({
+                        if !removed.isEmpty  { cv.deleteItems(at: Set(removed)) }
+                        if !inserted.isEmpty { cv.insertItems(at: Set(inserted)) }
+                    }, completionHandler: nil)
+                } else {
+                    layout?.invalidateLayout()
+                    collection?.reloadData()
+                }
             } else if framesChanged {
                 // Position/size change (drag, resize). Refresh the layout cache…
                 layout?.invalidateLayout()
