@@ -522,11 +522,12 @@ struct CollectionCanvas: NSViewRepresentable {
         scroll.minMagnification = minZoom
         scroll.maxMagnification = maxZoom
         coord.apply(self)
-        // DIAGNOSTIC: scroll view fully autonomous — do NOT push the camera
-        // back in. If native pinch now anchors correctly, the round-trip was
-        // the culprit; programmatic moves will route through the scroll view's
-        // own API instead. (Zoom buttons won't work during this test.)
-        // coord.applyCameraIfChanged(camera)
+        // Re-enabled: push the model camera into the scroll view so the zoom pill,
+        // ⌘±, fit, zoom-to-selection, reset and minimap jumps actually move the
+        // canvas (they were severed). `applyCameraIfChanged` compares against the
+        // scroll view's LIVE state and no-ops echoes of our own pinch/scroll, so
+        // the round-trip can't fight the cursor-anchored `magnify`.
+        coord.applyCameraIfChanged(camera)
     }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
