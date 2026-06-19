@@ -753,12 +753,7 @@ struct CollectionCanvas: NSViewRepresentable {
             }
             layout.invalidateLayout()
             cv.reloadData()
-            // Force the magnified scroll content to repaint (a low-zoom canvas can
-            // composite a stale raster otherwise).
-            cv.needsDisplay = true
-            container?.needsDisplay = true
-            scroll?.reflectScrolledClipView(scroll!.contentView)
-            NSLog("CLIP COMMIT move: delta=(\(Int(dx)),\(Int(dy))) mag=\(String(format: "%.3f", parent.camera.zoom)) items=\(startPos.count) frame0 \(Int(n0Before.minX)),\(Int(n0Before.minY)) → \(Int(n0After.minX)),\(Int(n0After.minY))")
+            NSLog("CLIP COMMIT move: delta=(\(Int(dx)),\(Int(dy))) items=\(startPos.count) frame0 \(Int(n0Before.minX)),\(Int(n0Before.minY)) → \(Int(n0After.minX)),\(Int(n0After.minY))")
         }
 
         /// Spatial-style zoom-OUT on delete: the collection removes the item
