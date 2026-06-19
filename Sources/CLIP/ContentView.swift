@@ -70,7 +70,9 @@ struct ContentView: View {
                 .allowsHitTesting(state.lightboxCardID != nil)
                 .zIndex(100)
         }
-        .toolbar(state.lightboxCardID == nil ? .automatic : .hidden, for: .windowToolbar)
+        // Top window toolbar removed entirely (user request): no sidebar toggle,
+        // title, add/paste, or appearance bar. Add = ⌘N, paste = ⌘V.
+        .toolbar(.hidden, for: .windowToolbar)
         // Drive the whole app's appearance + inject the matching ClipTheme so
         // every chrome surface reads one source of truth.
         .preferredColorScheme(state.themeMode.colorScheme)

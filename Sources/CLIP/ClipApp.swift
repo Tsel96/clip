@@ -57,6 +57,9 @@ struct ClipApp: App {
                 .frame(minWidth: 800, minHeight: 600)
                 .onAppear { NSApp.activate(ignoringOtherApps: true) }
         }
+        // No top title bar — the window chrome is removed so the canvas reaches
+        // the top edge (traffic lights float over the content).
+        .windowStyle(.hiddenTitleBar)
         .commands {
             // File ▸ Add Post…  (⌘N)  — accepts X or Instagram URLs.
             CommandGroup(replacing: .newItem) {

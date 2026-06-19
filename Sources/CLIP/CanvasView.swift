@@ -637,9 +637,10 @@ struct CanvasView: View {
                 NativeCanvasToolPalette(state: state)
                     .frame(width: CanvasToolPaletteView.totalW,
                            height: CanvasToolPaletteView.totalH)
-                    // Small extra gap so the drop-shadow (which fills the bottom
-                    // 34 pt shadow-bleed of the frame) clears the canvas edge.
-                    .padding(.bottom, 12)
+                    // Pill sits exactly 18 pt off the viewport bottom (user spec):
+                    // frame bottom flush with the viewport + the 18 pt shadow-bleed
+                    // IS that gap.
+                    .padding(.bottom, 0)
             }
         }
         // Acute tool-mode visibility — while a non-Select tool is active,
