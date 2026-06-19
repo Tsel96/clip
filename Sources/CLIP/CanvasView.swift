@@ -741,6 +741,13 @@ struct CanvasAboveOverlays: View {
                     .allowsHitTesting(false)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // ToolInputLayer / SmartSelection gestures read locations in the
+        // `CanvasCoords.name` space (which `state.screenToWorld` expects). That
+        // space is declared on CanvasView's GeometryReader, which this island's
+        // separate NSHostingView does NOT inherit — so re-declare it here at the
+        // island's bounds (= the canvas area), or every tool gets bad coords.
+        .coordinateSpace(name: CanvasCoords.name)
     }
 }
 
