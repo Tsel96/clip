@@ -88,20 +88,8 @@ struct ContentView: View {
         // switcher lives as a floating pill at the top of the canvas
         // (see `CanvasModeSwitcher`) rather than in the toolbar so it
         // reads more like Claude / Linear / Notion's tab strip.
-        ToolbarItem(placement: .navigation) {
-            Picker("Tool", selection: $state.toolMode) {
-                // Sections retired in favour of folders — hide the section tool.
-                ForEach(ToolMode.allCases.filter { $0 != .section }) { mode in
-                    Image(systemName: mode.systemImage)
-                        .help("\(mode.label)  (\(String(mode.keyboardKey).uppercased()))")
-                        .tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 240)
-            .disabled(state.canvasMode == .colorform)
-            .accessibilityIdentifier("toolbar.toolPicker")
-        }
+        // Tool picker moved OUT of the window toolbar into the bottom-center
+        // yellow tool palette (Figma 51:12692 / NativeCanvasToolPalette).
 
         // Draw-mode-only color & width controls.
         if state.toolMode == .draw {
