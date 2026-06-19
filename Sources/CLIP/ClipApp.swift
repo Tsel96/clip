@@ -51,6 +51,8 @@ struct ClipApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Add Post…") { state.isAddSheetPresented = true }
                     .keyboardShortcut("n", modifiers: .command)
+                Button("New Folder") { state.addFolder() }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
             }
 
             // File ▸ iPhone share inbox controls.

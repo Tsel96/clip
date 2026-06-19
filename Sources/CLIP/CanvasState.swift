@@ -1613,6 +1613,46 @@ final class CanvasState: ObservableObject {
         }
     }
 
+    // MARK: - Folders
+
+    /// Create an empty "Untitled" folder at the given world point (or viewport
+    /// centre when `nil`), selected and ready. Sized to the Figma folder aspect.
+    @discardableResult
+    func addFolder(at worldPoint: CGPoint? = nil) -> UUID {
+        let width: CGFloat = 260
+        let height = (width / 1.165).rounded()
+        let position: CGPoint = {
+            if let p = worldPoint {
+                return CGPoint(x: p.x - width / 2, y: p.y - height / 2)
+            }
+            let c = screenToWorld(point: viewportCentre)
+            return CGPoint(x: c.x - width / 2, y: c.y - height / 2)
+        }()
+        let node = CanvasNode.folder(position: position, width: width)
+        withUndoable { nodes.append(node) }
+        select(node.id)
+        toolMode = .select
+        return node.id
+    }
+
+    /// Rename a folder (inline edit / Edit Folder).
+    func setFolderTitle(id: UUID, to title: String) {
+        withUndoable {
+            guard let idx = nodes.firstIndex(where: { $0.id == id }),
+                  case .folder(_, let icon, let childIDs) = nodes[idx].kind else { return }
+            nodes[idx].kind = .folder(title: title, icon: icon, childIDs: childIDs)
+        }
+    }
+
+    /// Set a folder's identity icon (SF Symbol name, "" for none).
+    func setFolderIcon(id: UUID, to icon: String) {
+        withUndoable {
+            guard let idx = nodes.firstIndex(where: { $0.id == id }),
+                  case .folder(let title, _, let childIDs) = nodes[idx].kind else { return }
+            nodes[idx].kind = .folder(title: title, icon: icon, childIDs: childIDs)
+        }
+    }
+
     // MARK: - Sections
 
     /// Create a section frame covering the given world rect. Returns its
