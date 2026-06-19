@@ -668,6 +668,14 @@ struct CanvasView: View {
                     .padding(.bottom, 18)
             }
         }
+        // Bottom-CENTER: the Spatial-style yellow tool palette + "+" (Figma 51:12692).
+        .overlay(alignment: .bottom) {
+            if state.canvasMode == .canvas {
+                NativeCanvasToolPalette()
+                    .fixedSize()
+                    .padding(.bottom, 18)
+            }
+        }
         // Acute tool-mode visibility — while a non-Select tool is active,
         // a chip at the top of the canvas says WHY clicks now draw/place/
         // connect, and offers the way back (click or V).

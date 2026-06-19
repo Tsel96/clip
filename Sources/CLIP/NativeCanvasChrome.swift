@@ -365,3 +365,191 @@ struct NativeActiveToolChip: NSViewRepresentable {
         v.configure(symbol: state.toolMode.systemImage, name: state.toolMode.label)
     }
 }
+
+// MARK: - Brand tool palette (Figma 51:12692, bottom-center "candy bar")
+
+/// Spatial-style green/yellow candy pill: a green capsule rim + a vertical
+/// yellow gradient face + a bright top highlight + a soft 4-layer green drop
+/// shadow. Shared by the tool bar and the detached "+" button. `content` (inset
+/// 2pt) hosts the buttons.
+final class BrandPill: NSView {
+    let content = NSView()
+    private let ring = CALayer()
+    private let inner = CAGradientLayer()
+    private struct Spec { let opacity: Float; let blur: CGFloat; let dy: CGFloat }
+    private static let specs: [Spec] = [
+        .init(opacity: 0.12, blur: 1.5, dy: 2), .init(opacity: 0.10, blur: 3, dy: 6),
+        .init(opacity: 0.06, blur: 4, dy: 14), .init(opacity: 0.02, blur: 5, dy: 24)]
+    private let shadows: [CALayer]
+    static let green     = NSColor(srgbRed: 0.239, green: 0.655, blue: 0.149, alpha: 1)  // #3DA726
+    static let yellowTop = NSColor(srgbRed: 1.0,   green: 0.961, blue: 0.231, alpha: 1)  // #FFF53B
+    static let yellowBot = NSColor(srgbRed: 0.973, green: 0.871, blue: 0.278, alpha: 1)  // #F8DE47
+    static let border    = NSColor(srgbRed: 1.0,   green: 0.988, blue: 0.663, alpha: 1)  // #FFFCA9
+    static let shadowGreen = NSColor(srgbRed: 0.0, green: 0.361, blue: 0.008, alpha: 1)  // rgb(0,92,2)
+
+    init() {
+        shadows = Self.specs.map { _ in CALayer() }
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        for (l, s) in zip(shadows, Self.specs) {
+            l.backgroundColor = NSColor.clear.cgColor
+            l.shadowColor = Self.shadowGreen.cgColor
+            l.shadowOpacity = s.opacity
+            l.isGeometryFlipped = true        // manual sublayers aren't auto-flipped → +dy = down
+            layer?.addSublayer(l)
+        }
+        ring.backgroundColor = Self.green.cgColor
+        layer?.addSublayer(ring)
+        inner.colors = [Self.yellowTop.cgColor, Self.yellowBot.cgColor]
+        inner.startPoint = CGPoint(x: 0.5, y: 0); inner.endPoint = CGPoint(x: 0.5, y: 1)
+        inner.borderColor = Self.border.cgColor; inner.borderWidth = 2; inner.masksToBounds = true
+        layer?.addSublayer(inner)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+            content.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
+        ])
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        let r = bounds.height / 2
+        let capsule = CGPath(roundedRect: CGRect(origin: .zero, size: bounds.size),
+                             cornerWidth: r, cornerHeight: r, transform: nil)
+        let k = bounds.height / 62
+        for (l, s) in zip(shadows, Self.specs) {
+            l.frame = bounds; l.shadowPath = capsule
+            l.shadowRadius = s.blur * k; l.shadowOffset = CGSize(width: 0, height: s.dy * k)
+        }
+        ring.frame = bounds; ring.cornerRadius = r
+        inner.frame = bounds.insetBy(dx: 2, dy: 2); inner.cornerRadius = inner.frame.height / 2
+        CATransaction.commit()
+    }
+}
+
+/// A 52×52 circular tool button on the yellow bar. Active = solid green chip +
+/// white icon; inactive = dark icon at 70%, with a faint chip on hover.
+final class ToolPaletteButton: NSView {
+    var onClick: () -> Void = {}
+    var isActive = false { didSet { refresh() } }
+    private let chip = CALayer()
+    private let icon = NSImageView()
+    private var tracking: NSTrackingArea?
+
+    init(symbol: String) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        chip.backgroundColor = BrandPill.green.cgColor
+        chip.opacity = 0
+        layer?.addSublayer(chip)
+        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 19, weight: .medium))
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(icon)
+        NSLayoutConstraint.activate([
+            icon.centerXAnchor.constraint(equalTo: centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        refresh()
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    private func refresh() {
+        chip.opacity = isActive ? 1 : 0
+        icon.contentTintColor = isActive ? .white : NSColor.black.withAlphaComponent(0.70)
+    }
+    override func layout() {
+        super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        let s = min(bounds.width, bounds.height)
+        chip.frame = CGRect(x: bounds.midX - s / 2, y: bounds.midY - s / 2, width: s, height: s)
+        chip.cornerRadius = s / 2
+        CATransaction.commit()
+    }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self)
+        addTrackingArea(t); tracking = t
+    }
+    override func mouseEntered(with e: NSEvent) { if !isActive { chip.opacity = 0.18 } }
+    override func mouseExited(with e: NSEvent) { if !isActive { chip.opacity = 0 } }
+    override func mouseUp(with e: NSEvent) {
+        if bounds.contains(convert(e.locationInWindow, from: nil)) { onClick() }
+    }
+}
+
+/// The bottom-center palette: a yellow bar of tool buttons + a detached green
+/// "+" pill (Figma 51:12692). Tools map to `ToolMode`; the active one shows a
+/// green chip.
+final class CanvasToolPaletteView: NSView {
+    var onPick: (ToolMode) -> Void = { _ in }
+    var onAdd: () -> Void = {}
+    private let bar = BrandPill()
+    private let addPill = BrandPill()
+    private var buttons: [(ToolMode, ToolPaletteButton)] = []
+    private let tools: [ToolMode] = [.select, .text, .stickyNote, .draw, .connect]
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        addPill.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(bar); addSubview(addPill)
+
+        let stack = NSStackView()
+        stack.orientation = .horizontal; stack.distribution = .fillEqually; stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        for t in tools {
+            let b = ToolPaletteButton(symbol: t.systemImage)
+            b.onClick = { [weak self] in self?.onPick(t) }
+            b.translatesAutoresizingMaskIntoConstraints = false
+            b.widthAnchor.constraint(equalToConstant: 52).isActive = true
+            buttons.append((t, b))
+            stack.addArrangedSubview(b)
+        }
+        bar.content.addSubview(stack)
+        let add = ToolPaletteButton(symbol: "plus")
+        add.onClick = { [weak self] in self?.onAdd() }
+        add.translatesAutoresizingMaskIntoConstraints = false
+        addPill.content.addSubview(add)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: bar.content.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: bar.content.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: bar.content.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bar.content.bottomAnchor),
+            add.leadingAnchor.constraint(equalTo: addPill.content.leadingAnchor),
+            add.trailingAnchor.constraint(equalTo: addPill.content.trailingAnchor),
+            add.topAnchor.constraint(equalTo: addPill.content.topAnchor),
+            add.bottomAnchor.constraint(equalTo: addPill.content.bottomAnchor),
+            bar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bar.topAnchor.constraint(equalTo: topAnchor),
+            bar.bottomAnchor.constraint(equalTo: bottomAnchor),
+            addPill.leadingAnchor.constraint(equalTo: bar.trailingAnchor, constant: 10),
+            addPill.trailingAnchor.constraint(equalTo: trailingAnchor),
+            addPill.topAnchor.constraint(equalTo: topAnchor),
+            addPill.bottomAnchor.constraint(equalTo: bottomAnchor),
+            addPill.widthAnchor.constraint(equalToConstant: 62),
+        ])
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: tools.count * 52 + 4 + 10 + 62, height: 62) }
+    func configure(active: ToolMode) { for (t, b) in buttons { b.isActive = (t == active) } }
+}
+
+struct NativeCanvasToolPalette: NSViewRepresentable {
+    @EnvironmentObject var state: CanvasState
+    func makeNSView(context: Context) -> CanvasToolPaletteView { CanvasToolPaletteView() }
+    func updateNSView(_ v: CanvasToolPaletteView, context: Context) {
+        v.onPick = { state.toolMode = $0 }
+        v.onAdd = { state.isAddSheetPresented = true }
+        v.configure(active: state.toolMode)
+    }
+}
