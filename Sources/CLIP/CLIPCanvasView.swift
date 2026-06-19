@@ -105,7 +105,11 @@ final class CLIPCanvasView: NSView {
         // click; in a tool mode it captures so ToolInputLayer draws.
         if let above = config.aboveOverlay {
             let host = ToolOverlayHostingView(rootView: above)
-            host.isSelectMode = { [weak coordinator] in coordinator?.config.isSelectMode() ?? true }
+            host.isSelectMode = { [weak coordinator] in
+                guard let c = coordinator?.config else { return true }
+                // Draw also passes through → CanvasInputView draws the stroke natively.
+                return c.isSelectMode() || c.isDrawMode()
+            }
             host.scrollRef = scroll
             host.frame = bounds
             host.autoresizingMask = [.width, .height]

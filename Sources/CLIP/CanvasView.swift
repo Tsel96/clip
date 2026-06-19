@@ -373,6 +373,14 @@ struct CanvasView: View {
                                     .environmentObject(state.smartSelection)
                             ) : nil,
                             isSelectMode: { state.toolMode == .select },
+                            isDrawMode: { state.toolMode == .draw },
+                            drawColor: {
+                                let c = state.drawColor
+                                return NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green),
+                                               blue: CGFloat(c.blue), alpha: 1)
+                            },
+                            drawWidth: { state.drawWidth },
+                            onCommitStroke: { world in state.commitStroke(worldPoints: world) },
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }
                             },

@@ -2076,7 +2076,14 @@ final class CanvasState: ObservableObject {
     /// Convert a screen-space stroke into a drawing node (in world coords).
     func commitStroke(screenPoints: [CGPoint]) {
         guard screenPoints.count >= 2 else { return }
-        let world = screenPoints.map { screenToWorld(point: $0) }
+        commitStroke(worldPoints: screenPoints.map { screenToWorld(point: $0) })
+    }
+
+    /// Commit a stroke whose points are ALREADY in world coords (the native
+    /// `CanvasInputView` draw path — its own coordinate system is content space,
+    /// so it converts content→world itself and skips `screenToWorld`).
+    func commitStroke(worldPoints world: [CGPoint]) {
+        guard world.count >= 2 else { return }
         let simplified = PathMath.simplify(world, epsilon: 1.5)
         let pad = drawWidth + 4
         let bounds = PathMath.paddedBounds(of: simplified, pad: pad)

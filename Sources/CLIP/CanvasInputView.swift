@@ -17,7 +17,7 @@ final class CanvasInputView: NSView {
     override var isFlipped: Bool { true }
     weak var coordinator: CollectionCanvas.Coordinator?
 
-    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee }
+    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw }
     /// Which edges a resize drag moves. A corner moves two (one H + one V); an
     /// edge moves one — matching Spatial's corner + edge resize handles.
     private struct Grip {
@@ -59,10 +59,22 @@ final class CanvasInputView: NSView {
         return l
     }()
 
+    /// Live native draw-stroke preview (content space → scales with zoom).
+    private lazy var drawLayer: CAShapeLayer = {
+        let l = CAShapeLayer()
+        l.fillColor = NSColor.clear.cgColor
+        l.lineCap = .round
+        l.lineJoin = .round
+        l.isHidden = true
+        return l
+    }()
+    private var drawPoints: [NSPoint] = []
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.addSublayer(marqueeLayer)
+        layer?.addSublayer(drawLayer)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
@@ -123,6 +135,13 @@ final class CanvasInputView: NSView {
         didBegin = false
         clickedSelectedNoShift = nil
         let shift = event.modifierFlags.contains(.shift)
+
+        // Native draw (marker): collect content-space points; commit on mouse-up.
+        if p.isDrawMode() {
+            mode = .draw
+            drawPoints = [pt]
+            return
+        }
 
         // Double-click → activate (text edit / stack focus / lightbox).
         if event.clickCount == 2, let n = hitNode(at: pt, p), !n.isSection {
@@ -193,6 +212,9 @@ final class CanvasInputView: NSView {
             marqueeLayer.isHidden = false
             p.onMarquee(rect, event.modifierFlags.contains(.shift))
             coordinator?.refreshChrome()
+        case .draw:
+            drawPoints.append(pt)
+            updateDrawPreview(p)
         case .idle: break
         }
     }
@@ -216,6 +238,13 @@ final class CanvasInputView: NSView {
             coordinator?.endLiveReposition(moveStartPos, dx: moveDelta.x, dy: moveDelta.y)
         case .resize:
             if didBegin { p.onInteractionEnded() }
+        case .draw:
+            if drawPoints.count >= 2 {
+                let wb = p.worldBounds
+                p.onCommitStroke(drawPoints.map {
+                    CGPoint(x: $0.x + wb.minX, y: $0.y + wb.minY)
+                })
+            }
         case .marquee, .idle:
             break
         }
@@ -225,6 +254,7 @@ final class CanvasInputView: NSView {
 
     private func reset() {
         marqueeLayer.isHidden = true; marqueeLayer.path = nil
+        drawLayer.isHidden = true; drawLayer.path = nil; drawPoints = []
         mode = .idle; resizeGrip = nil; resizeNodeID = nil
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
     }
@@ -233,6 +263,20 @@ final class CanvasInputView: NSView {
         guard !didBegin else { return }
         didBegin = true
         p.onInteractionBegan(primary)
+    }
+
+    /// Live polyline preview of the in-progress native stroke (content space).
+    private func updateDrawPreview(_ p: CanvasConfig) {
+        guard drawPoints.count >= 2 else { return }
+        let path = CGMutablePath()
+        path.move(to: drawPoints[0])
+        for pt in drawPoints.dropFirst() { path.addLine(to: pt) }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        drawLayer.path = path
+        drawLayer.strokeColor = p.drawColor().cgColor
+        drawLayer.lineWidth = p.drawWidth()   // content units → scales with zoom
+        drawLayer.isHidden = false
+        CATransaction.commit()
     }
 
     private func applyResize(dx: CGFloat, dy: CGFloat, event: NSEvent, p: CanvasConfig) {

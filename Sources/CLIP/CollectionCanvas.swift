@@ -139,6 +139,14 @@ struct CanvasConfig {
     /// True when the canvas is in select mode — drives the above-island's
     /// click-passthrough so cards stay directly clickable.
     let isSelectMode: () -> Bool
+    /// True in draw (marker) mode — the above-island ALSO passes clicks through
+    /// then, so `CanvasInputView` draws the stroke natively (no SwiftUI gesture).
+    let isDrawMode: () -> Bool
+    /// Live marker colour + width for the native draw preview.
+    let drawColor: () -> NSColor
+    let drawWidth: () -> CGFloat
+    /// Commit a finished stroke (points in WORLD coords).
+    let onCommitStroke: ([CGPoint]) -> Void
     /// Empty-canvas click → deselect (cards handle their own selection taps).
     let onBackgroundClick: () -> Void
     /// The lone selected node (drives native corner-resize hit-testing in the
