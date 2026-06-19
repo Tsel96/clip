@@ -287,13 +287,15 @@ final class CanvasInputView: NSView {
         case .pendingMove:
             if let id = clickedSelectedNoShift { p.onSelect(id, false) }   // collapse to one
         case .move:
-            // Clear the live transforms + pin items at their final frames, THEN
-            // commit the whole gesture to the model once (one write → one apply).
-            coordinator?.endLiveReposition(moveStartPos, dx: moveDelta.x, dy: moveDelta.y)
+            // Commit the model FIRST so `state.nodes` is already moved before any
+            // render fires — otherwise a render kicked during the repaint runs
+            // `apply` with the OLD nodes and overwrites `itemFrames` back to the
+            // start (the "reloads but doesn't move" bug). THEN repaint the items.
             for (id, sp) in moveStartPos {
                 p.onMove(id, CGPoint(x: sp.x + moveDelta.x, y: sp.y + moveDelta.y))
             }
             if didBegin { p.onInteractionEnded() }
+            coordinator?.endLiveReposition(moveStartPos, dx: moveDelta.x, dy: moveDelta.y)
         case .resize:
             if didBegin { p.onInteractionEnded() }
         case .marquee, .idle:
@@ -608,6 +610,9 @@ struct CollectionCanvas: NSViewRepresentable {
             let countChanged = nodes.count != p.nodes.count
             let oldFrames = layout?.itemFrames ?? []
             let framesChanged = oldFrames != frames
+            if framesChanged {
+                NSLog("CLIP APPLY framesChanged: cc=\(countChanged) old0=\(oldFrames.first.map{"\(Int($0.minX)),\(Int($0.minY))"} ?? "-") new0=\(frames.first.map{"\(Int($0.minX)),\(Int($0.minY))"} ?? "-")")
+            }
             // Flag genuinely-new cards (added after the first load) to scale in,
             // and snapshot just-removed cards so they can scale OUT (the item is
             // gone after reloadData, so we animate a snapshot in its place).
