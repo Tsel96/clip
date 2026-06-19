@@ -76,7 +76,13 @@ final class PassthroughHostingView: NSHostingView<AnyView> {
 }
 
 
-struct CollectionCanvas: NSViewRepresentable {
+/// Pure-data inputs to the native canvas engine, shared by the SwiftUI bridge
+/// (`CollectionCanvas`) and the `Coordinator`. Carrying these as a value
+/// (instead of the representable `self`) decouples the engine
+/// (`Coordinator` / `CanvasInputView`) from SwiftUI — so a plain `NSView` can
+/// host the same engine later (Phase A `CLIPCanvasView`/`CanvasHost`) — and
+/// makes the inputs testable.
+struct CanvasConfig {
     /// Scrollable world extent (all content + generous margin).
     let worldBounds: CGRect
     /// Ordered nodes → one collection-view item each.
@@ -129,8 +135,16 @@ struct CollectionCanvas: NSViewRepresentable {
     /// Recolor a node from the radial picker (CanvasView maps the NSColor to the
     /// node's color model, e.g. nearest SectionColor).
     let onRecolorNode: (UUID, NSColor) -> Void
+}
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+/// The SwiftUI bridge: mounts the native canvas engine and feeds it a
+/// `CanvasConfig` each update. (Phase A introduces a sibling `CanvasHost` /
+/// `CLIPCanvasView` that hosts the same engine from a plain `NSView`; both
+/// share `CanvasConfig` and the `Coordinator`.)
+struct CollectionCanvas: NSViewRepresentable {
+    let config: CanvasConfig
+
+    func makeCoordinator() -> Coordinator { Coordinator(config) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let layout = CanvasWorldLayout()
@@ -212,7 +226,7 @@ struct CollectionCanvas: NSViewRepresentable {
         // Escape deselects (keyboard path, always available — no race).
         coord.escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coord] event in
             if event.keyCode == 53 {            // Escape
-                coord?.parent.onBackgroundClick()
+                coord?.config.onBackgroundClick()
                 return nil
             }
             return event
@@ -222,11 +236,11 @@ struct CollectionCanvas: NSViewRepresentable {
             // Plain 'c' only — never with ⌘/⌥/⌃ (so ⌘C copy etc. still work).
             guard let coord, event.keyCode == 8,
                   event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-                  coord.parent.editingTextNodeID == nil,          // not typing
+                  coord.config.editingTextNodeID == nil,          // not typing
                   coord.colorPicker == nil else { return event }
-            let sel = coord.parent.liveSelection()
+            let sel = coord.config.liveSelection()
             guard sel.count == 1, let id = sel.first,
-                  let node = coord.parent.nodes.first(where: { $0.id == id }),
+                  let node = coord.config.nodes.first(where: { $0.id == id }),
                   node.isSection else { return event }
             coord.presentColorPicker(for: id)
             return nil
@@ -240,7 +254,7 @@ struct CollectionCanvas: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coord = context.coordinator
-        coord.parent = self
+        coord.config = self
         scroll.minMagnification = minZoom
         scroll.maxMagnification = maxZoom
         coord.apply(self)
@@ -260,7 +274,7 @@ struct CollectionCanvas: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSCollectionViewDataSource {
         static let itemID = NSUserInterfaceItemIdentifier("CanvasItem")
-        var parent: CollectionCanvas
+        var config: CanvasConfig
         weak var scroll: NSScrollView?
         weak var collection: NSCollectionView?
         weak var container: FlippedContainer?
@@ -281,7 +295,7 @@ struct CollectionCanvas: NSViewRepresentable {
         private var didInitialApply = false
         var pendingAppearIDs: Set<UUID> = []
 
-        init(_ parent: CollectionCanvas) { self.parent = parent }
+        init(_ config: CanvasConfig) { self.config = config }
 
         func detach() {
             if let o = boundsObserver { NotificationCenter.default.removeObserver(o) }
@@ -296,7 +310,7 @@ struct CollectionCanvas: NSViewRepresentable {
             let winPt = window.convertPoint(fromScreen: NSEvent.mouseLocation)
             let hostPt = host.convert(winPt, from: nil)
             let picker = RadialColorPicker()
-            picker.onPick = { [weak self] color in self?.parent.onRecolorNode(id, color) }
+            picker.onPick = { [weak self] color in self?.config.onRecolorNode(id, color) }
             picker.onDismiss = { [weak self] in self?.colorPicker = nil }
             colorPicker = picker
             picker.present(in: host, at: hostPt)
@@ -437,7 +451,7 @@ struct CollectionCanvas: NSViewRepresentable {
         /// forces a full repaint, so the commit lands at ANY magnification.
         func endLiveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
             guard let cv = collection, let layout = layout else { return }
-            let minX = parent.worldBounds.minX, minY = parent.worldBounds.minY
+            let minX = config.worldBounds.minX, minY = config.worldBounds.minY
             for (id, sp) in startPos {
                 guard let idx = nodes.firstIndex(where: { $0.id == id }), idx < layout.itemFrames.count
                 else { continue }
@@ -501,7 +515,7 @@ struct CollectionCanvas: NSViewRepresentable {
         /// empty margin.
         func fitContent() {
             guard let scroll else { return }
-            let p = parent
+            let p = config
             guard !p.nodes.isEmpty else { return }
             var minX = CGFloat.greatestFiniteMagnitude, minY = CGFloat.greatestFiniteMagnitude
             var maxX = -CGFloat.greatestFiniteMagnitude, maxY = -CGFloat.greatestFiniteMagnitude
@@ -539,7 +553,7 @@ struct CollectionCanvas: NSViewRepresentable {
                 let node = nodes[indexPath.item]
                 hosting.cardView.nodeID = node.id
                 hosting.cardView.coordinator = self
-                hosting.setContent(node: node, swiftUI: parent.content(node))
+                hosting.setContent(node: node, swiftUI: config.content(node))
                 hosting.cardView.updateShadow()
                 hosting.cardView.updateChrome()
                 if pendingAppearIDs.remove(node.id) != nil {
@@ -558,11 +572,11 @@ struct CollectionCanvas: NSViewRepresentable {
             guard !applyingProgrammatic, let scroll else { return }
             let zoom = scroll.magnification
             let visible = scroll.documentVisibleRect
-            let worldOriginX = visible.origin.x + parent.worldBounds.minX
-            let worldOriginY = visible.origin.y + parent.worldBounds.minY
+            let worldOriginX = visible.origin.x + config.worldBounds.minX
+            let worldOriginY = visible.origin.y + config.worldBounds.minY
             let cam = Camera(x: -worldOriginX * zoom, y: -worldOriginY * zoom, zoom: zoom)
             lastCamera = cam
-            parent.onCameraChange(cam)
+            config.onCameraChange(cam)
         }
 
         /// Apply an external camera ONLY if it genuinely differs from the scroll
@@ -575,8 +589,8 @@ struct CollectionCanvas: NSViewRepresentable {
             guard let scroll else { return }
             let zoom = scroll.magnification
             let visible = scroll.documentVisibleRect
-            let curX = -(visible.origin.x + parent.worldBounds.minX) * zoom
-            let curY = -(visible.origin.y + parent.worldBounds.minY) * zoom
+            let curX = -(visible.origin.x + config.worldBounds.minX) * zoom
+            let curY = -(visible.origin.y + config.worldBounds.minY) * zoom
             // Echo of our own live scroll → skip. (Generous epsilons: anything
             // this close is the round-trip, not a deliberate camera move.)
             if abs(cam.zoom - zoom) < 0.0005,
@@ -594,8 +608,8 @@ struct CollectionCanvas: NSViewRepresentable {
             scroll.magnification = cam.zoom
             let worldOriginX = -cam.x / cam.zoom
             let worldOriginY = -cam.y / cam.zoom
-            scroll.contentView.scroll(to: CGPoint(x: worldOriginX - parent.worldBounds.minX,
-                                                  y: worldOriginY - parent.worldBounds.minY))
+            scroll.contentView.scroll(to: CGPoint(x: worldOriginX - config.worldBounds.minX,
+                                                  y: worldOriginY - config.worldBounds.minY))
             scroll.reflectScrolledClipView(scroll.contentView)
         }
     }
@@ -655,7 +669,7 @@ final class CardItemView: NSView {
     override var isFlipped: Bool { true }
 
     /// Identity + a back-reference so we read the *live* node + selection (the
-    /// coordinator's `parent` is refreshed every update).
+    /// coordinator's `config` is refreshed every update).
     var nodeID: UUID?
     weak var coordinator: CollectionCanvas.Coordinator?
     /// True when this item renders native content (image/video) vs the SwiftUI
@@ -732,7 +746,7 @@ final class CardItemView: NSView {
 
         // Selection ring geometry (always sized so it's correct the instant it
         // fades in). One native ring per card; hosted cards' SwiftUI ring is off.
-        let selected = valid && nodeID.map { coordinator?.parent.liveSelection().contains($0) == true } ?? false
+        let selected = valid && nodeID.map { coordinator?.config.liveSelection().contains($0) == true } ?? false
         if valid {
             let inset = 1.25 / mag
             selectionLayer.path = CGPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
@@ -786,14 +800,14 @@ final class CardItemView: NSView {
 
     private var liveNode: CanvasNode? {
         guard let id = nodeID else { return nil }
-        return coordinator?.parent.nodes.first { $0.id == id }
+        return coordinator?.config.nodes.first { $0.id == id }
     }
     /// Whether this item is the lone selected resizable node — drives whether
     /// the corner handles are drawn (display only; the resize gesture lives in
     /// CanvasInputView). Reads the LIVE selection so it's never one event stale.
     private var resizeEnabled: Bool {
         guard let n = liveNode, let id = nodeID,
-              let sel = coordinator?.parent.liveSelection(),
+              let sel = coordinator?.config.liveSelection(),
               sel.count == 1, sel.contains(id) else { return false }
         if case .text = n.kind { return false }
         return true

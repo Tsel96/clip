@@ -66,7 +66,7 @@ final class CanvasInputView: NSView {
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    private var parent: CollectionCanvas? { coordinator?.parent }
+    private var config: CollectionCanvas? { coordinator?.config }
     private var mag: CGFloat { max(enclosingScrollView?.magnification ?? 1, 0.0001) }
 
     private func contentFrame(_ n: CanvasNode, _ p: CollectionCanvas) -> CGRect {
@@ -108,7 +108,7 @@ final class CanvasInputView: NSView {
     /// fall through to the TextField below so the caret/keys work — everything
     /// else returns self.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        if let p = parent, let editID = p.editingTextNodeID,
+        if let p = config, let editID = p.editingTextNodeID,
            let n = p.nodes.first(where: { $0.id == editID }) {
             let local = convert(point, from: superview)
             if contentFrame(n, p).contains(local) { return nil }
@@ -117,7 +117,7 @@ final class CanvasInputView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let p = parent else { return }
+        guard let p = config else { return }
         let pt = convert(event.locationInWindow, from: nil)
         startPt = pt
         didBegin = false
@@ -160,7 +160,7 @@ final class CanvasInputView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let p = parent else { return }
+        guard let p = config else { return }
         let pt = convert(event.locationInWindow, from: nil)
         let dx = pt.x - startPt.x, dy = pt.y - startPt.y
         switch mode {
@@ -198,7 +198,7 @@ final class CanvasInputView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let p = parent else { reset(); return }
+        guard let p = config else { reset(); return }
         switch mode {
         case .pendingMarquee:
             p.onBackgroundClick()                            // empty/section click → deselect
@@ -258,7 +258,7 @@ final class CanvasInputView: NSView {
     }
 
     override func resetCursorRects() {
-        guard let p = parent, let selID = p.selectedNodeID,
+        guard let p = config, let selID = p.selectedNodeID,
               let sel = p.nodes.first(where: { $0.id == selID }), isResizable(sel) else { return }
         let f = contentFrame(sel, p)
         let r = min(26 / mag, min(f.width, f.height) * 0.25)
