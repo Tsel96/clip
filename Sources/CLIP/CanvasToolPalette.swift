@@ -162,19 +162,21 @@ private func makeCandyShadowLayers() -> [CALayer] {
     }
 }
 
-/// Positions the shadow layers over `capsule` (in the host's flipped layer space,
-/// where +Y is DOWN) with each level's silhouette translated downward by its
-/// offset — deterministic regardless of layer `geometryFlipped`.
+/// Positions the shadow layers over `capsule`. Each layer's FRAME is offset
+/// downward by its level's Y using the same convention as the green capsule's
+/// frame (verified Y-down in these flipped hosts: `outerLayer.frame.y = pillTopY`
+/// renders the pill at the bottom). The shadowPath is just the layer's own
+/// bounds, so we never depend on `geometryFlipped` path orientation.
 private func layoutCandyShadows(_ layers: [CALayer], capsule: CGRect, radius: CGFloat) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
+    let path = CGPath(
+        roundedRect: CGRect(origin: .zero, size: capsule.size),
+        cornerWidth: radius, cornerHeight: radius, transform: nil
+    )
     for (i, l) in layers.enumerated() {
-        l.frame = capsule
-        let local = CGRect(origin: .zero, size: capsule.size)
-        l.shadowPath = CGPath(
-            roundedRect: local.offsetBy(dx: 0, dy: candyShadowLevels[i].y),
-            cornerWidth: radius, cornerHeight: radius, transform: nil
-        )
+        l.frame = capsule.offsetBy(dx: 0, dy: candyShadowLevels[i].y)
+        l.shadowPath = path
     }
     CATransaction.commit()
 }
