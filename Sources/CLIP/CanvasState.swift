@@ -9,7 +9,7 @@ final class CanvasState: ObservableObject {
     // MARK: - Pages  (per-page state lives inside each Page)
 
     @Published var pages: [Page]
-    @Published var activePageID: UUID
+    @Published var activePageID: UUID { didSet { if activePageID != oldValue { cachedWorldBounds = nil } } }
 
     /// iPhone → canvas share inbox: watches a user-chosen iCloud Drive
     /// folder for links dropped by the "Add to Canvas" Shortcut.
@@ -2915,6 +2915,32 @@ final class CanvasState: ObservableObject {
         guard found else { return nil }
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
+
+    /// Cache backing `stableWorldBounds` — reset on page switch.
+    private var cachedWorldBounds: CGRect?
+
+    /// The scrollable canvas extent. Unlike the raw content bounding box this is
+    /// GROWS-ONLY: it never shrinks or shifts while the content still fits inside
+    /// it. That is what makes a *select-all* drag visibly move the cards — a
+    /// content-following box would shift by the same delta as the nodes, leaving
+    /// every node's position RELATIVE to the box unchanged (so nothing appears to
+    /// move, even though the model positions did change). It expands only when a
+    /// node is dragged/created outside the current margin.
+    func stableWorldBounds() -> CGRect {
+        let margin: CGFloat = 6000
+        guard let content = boundingRect(of: Set(nodes.map(\.id))),
+              content.width > 0, content.height > 0 else {
+            return cachedWorldBounds ?? CGRect(x: -margin, y: -margin, width: 2 * margin, height: 2 * margin)
+        }
+        if let cached = cachedWorldBounds, cached.contains(content) { return cached }
+        let next = (cachedWorldBounds ?? .null).union(content.insetBy(dx: -margin, dy: -margin))
+        cachedWorldBounds = next
+        return next
+    }
+
+    /// Drop the cached extent (call on page switch so a new page isn't anchored
+    /// to the previous page's far-flung bounds).
+    func resetWorldBoundsCache() { cachedWorldBounds = nil }
 
     /// Glide the camera to frame the given world rect with `padding`
     /// extra breathing room on each side. Capped to zoom 1.5× max so a

@@ -275,13 +275,10 @@ struct CanvasView: View {
 
     /// World extent for the native scroll view: all content plus a generous
     /// margin so you can pan well past the edges.
-    private var worldBounds: CGRect {
-        let margin: CGFloat = 6000
-        if let r = state.boundingRect(of: Set(state.nodes.map(\.id))), r.width > 0, r.height > 0 {
-            return r.insetBy(dx: -margin, dy: -margin)
-        }
-        return CGRect(x: -margin, y: -margin, width: 2 * margin, height: 2 * margin)
-    }
+    // Grows-only canvas extent (see CanvasState.stableWorldBounds) — a
+    // content-following box shifted with a select-all drag, making the move
+    // invisible; this stays put so the cards actually move on screen.
+    private var worldBounds: CGRect { state.stableWorldBounds() }
 
     /// Content-coordinate camera for the native canvas's world-space overlay
     /// (connectors): maps world → (world − worldBounds.origin) so the overlay
