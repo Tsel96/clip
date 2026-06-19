@@ -146,127 +146,27 @@ struct CollectionCanvas: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(config) }
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let layout = CanvasWorldLayout()
-
-        let collection = WideCollectionView()
-        collection.contentWidth = config.worldBounds.size.width
-        collection.collectionViewLayout = layout
-        collection.isSelectable = false
-        collection.allowsMultipleSelection = false
-        collection.backgroundColors = [.clear]
-        collection.register(HostingCollectionItem.self,
-                            forItemWithIdentifier: Coordinator.itemID)
-        collection.dataSource = context.coordinator
-        // ALL pointer interaction is owned by a single CanvasInputView (added
-        // below) — the collection + its items are now purely visual.
-
-        let scroll = CenterZoomScrollView()
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = false
-        scroll.hasHorizontalScroller = false
-        scroll.autohidesScrollers = true
-        scroll.allowsMagnification = true
-        scroll.minMagnification = config.minZoom
-        scroll.maxMagnification = config.maxZoom
-        scroll.usesPredominantAxisScrolling = false
-        scroll.verticalScrollElasticity = .allowed
-        scroll.horizontalScrollElasticity = .allowed
-
-        // The document is a flipped container holding the collection (cards)
-        // plus a world-space overlay (connectors/selection) on top. Both live in
-        // content coordinates, so the scroll view's magnification scales them
-        // together — connectors pan/zoom with the cards.
-        let container = FlippedContainer()
-        container.frame = CGRect(origin: .zero, size: config.worldBounds.size)
-        collection.frame = container.bounds
-        collection.autoresizingMask = [.width, .height]
-        container.addSubview(collection)
-
-        let coord = context.coordinator
-        // The overlay already carries its content-coordinate camera (injected by
-        // the caller, which knows worldBounds on the main actor).
-        let overlayHost = PassthroughHostingView(
-            rootView: AnyView(config.overlay.allowsHitTesting(false)))
-        overlayHost.frame = container.bounds
-        overlayHost.autoresizingMask = [.width, .height]
-        container.addSubview(overlayHost, positioned: .above, relativeTo: collection)
-
-        // The single input owner, layered ABOVE everything in the document so no
-        // other view competes for clicks (Spatial's CanvasContentView model).
-        let input = CanvasInputView(frame: container.bounds)
-        input.autoresizingMask = [.width, .height]
-        input.coordinator = coord
-        container.addSubview(input, positioned: .above, relativeTo: overlayHost)
-        coord.inputView = input
-
-        scroll.documentView = container
-        coord.container = container
-        coord.overlayHost = overlayHost
-        coord.scroll = scroll
-        coord.collection = collection
-        coord.layout = layout
-        coord.apply(config)
-
-        scroll.contentView.postsBoundsChangedNotifications = true
-        coord.boundsObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: scroll.contentView, queue: .main
-        ) { [weak coord] _ in
-            // Sync the camera in real time so the minimap / zoom readout track
-            // live. The native cards are decoupled from the camera (frozen card
-            // camera + suppressZoomEpoch), so this never re-renders them — the
-            // reason it's safe to sync mid-gesture now without the blink.
-            coord?.pushCameraFromScroll()
-            // Keep native chrome (section outline + selection ring) a constant
-            // on-screen width while zooming — cheap CALayer updates, no re-render.
-            coord?.refreshChrome()
-        }
-
-        // Escape deselects (keyboard path, always available — no race).
-        coord.escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coord] event in
-            if event.keyCode == 53 {            // Escape
-                coord?.config.onBackgroundClick()
-                return nil
-            }
-            return event
-        }
-        // "C" with a single section selected → radial color picker at the cursor.
-        coord.colorKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coord] event in
-            // Plain 'c' only — never with ⌘/⌥/⌃ (so ⌘C copy etc. still work).
-            guard let coord, event.keyCode == 8,
-                  event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-                  coord.config.editingTextNodeID == nil,          // not typing
-                  coord.colorPicker == nil else { return event }
-            let sel = coord.config.liveSelection()
-            guard sel.count == 1, let id = sel.first,
-                  let node = coord.config.nodes.first(where: { $0.id == id }),
-                  node.isSection else { return event }
-            coord.presentColorPicker(for: id)
-            return nil
-        }
-
-        // Start centered on the actual content (not the empty world margin) so
-        // pinch-zoom has the cards under the cursor.
-        DispatchQueue.main.async { [weak coord] in coord?.fitContent() }
-        return scroll
+    // The engine subtree + observers/monitors now live in `CLIPCanvasView.init`;
+    // this bridge just mounts it and drives state→view sync each update.
+    func makeNSView(context: Context) -> CLIPCanvasView {
+        CLIPCanvasView(config: config, coordinator: context.coordinator)
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    func updateNSView(_ view: CLIPCanvasView, context: Context) {
         let coord = context.coordinator
         coord.config = config
-        scroll.minMagnification = config.minZoom
-        scroll.maxMagnification = config.maxZoom
+        coord.scroll?.minMagnification = config.minZoom
+        coord.scroll?.maxMagnification = config.maxZoom
         coord.apply(config)
-        // Re-enabled: push the model camera into the scroll view so the zoom pill,
-        // ⌘±, fit, zoom-to-selection, reset and minimap jumps actually move the
-        // canvas (they were severed). `applyCameraIfChanged` compares against the
-        // scroll view's LIVE state and no-ops echoes of our own pinch/scroll, so
-        // the round-trip can't fight the cursor-anchored `magnify`.
+        // Re-enabled programmatic camera: the zoom pill / ⌘± / fit / zoom-to-
+        // selection / minimap jumps move the canvas. `applyCameraIfChanged`
+        // compares against the scroll view's LIVE state and no-ops echoes of our
+        // own pinch/scroll, so the round-trip can't fight the cursor-anchored
+        // `magnify`.
         coord.applyCameraIfChanged(config.camera)
     }
 
-    static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+    static func dismantleNSView(_ view: CLIPCanvasView, coordinator: Coordinator) {
         coordinator.detach()
     }
 
