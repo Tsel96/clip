@@ -74,8 +74,11 @@ final class CanvasToolPaletteView: NSView {
     static let gap: CGFloat        = 10
     /// Visual content height = 62; decorative props overflow ~12 pt above.
     static let contentH: CGFloat   = 62
-    static let propOverflow: CGFloat = 14   // above the pill
-    static let shadowBleed: CGFloat  = 20   // below / sides for shadow room
+    static let propOverflow: CGFloat = 18   // marker pokes ~12 pt above pill + margin
+    /// The drop-shadow reaches 24 (max offset) + 10 (max blur) = 34 pt below the
+    /// pill. The host frame MUST clear that or SwiftUI slices the shadow with a
+    /// hard cut-off line ("toolbar clips").
+    static let shadowBleed: CGFloat  = 34
     static let totalW: CGFloat =
         mainPillW + gap + addPillW + shadowBleed * 2
     static let totalH: CGFloat =
