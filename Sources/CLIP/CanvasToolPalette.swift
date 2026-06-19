@@ -522,48 +522,22 @@ final class ToolPaletteButton: NSView {
     /// Returns a 24 × 24 template image for a tool mode.
     /// Uses SF Symbols where possible; falls back to a constructed path image.
     private func iconImage(for mode: ToolMode) -> NSImage? {
+        let name: String
         switch mode {
-        case .select:
-            // Yellow cursor — the Figma cursor SVG path, sized 24×24
-            return cursorIconImage()
-        case .draw:
-            // Hand / grab icon from Figma (open-hand shape)
-            return handIconImage()
-        case .text:
-            return sfSymbol("textformat", size: 15, weight: .semibold)
-        case .stickyNote:
-            // Folder icon shape from Figma
-            return sfSymbol("folder", size: 14, weight: .medium)
-        case .connect:
-            // Headphone / arc-connector shape from Figma
-            return sfSymbol("point.3.connected.trianglepath.dotted", size: 14, weight: .regular)
-        case .section:
-            return sfSymbol("plus", size: 14, weight: .semibold)
+        case .select:     name = "tool_select"     // the Figma cursor
+        case .draw:       name = "tool_hand"       // hand / pan
+        case .text:       name = "tool_text"       // serif "T"
+        case .stickyNote: name = "tool_folder"     // 4th tool = folder
+        case .connect:    name = "tool_connect"    // headphone-style connector
+        case .section:    name = "tool_plus"
         }
+        guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.isTemplate = true   // the button tints it black (idle) / yellow (active)
+        img.size = NSSize(width: 24, height: 24)
+        return img
     }
 
-    private func sfSymbol(_ name: String, size: CGFloat, weight: NSFont.Weight) -> NSImage? {
-        let config = NSImage.SymbolConfiguration(pointSize: size, weight: weight)
-        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)
-    }
-
-    /// Hand-drawn cursor icon matching the Figma SVG (yellow fill on active,
-    /// black stroke on inactive — handled via `contentTintColor` at the icon
-    /// layer, but since we use a drawn image we parameterise by active state).
-    private func cursorIconImage() -> NSImage? {
-        // Figma SVG path: M6.167 2.952 … → a pointer/cursor arrow shape.
-        // We approximate with a known SF Symbol.
-        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
-        return NSImage(systemSymbolName: "cursorarrow.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)
-    }
-
-    private func handIconImage() -> NSImage? {
-        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
-        return NSImage(systemSymbolName: "hand.raised.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)
-    }
 }
 
 // MARK: - SwiftUI mounting
