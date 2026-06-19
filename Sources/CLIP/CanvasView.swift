@@ -53,67 +53,6 @@ struct CanvasView: View {
         }
     }
 
-    /// `bentoVisibleNodes` viewport-culled. In Canvas — the free-roam
-    /// editing surface where a large moodboard is panned — only nodes
-    /// whose world rect intersects the viewport (inflated by ~½ screen
-    /// each side) are mounted, so the live view tree is O(on-screen) not
-    /// O(document). Selected nodes are always kept so an in-progress drag
-    /// never unmounts its own gesture view. The view modes
-    /// (Colorform / Archive) each re-flow with their own animated
-    /// layout, so they pass through unculled.
-    private var visibleNodes: [CanvasNode] {
-        let base = bentoVisibleNodes
-        guard state.canvasMode == .canvas else { return base }
-        // Stack focus mode: render ONLY the focused stack's members.
-        // Every other node is suppressed so the focus grid stands
-        // alone over the dimmed backdrop — no random off-screen
-        // cards leaking onto the focus surface.
-        if let focused = state.focusedStackID {
-            return base.filter { $0.groupID == focused }
-        }
-        let v = state.visibleWorldRect
-        let cull = v.insetBy(dx: -v.width / 2, dy: -v.height / 2)
-        let kept = state.selectedNodeIDs
-        return base.filter { node in
-            if kept.contains(node.id) { return true }
-            // Use effective (mode-overridden) position + size for the
-            // cull rect so cards relocated by Archive / focus
-            // grids aren't accidentally pruned even though their layout
-            // slot is on-screen.
-            let p = state.effectivePosition(of: node)
-            let s = state.effectiveSize(of: node)
-            let rect = CGRect(x: p.x, y: p.y, width: s.width, height: s.height)
-            return cull.intersects(rect)
-        }
-    }
-
-    /// True when a card projects so small (deep zoom-out) that the full
-    /// interactive card is wasted work — render `DraggableNode`'s cheap LOD
-    /// proxy instead. Selected cards always stay full so they're manipulable;
-    /// only applies on the free canvas (the view modes have their own layout).
-    private func isTinyOnScreen(_ node: CanvasNode) -> Bool {
-        guard state.canvasMode == .canvas,
-              !state.selectedNodeIDs.contains(node.id) else { return false }
-        return state.projectedScreenSide(of: node) < CanvasState.lodMinScreenSide
-    }
-
-    /// The world-space card layer: sections beneath, then the viewport-culled
-    /// nodes (each at full detail or its cheap LOD proxy). Extracted from
-    /// `body` so the big canvas expression stays type-checkable.
-    @ViewBuilder
-    private var nodeLayer: some View {
-        // Sections render BELOW everything else so they never occlude their
-        // contained cards — except in Archive, where they're hidden.
-        if state.canvasMode == .canvas || state.canvasMode == .colorform {
-            ForEach(state.nodes.filter(\.isSection)) { node in
-                DraggableNode(node: node)
-            }
-        }
-        ForEach(visibleNodes) { node in
-            DraggableNode(node: node, isTiny: isTinyOnScreen(node))
-        }
-    }
-
     /// Per-mode background tint. Colorform keeps the warm cream tied to
     /// its bulb constellation; Archive uses a deeper warm cream for the
     /// calendar level and shifts to near-black at the lightbox level;
@@ -473,23 +412,7 @@ struct CanvasView: View {
                         .opacity(cardsOpacity)
                         .blur(radius: cardsBlur)
                         .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
-                    } else {
-                        Group { nodeLayer }
-                        .scaleEffect(cameraStore.camera.zoom, anchor: .topLeading)
-                        .offset(x: cameraStore.camera.x, y: cameraStore.camera.y)
-                        .opacity(cardsOpacity)
-                        .blur(radius: cardsBlur)
-                        .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
                     }
-                }
-
-                // Connectors (arrows) — drawn above nodes so the live preview
-                // and arrowheads stay visible during a drag-to-connect.
-                // Hidden in Colorform because the re-laid-out cards make
-                // their endpoints meaningless.
-                if state.showConnectors && state.canvasMode == .canvas && !useNativeCanvas {
-                    ConnectorsLayer()
-                        .allowsHitTesting(state.toolMode == .select)
                 }
 
                 // Figma-style Smart Selection chrome — pink center rings +
