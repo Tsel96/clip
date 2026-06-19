@@ -594,9 +594,10 @@ struct CanvasView: View {
         // Bottom-CENTER: the Spatial-style yellow tool palette + "+" (Figma 51:12692).
         .overlay(alignment: .bottom) {
             if state.canvasMode == .canvas {
-                NativeCanvasToolPalette()
-                    .fixedSize()
-                    .padding(.bottom, 18)
+                NativeCanvasToolPalette(state: state)
+                    .frame(width: CanvasToolPaletteView.totalW,
+                           height: CanvasToolPaletteView.totalH)
+                    .padding(.bottom, 14)
             }
         }
         // Acute tool-mode visibility — while a non-Select tool is active,
