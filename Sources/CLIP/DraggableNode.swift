@@ -622,7 +622,10 @@ struct DraggableNode: View {
 
     @ViewBuilder
     private var selectionRing: some View {
-        if state.selectedNodeIDs.contains(node.id) {
+        // On the native canvas (positioned == false) the selection ring + handles
+        // are drawn natively by CardItemView (one synchronous ring per card). Only
+        // the legacy SwiftUI canvas draws its own ring here.
+        if positioned, state.selectedNodeIDs.contains(node.id) {
             ZStack {
                 // Spatial-style selection: a crisp WHITE ring with a soft white
                 // glow (not a flat accent-blue stroke).

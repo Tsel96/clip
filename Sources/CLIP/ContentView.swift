@@ -63,9 +63,11 @@ struct ContentView: View {
         // the sidebar); the window toolbar is hidden while it's open, so no
         // top/left panels show through.
         .overlay {
-            // Persistently mounted; the open/close gate lives inside the layer.
-            CardLightboxLayer()
+            // Fully-native detail view (Spatial CanvasTransition*); the open/close
+            // gate lives inside the native CardDetailView, driven by state.
+            NativeDetailHost()
                 .ignoresSafeArea()
+                .allowsHitTesting(state.lightboxCardID != nil)
                 .zIndex(100)
         }
         .toolbar(state.lightboxCardID == nil ? .automatic : .hidden, for: .windowToolbar)
@@ -88,7 +90,8 @@ struct ContentView: View {
         // reads more like Claude / Linear / Notion's tab strip.
         ToolbarItem(placement: .navigation) {
             Picker("Tool", selection: $state.toolMode) {
-                ForEach(ToolMode.allCases) { mode in
+                // Sections retired in favour of folders — hide the section tool.
+                ForEach(ToolMode.allCases.filter { $0 != .section }) { mode in
                     Image(systemName: mode.systemImage)
                         .help("\(mode.label)  (\(String(mode.keyboardKey).uppercased()))")
                         .tag(mode)

@@ -379,7 +379,11 @@ struct CanvasView: View {
                             content: { node in
                                 // Each collection item hosts a real card. It's a
                                 // separate NSHostingView, so re-inject the env
-                                // objects the card tree needs.
+                                // objects the card tree needs. CanvasInputView sits
+                                // ABOVE the cards and owns every click, so hosted
+                                // content stays renderable but never gets events —
+                                // except a text node being edited, which the input
+                                // view passes through to (see `editingTextNodeID`).
                                 AnyView(
                                     DraggableNode(node: node, positioned: false)
                                         .environmentObject(state)
@@ -405,32 +409,60 @@ struct CanvasView: View {
                             selectedNodeID: state.selectedNodeIDs.count == 1
                                 ? state.selectedNodeIDs.first : nil,
                             selectedNodeIDs: state.selectedNodeIDs,
-                            onResizeBegan: {
+                            editingTextNodeID: state.editingTextNodeID,
+                            liveSelection: { state.selectedNodeIDs },
+                            onInteractionBegan: { primary in
                                 state.activeResizeUndoSnapshot = state.snapshotForUndo()
+                                if let primary { state.beginDrag(of: primary) }   // connector tug
                             },
-                            onResize: { id, frame in
-                                state.resize(id: id, frame: frame)
-                            },
-                            onResizeEnded: {
+                            onInteractionEnded: {
+                                state.endDrag()
                                 if let snap = state.activeResizeUndoSnapshot {
                                     state.commitUndoable(from: snap)
                                 }
                                 state.activeResizeUndoSnapshot = nil
                             },
-                            onMarquee: { contentRect in
+                            onMove: { id, position in
+                                // Move (not resize) so connectors stay attached.
+                                state.updatePosition(of: id, to: position)
+                            },
+                            onResize: { id, frame in
+                                state.resize(id: id, frame: frame)
+                            },
+                            onActivate: { id in
+                                guard state.toolMode == .select else { return }
+                                if let node = state.nodes.first(where: { $0.id == id }) {
+                                    if case .text = node.kind {
+                                        state.select(id); state.pendingFocusNodeID = id
+                                    } else if state.isStackHead(id), state.focusedStackID == nil {
+                                        state.enterStackFocus(headID: id)
+                                    } else if state.canvasMode == .canvas, !node.isSection {
+                                        state.openLightbox(id)
+                                    }
+                                }
+                            },
+                            onMarquee: { contentRect, additive in
                                 // Content → world, then select every node the box touches.
                                 let world = contentRect.offsetBy(dx: worldBounds.minX,
                                                                  dy: worldBounds.minY)
-                                let hits = state.nodes.filter { n in
+                                let hits = Set(state.nodes.filter { n in
                                     world.intersects(CGRect(x: n.position.x, y: n.position.y,
                                                             width: n.width, height: n.height ?? 120))
-                                }.map(\.id)
-                                state.selectNodes(Set(hits))
+                                }.map(\.id))
+                                state.selectNodes(additive ? state.selectedNodeIDs.union(hits) : hits)
                             },
                             onSelect: { id, shift in
                                 guard state.toolMode == .select else { return }
                                 if shift { state.toggleNodeSelection(id) }
                                 else { state.select(id) }
+                            },
+                            onRecolorNode: { id, nsColor in
+                                // Radial picker → nearest section preset (model
+                                // stores presets, not arbitrary RGB).
+                                if let node = state.nodes.first(where: { $0.id == id }), node.isSection {
+                                    state.setSectionColor(id: id,
+                                        to: RadialColorPicker.nearestSectionColor(to: nsColor))
+                                }
                             }
                         )
                         .onAppear {
@@ -471,7 +503,12 @@ struct CanvasView: View {
                 // Suppressed in stack focus mode — the focus chrome owns
                 // the screen and Smart Selection wouldn't apply anyway.
                 if state.canvasMode == .canvas, state.focusedStackID == nil {
+                    // On the native canvas, gate Smart Selection's ring/gutter
+                    // gestures OFF — they're competing pointer handlers that would
+                    // re-enter the very race CanvasInputView exists to remove.
+                    // Re-introduce via the native controller later (task #15).
                     SmartSelectionLayer()
+                        .allowsHitTesting(!useNativeCanvas)
                 }
 
                 // Stack focus chrome — count pill + exit chip — sits
@@ -606,7 +643,8 @@ struct CanvasView: View {
         // visible when the user resizes the window (in any direction).
         .overlay(alignment: .bottomLeading) {
             if state.canvasMode != .archive {
-                ZoomControlsPill()
+                NativeZoomControlsPill()
+                    .fixedSize()
                     .padding(.leading, 16)
                     .padding(.bottom, 16)
             }
@@ -625,7 +663,8 @@ struct CanvasView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive {
-                CanvasTogglesPill()
+                NativeCanvasTogglesPill()
+                    .fixedSize()
                     .padding(.trailing, 16)
                     .padding(.bottom, 16)
             }
@@ -636,7 +675,8 @@ struct CanvasView: View {
         .overlay(alignment: .top) {
             Group {
                 if state.canvasMode == .canvas, state.toolMode != .select {
-                    ActiveToolChip()
+                    NativeActiveToolChip()
+                        .fixedSize()
                         .padding(.top, 14)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }

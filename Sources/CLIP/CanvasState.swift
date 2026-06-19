@@ -128,7 +128,14 @@ final class CanvasState: ObservableObject {
     init() {
         // Restore from disk, falling back to a single empty "Page 1".
         if let snapshot = CanvasStore.load(), !snapshot.pages.isEmpty {
-            self.pages = snapshot.pages
+            // Sections are being retired in favour of folders — drop any that
+            // were saved so they disappear from the canvas (the cards they
+            // visually contained stay, since containment was spatial).
+            self.pages = snapshot.pages.map { page in
+                var p = page
+                p.nodes = p.nodes.filter { if case .section = $0.kind { return false }; return true }
+                return p
+            }
             self.activePageID =
                 snapshot.pages.contains(where: { $0.id == snapshot.activePageID })
                 ? snapshot.activePageID
@@ -688,6 +695,11 @@ final class CanvasState: ObservableObject {
     /// id of a freshly placed editable node (text or sticky) that should
     /// auto-focus its editor on appear. Cleared once consumed.
     @Published var pendingFocusNodeID: UUID? = nil
+
+    /// id of the text node currently in inline edit. While set, that one card's
+    /// hosted content stays hit-testable so its TextField receives keys/caret
+    /// clicks; the canvas input layer (CanvasInputView) steps aside for it.
+    @Published var editingTextNodeID: UUID? = nil
 
     /// ids of freshly added image nodes that should play the wavefront
     /// reveal once when they appear. Cleared by the node view once consumed.
