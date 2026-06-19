@@ -49,6 +49,7 @@ final class CanvasToolPaletteView: NSView {
     /// Callback injected by `configure(active:onTap:)`.
     var onToolTap: ((ToolMode) -> Void)?
     var onAddTap: (() -> Void)?
+    var onFolderTap: (() -> Void)?
 
     // MARK: - Init
 
@@ -75,8 +76,9 @@ final class CanvasToolPaletteView: NSView {
         addSubview(mainPill)
         addSubview(addPill)
 
-        mainPill.onToolTap = { [weak self] tool in self?.onToolTap?(tool) }
-        addPill.onTap      = { [weak self] in self?.onAddTap?() }
+        mainPill.onToolTap   = { [weak self] tool in self?.onToolTap?(tool) }
+        mainPill.onFolderTap = { [weak self] in self?.onFolderTap?() }
+        addPill.onTap        = { [weak self] in self?.onAddTap?() }
     }
 
     // MARK: - Layout
@@ -236,10 +238,13 @@ private final class MainPillView: NSView {
     // 60:12999 Connect left=412 (opacity 70%)
     private static let buttonXs: [CGFloat] = [2, 56, 304, 358, 412]
     private static let buttonOpacities: [CGFloat] = [1, 1, 0.7, 0.7, 0.7]
-    // First button (index 0) is active — rendered with green pill bg.
-    // buttonModes maps index → ToolMode.
-    private static let buttonModes: [ToolMode] =
-        [.select, .draw, .text, .stickyNote, .connect]
+    // Each button's tool MODE (nil = the Folder ACTION button — it creates a
+    // folder instead of entering a mode) + its icon. Draw and Sticky are NOT
+    // buttons; they're the Marker / Stickers props (made clickable below).
+    private static let buttonModes: [ToolMode?] =
+        [.select, .hand, .text, nil, .connect]
+    private static let buttonIcons: [String] =
+        ["tool_select", "tool_hand", "tool_text", "tool_folder", "tool_connect"]
 
     // Decorative prop positions (in inner capsule coords, Y from top of inner capsule)
     // Marker:   x=129, y=-10  (overflows above rim by 10+innerTop=12)
@@ -302,10 +307,14 @@ private final class MainPillView: NSView {
         outerLayer.addSublayer(innerLayer)
 
         // --- Tool buttons ---
-        for (i, mode) in Self.buttonModes.enumerated() {
-            let btn = ToolPaletteButton(mode: mode)
+        for (i, icon) in Self.buttonIcons.enumerated() {
+            let btn = ToolPaletteButton(iconName: icon)
             btn.layer?.opacity = Float(Self.buttonOpacities[i])
-            btn.onTap = { [weak self] in self?.onToolTap?(mode) }
+            let mode = Self.buttonModes[i]
+            btn.onTap = { [weak self] in
+                if let mode { self?.onToolTap?(mode) }   // enter a tool mode
+                else { self?.onFolderTap?() }            // the Folder action button
+            }
             addSubview(btn)
             buttonViews.append(btn)
         }
@@ -326,6 +335,12 @@ private final class MainPillView: NSView {
         }
         stickersView.wantsLayer = true
         addSubview(stickersView)
+
+        // The props ARE tools: Marker = Draw (yellow), Stickers = Sticky note.
+        markerView.addGestureRecognizer(
+            NSClickGestureRecognizer(target: self, action: #selector(handleMarkerClick)))
+        stickersView.addGestureRecognizer(
+            NSClickGestureRecognizer(target: self, action: #selector(handleStickersClick)))
     }
 
     /// Loads an SVG/PNG from the app bundle's Resources folder.
@@ -340,6 +355,10 @@ private final class MainPillView: NSView {
     }
 
     var onToolTap: ((ToolMode) -> Void)?
+    var onFolderTap: (() -> Void)?
+
+    @objc private func handleMarkerClick()   { onToolTap?(.draw) }
+    @objc private func handleStickersClick() { onToolTap?(.stickyNote) }
 
     // MARK: - Layout
 
@@ -526,17 +545,17 @@ private final class AddPillView: NSView {
 /// capsule behind the icon; inactive = no background, icon at designed opacity.
 final class ToolPaletteButton: NSView {
 
-    let mode: ToolMode
     var onTap: (() -> Void)?
 
     private let bgLayer   = CALayer()
     private let iconView  = NSImageView()
     private var isActive  = false
+    private let iconName: String
 
     // MARK: - Init
 
-    init(mode: ToolMode) {
-        self.mode = mode
+    init(iconName: String) {
+        self.iconName = iconName
         super.init(frame: .zero)
         commonInit()
     }
@@ -553,7 +572,7 @@ final class ToolPaletteButton: NSView {
         layer?.addSublayer(bgLayer)
 
         // Icon
-        iconView.image            = iconImage(for: mode)
+        iconView.image            = Self.loadIcon(iconName)
         iconView.imageScaling     = .scaleProportionallyUpOrDown
         iconView.contentTintColor = nil  // SVG icons carry their own colour
         iconView.wantsLayer       = true
@@ -615,16 +634,8 @@ final class ToolPaletteButton: NSView {
 
     /// Returns a 24 × 24 template image for a tool mode.
     /// Uses SF Symbols where possible; falls back to a constructed path image.
-    private func iconImage(for mode: ToolMode) -> NSImage? {
-        let name: String
-        switch mode {
-        case .select:     name = "tool_select"     // the Figma cursor
-        case .draw:       name = "tool_hand"       // hand / pan
-        case .text:       name = "tool_text"       // serif "T"
-        case .stickyNote: name = "tool_folder"     // 4th tool = folder
-        case .connect:    name = "tool_connect"    // headphone-style connector
-        case .section:    name = "tool_plus"
-        }
+    /// Loads a 24×24 template icon (`tool_*.svg`) from the bundle.
+    static func loadIcon(_ name: String) -> NSImage? {
         guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
               let img = NSImage(contentsOf: url) else { return nil }
         img.isTemplate = true   // the button tints it black (idle) / yellow (active)
@@ -656,17 +667,12 @@ struct _PaletteRepresentable: NSViewRepresentable {
 
     private func wireCallbacks(_ v: CanvasToolPaletteView, state: CanvasState) {
         v.onToolTap = { mode in
-            // The 4th tool carries the folder icon — it CREATES a folder
-            // (the user's ask) rather than entering a placement mode.
-            if mode == .stickyNote {
-                state.addFolder()
-            } else {
-                withAnimation(Motion.feedback) { state.toolMode = mode }
-            }
+            // The Marker prop = Draw, with the yellow/amber marker colour.
+            if mode == .draw { state.drawColor = .amber }
+            withAnimation(Motion.feedback) { state.toolMode = mode }
         }
-        v.onAddTap = {
-            withAnimation(Motion.feedback) { state.toolMode = .section }
-        }
+        v.onFolderTap = { state.addFolder() }                 // the Folder button
+        v.onAddTap    = { state.isAddSheetPresented = true }  // "+" opens the Add window
     }
 
     func makeCoordinator() -> Void { }

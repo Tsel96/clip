@@ -425,12 +425,13 @@ enum ArchiveLevel: Equatable {
 }
 
 enum ToolMode: String, CaseIterable, Identifiable, Codable {
-    case select, section, text, stickyNote, draw, connect
+    case select, hand, section, text, stickyNote, draw, connect
 
     var id: String { rawValue }
     var label: String {
         switch self {
         case .select:     return "Select"
+        case .hand:       return "Hand"
         case .section:    return "Section"
         case .text:       return "Text"
         case .stickyNote: return "Sticky"
@@ -441,6 +442,7 @@ enum ToolMode: String, CaseIterable, Identifiable, Codable {
     var systemImage: String {
         switch self {
         case .select:     return "cursorarrow"
+        case .hand:       return "hand.raised"
         case .section:    return "rectangle.dashed"
         case .text:       return "textformat"
         case .stickyNote: return "note.text"
@@ -451,6 +453,7 @@ enum ToolMode: String, CaseIterable, Identifiable, Codable {
     var keyboardKey: Character {
         switch self {
         case .select:     return "v"
+        case .hand:       return "h"
         case .section:    return "s"
         case .text:       return "t"
         case .stickyNote: return "n"
