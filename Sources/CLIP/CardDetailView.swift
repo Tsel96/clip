@@ -267,6 +267,18 @@ final class CardDetailView: NSView {
         if case .video(let fileURL, _) = node.kind {
             mountPlayer(url: fileURL)
         }
+        // Tweets with video play in the lightbox too — resolve the tweet's
+        // direct MP4 (the same `bestVideoURL` the canvas card streams) and run
+        // it through the same looping player. Photo / text tweets keep the poster.
+        if case .tweet(let url) = node.kind {
+            Task { @MainActor in
+                guard let id = TweetService.extractTweetID(from: url),
+                      let data = try? await TweetService.fetch(tweetID: id),
+                      let videoURL = data.bestVideoURL,
+                      presentedID == node.id else { return }
+                mountPlayer(url: videoURL)
+            }
+        }
     }
 
     private func mountPlayer(url: URL) {
@@ -275,7 +287,7 @@ final class CardDetailView: NSView {
         let item = AVPlayerItem(url: url)
         let queue = AVQueuePlayer()
         queue.isMuted = true
-        queue.automaticallyWaitsToMinimizeStalling = false   // start a local file now, don't buffer-wait
+        queue.automaticallyWaitsToMinimizeStalling = !url.isFileURL   // local: start now; remote (tweet): buffer to avoid stalls
         if let s = node?.trimStart, let e = node?.trimEnd, e > s {
             let range = CMTimeRange(start: CMTime(seconds: s, preferredTimescale: 600),
                                     end: CMTime(seconds: e, preferredTimescale: 600))
