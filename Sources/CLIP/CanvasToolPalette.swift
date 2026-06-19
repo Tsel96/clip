@@ -134,16 +134,17 @@ private struct CandyShadowLevel {
 }
 
 /// Figma drop-shadow on the green capsule, top → bottom (the 38 px level is
-/// fully transparent in Figma and omitted):
-///   0 2  1.5 rgba(0,92,2,0.12)
-///   0 6  3   rgba(0,92,2,0.10)
-///   0 14 4   rgba(0,92,2,0.06)
-///   0 24 5   rgba(0,92,2,0.02)
+/// fully transparent in Figma and omitted). Blur values are Figma's own iOS
+/// `shadowRadius` export (2× the CSS blur):
+///   offset 2  radius 3   rgba(0,92,2,0.12)
+///   offset 6  radius 6   rgba(0,92,2,0.10)
+///   offset 14 radius 8   rgba(0,92,2,0.06)
+///   offset 24 radius 10  rgba(0,92,2,0.02)
 private let candyShadowLevels: [CandyShadowLevel] = [
-    .init(y: 2,  blur: 1.5, alpha: 0.12),
-    .init(y: 6,  blur: 3,   alpha: 0.10),
-    .init(y: 14, blur: 4,   alpha: 0.06),
-    .init(y: 24, blur: 5,   alpha: 0.02),
+    .init(y: 2,  blur: 3,  alpha: 0.12),
+    .init(y: 6,  blur: 6,  alpha: 0.10),
+    .init(y: 14, blur: 8,  alpha: 0.06),
+    .init(y: 24, blur: 10, alpha: 0.02),
 ]
 
 /// `rgba(0, 92, 2, 1)` — the shadow's green tint (#005C02).
@@ -218,7 +219,7 @@ private final class MainPillView: NSView {
     // Stickers: x=195, y=-6   (overflows above rim by 6+innerTop=8)
     // Both clip to the inner capsule rect horizontally but overflow top.
     private static let markerX: CGFloat   = 129
-    private static let markerY: CGFloat   = -10   // in inner capsule local Y (negative = above)
+    private static let markerY: CGFloat   = -12   // Figma 60:13004 top:-12 (above inner-capsule top)
     private static let stickersX: CGFloat = 195
     private static let stickersY: CGFloat = -6
 
@@ -260,14 +261,20 @@ private final class MainPillView: NSView {
         layer?.addSublayer(outerLayer)
 
         // --- Inner yellow gradient ---
+        // Figma 60:12983: body gradient #FFF53B → #F8DE47 with a 2 pt pale rim
+        // (#FFFCA9) on the TOP edge ONLY (`border-t-2`). A crisp 4-stop vertical
+        // gradient renders the rim only along the rounded top — never the sides
+        // or bottom — so the green outer ring stays the sole full-perimeter edge.
         innerLayer.colors = [
-            NSColor.fromHex(0xFFF53B).cgColor,
-            NSColor.fromHex(0xF8DE47).cgColor
+            NSColor.fromHex(0xFFFCA9).cgColor,   // pale top rim
+            NSColor.fromHex(0xFFFCA9).cgColor,
+            NSColor.fromHex(0xFFF53B).cgColor,   // body top
+            NSColor.fromHex(0xF8DE47).cgColor    // body bottom
         ]
+        // rim ≈ 2 pt of the 58 pt capsule → 2/58 ≈ 0.0345
+        innerLayer.locations = [0.0, 0.0345, 0.0345, 1.0]
         innerLayer.startPoint = CGPoint(x: 0.5, y: 0)
         innerLayer.endPoint   = CGPoint(x: 0.5, y: 1)
-        innerLayer.borderColor = NSColor.fromHex(0xFFFCA9).cgColor
-        innerLayer.borderWidth = 2
         innerLayer.masksToBounds = true
         outerLayer.addSublayer(innerLayer)
 
@@ -431,14 +438,17 @@ private final class AddPillView: NSView {
         outerLayer.masksToBounds   = false
         layer?.addSublayer(outerLayer)
 
+        // Pale top rim only (Figma `border-t-2`), via a crisp 4-stop gradient —
+        // matches the main pill. 2 pt of the 58 pt inner circle → ≈ 0.0345.
         innerLayer.colors = [
+            NSColor.fromHex(0xFFFCA9).cgColor,
+            NSColor.fromHex(0xFFFCA9).cgColor,
             NSColor.fromHex(0xFFF53B).cgColor,
             NSColor.fromHex(0xF8DE47).cgColor
         ]
+        innerLayer.locations = [0.0, 0.0345, 0.0345, 1.0]
         innerLayer.startPoint = CGPoint(x: 0.5, y: 0)
         innerLayer.endPoint   = CGPoint(x: 0.5, y: 1)
-        innerLayer.borderColor = NSColor.fromHex(0xFFFCA9).cgColor
-        innerLayer.borderWidth = 2
         innerLayer.masksToBounds = true
         outerLayer.addSublayer(innerLayer)
 
