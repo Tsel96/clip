@@ -214,6 +214,41 @@ private func layoutCandyShadows(_ layers: [CALayer], capsule: CGRect,
     CATransaction.commit()
 }
 
+// MARK: - PropButton
+
+/// A clickable decorative prop (Marker / Stickers). `NSImageView` swallows the
+/// mouse-down before a gesture recognizer can fire, so the props were dead; this
+/// plain view claims every in-bounds click via `hitTest` + fires `onTap` on
+/// mouse-up, making the prop a reliable tool button.
+private final class PropButton: NSView {
+    var onTap: (() -> Void)?
+    private let imageView = NSImageView()
+
+    init(image: NSImage?) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        imageView.image = image
+        imageView.imageScaling = .scaleAxesIndependently
+        addSubview(imageView)
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func setImage(_ image: NSImage?) { imageView.image = image }
+
+    override var isFlipped: Bool { true }
+    override func layout() { super.layout(); imageView.frame = bounds }
+
+    /// Claim every in-bounds click so the image subview never swallows it.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) != nil ? self : nil
+    }
+    override func mouseDown(with event: NSEvent) { /* accept; fire on mouse-up */ }
+    override func mouseUp(with event: NSEvent) {
+        let pt = convert(event.locationInWindow, from: nil)
+        if bounds.contains(pt) { onTap?() }
+    }
+}
+
 // MARK: - MainPillView
 
 /// The 470 × (62 + propOverflow) view.  The bottom 62 pt is the candy pill;
@@ -319,28 +354,14 @@ private final class MainPillView: NSView {
             buttonViews.append(btn)
         }
 
-        // --- Decorative props ---
-        if let img = NSImage(named: "Marker") ??
-            loadBundleImage(named: "Marker") {
-            markerView.image = img
-            markerView.imageScaling = .scaleAxesIndependently
-        }
-        markerView.wantsLayer = true
+        // --- Decorative props (clickable: Marker = Draw, Stickers = Sticky) ---
+        markerView.setImage(NSImage(named: "Marker") ?? loadBundleImage(named: "Marker"))
+        markerView.onTap = { [weak self] in self?.onToolTap?(.draw) }
         addSubview(markerView)
 
-        if let img = NSImage(named: "Stickers") ??
-            loadBundleImage(named: "Stickers") {
-            stickersView.image = img
-            stickersView.imageScaling = .scaleAxesIndependently
-        }
-        stickersView.wantsLayer = true
+        stickersView.setImage(NSImage(named: "Stickers") ?? loadBundleImage(named: "Stickers"))
+        stickersView.onTap = { [weak self] in self?.onToolTap?(.stickyNote) }
         addSubview(stickersView)
-
-        // The props ARE tools: Marker = Draw (yellow), Stickers = Sticky note.
-        markerView.addGestureRecognizer(
-            NSClickGestureRecognizer(target: self, action: #selector(handleMarkerClick)))
-        stickersView.addGestureRecognizer(
-            NSClickGestureRecognizer(target: self, action: #selector(handleStickersClick)))
     }
 
     /// Loads an SVG/PNG from the app bundle's Resources folder.
@@ -356,9 +377,6 @@ private final class MainPillView: NSView {
 
     var onToolTap: ((ToolMode) -> Void)?
     var onFolderTap: (() -> Void)?
-
-    @objc private func handleMarkerClick()   { onToolTap?(.draw) }
-    @objc private func handleStickersClick() { onToolTap?(.stickyNote) }
 
     // MARK: - Layout
 
