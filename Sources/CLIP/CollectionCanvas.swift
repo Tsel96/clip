@@ -127,6 +127,18 @@ struct CanvasConfig {
     /// with `state` injected but NOT a camera — this view supplies a
     /// content-coordinate `CameraStore` so the overlay maps world → content.
     let overlay: AnyView
+    /// SCREEN-space island drawn BEHIND the cards (dot-grid spotlight,
+    /// empty-state). Non-interactive. `nil` in the legacy ZStack shell, where
+    /// these render as SwiftUI siblings instead.
+    let behindOverlay: AnyView?
+    /// SCREEN-space island drawn ABOVE the cards (tool-input, smart-selection,
+    /// alignment/spacing guides). Interactive only in a tool mode — its host
+    /// passes clicks through to `CanvasInputView` in select mode. `nil` in the
+    /// legacy ZStack shell.
+    let aboveOverlay: AnyView?
+    /// True when the canvas is in select mode — drives the above-island's
+    /// click-passthrough so cards stay directly clickable.
+    let isSelectMode: () -> Bool
     /// Empty-canvas click → deselect (cards handle their own selection taps).
     let onBackgroundClick: () -> Void
     /// The lone selected node (drives native corner-resize hit-testing in the

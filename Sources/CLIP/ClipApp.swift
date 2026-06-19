@@ -8,8 +8,19 @@ struct ClipApp: App {
     init() {
         setbuf(stdout, nil)   // unbuffered stdout so diagnostics flush immediately
         NSApplication.shared.setActivationPolicy(.regular)
+        ClipApp.applyIcon()      // Dock / app-menu icon (SwiftPM has no Info.plist)
         ClipFont.register()      // make ONY Semimono resolvable via Font.custom
         UpdateChecker.shared.start()   // silent self-update (inert in dev builds)
+    }
+
+    /// Sets the Dock / app-menu icon from the bundled AppIcon.icns. SwiftPM
+    /// executables have no Info.plist `CFBundleIconFile`, so the icon must be
+    /// assigned programmatically at startup.
+    private static func applyIcon() {
+        if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+           let image = NSImage(contentsOf: url) {
+            NSApplication.shared.applicationIconImage = image
+        }
     }
 
     /// Folder picker for the iPhone share inbox — the iCloud Drive folder

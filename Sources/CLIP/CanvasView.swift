@@ -212,6 +212,19 @@ struct CanvasView: View {
     /// boxes for now — validating pan/zoom smoothness before card hosting.
     private let useNativeCanvas = true
 
+    /// Native shell collapse (A5): host the canvas-core SCREEN-space overlays
+    /// (dot-grid, tool-input, smart-selection, alignment/spacing guides) as two
+    /// passthrough islands INSIDE the native `CLIPCanvasView` instead of as
+    /// SwiftUI ZStack siblings — so the canvas is one native view with one input
+    /// owner. Flip to `false` to fall back to the proven ZStack shell (kept
+    /// intact below as the `!useNativeShell` branches).
+    private let useNativeShell = true
+
+    /// Live cursor for the native-shell dot-grid spotlight. The behind-island
+    /// observes this; `CanvasView.body` does NOT, so pointer moves re-render the
+    /// grid in isolation instead of churning the whole body.
+    @StateObject private var pointerStore = CanvasPointerStore()
+
     /// World extent for the native scroll view: all content plus a generous
     /// margin so you can pan well past the edges.
     // Grows-only canvas extent (see CanvasState.stableWorldBounds) — a
@@ -240,17 +253,18 @@ struct CanvasView: View {
                 // Background dot grid (toggleable). Hidden in Archive
                 // because its calendar / bento layers paint their own
                 // surface.
-                if state.showGrid && state.canvasMode != .archive {
+                if !useNativeShell, state.showGrid, state.canvasMode != .archive {
                     // No `.ignoresSafeArea()` — the grid must share the
                     // exact coordinate space the pointer is reported in
                     // (the canvas view's safe-area-respecting bounds), or
                     // the spotlight draws offset from the real cursor.
+                    // (Native shell: moved into CLIPCanvasView's behind-island.)
                     DotGrid(camera: cameraStore.camera, pointer: pointerLocation)
                         .allowsHitTesting(false)
                 }
 
-                // Empty-state hint.
-                if state.nodes.isEmpty {
+                // Empty-state hint. (Native shell: in the behind-island.)
+                if !useNativeShell, state.nodes.isEmpty {
                     EmptyStateView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .allowsHitTesting(false)
@@ -261,7 +275,7 @@ struct CanvasView: View {
                 // Only rendered in Canvas mode — Colorform and Archive
                 // are all read-only views. Suppressed in stack focus
                 // mode so the focus backdrop receives clicks cleanly.
-                if state.canvasMode == .canvas, state.focusedStackID == nil {
+                if !useNativeShell, state.canvasMode == .canvas, state.focusedStackID == nil {
                     ToolInputLayer()
                 }
 
@@ -339,6 +353,22 @@ struct CanvasView: View {
                                     .environmentObject(state.smartSelection)
                                     .environmentObject(overlayCamera)
                             ),
+                            // Screen-space islands (native shell): dot-grid +
+                            // empty-state BEHIND the cards; tool-input + smart-
+                            // selection + alignment/spacing guides ABOVE.
+                            behindOverlay: useNativeShell ? AnyView(
+                                CanvasBehindOverlays()
+                                    .environmentObject(state)
+                                    .environmentObject(cameraStore)
+                                    .environmentObject(pointerStore)
+                            ) : nil,
+                            aboveOverlay: useNativeShell ? AnyView(
+                                CanvasAboveOverlays()
+                                    .environmentObject(state)
+                                    .environmentObject(cameraStore)
+                                    .environmentObject(state.smartSelection)
+                            ) : nil,
+                            isSelectMode: { state.toolMode == .select },
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }
                             },
@@ -422,11 +452,12 @@ struct CanvasView: View {
                 // grids in the current selection.
                 // Suppressed in stack focus mode — the focus chrome owns
                 // the screen and Smart Selection wouldn't apply anyway.
-                if state.canvasMode == .canvas, state.focusedStackID == nil {
+                if !useNativeShell, state.canvasMode == .canvas, state.focusedStackID == nil {
                     // On the native canvas, gate Smart Selection's ring/gutter
                     // gestures OFF — they're competing pointer handlers that would
                     // re-enter the very race CanvasInputView exists to remove.
                     // Re-introduce via the native controller later (task #15).
+                    // (Native shell: in the above-island, non-interactive.)
                     SmartSelectionLayer()
                         .allowsHitTesting(!useNativeCanvas)
                 }
@@ -441,7 +472,8 @@ struct CanvasView: View {
 
                 // Live alignment guides (red lines while dragging). Only
                 // relevant during a drag, which only happens in canvas mode.
-                if state.canvasMode == .canvas {
+                // (Native shell: in the above-island, non-interactive.)
+                if !useNativeShell, state.canvasMode == .canvas {
                     AlignmentGuidesOverlay()
                         .allowsHitTesting(false)
                     SpacingIndicatorsOverlay()
@@ -478,7 +510,12 @@ struct CanvasView: View {
                         onBackgroundClick: {
                             if state.toolMode == .select { state.deselectAll() }
                         },
-                        onPointerMove: { pointerLocation = $0 },
+                        onPointerMove: { p in
+                            // Native shell feeds the behind-island's spotlight via
+                            // the store (no body churn); legacy uses @State.
+                            if useNativeShell { pointerStore.location = p }
+                            else { pointerLocation = p }
+                        },
                         // Native canvas owns pan/zoom — don't consume scroll/magnify.
                         capturesScrollMagnify: !useNativeCanvas
                     )
@@ -652,6 +689,58 @@ struct EmptyStateView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(24)
+    }
+}
+
+// MARK: - Native-shell screen-space islands
+
+/// The BEHIND-the-cards island (native shell): dot-grid spotlight + empty-state.
+/// Hosted once inside `CLIPCanvasView` (below the scroll) and click-transparent.
+/// Observes the stores directly, so a camera/pointer change re-renders only this
+/// island — never `CanvasView.body`.
+struct CanvasBehindOverlays: View {
+    @EnvironmentObject var state: CanvasState
+    @EnvironmentObject var cameraStore: CameraStore
+    @EnvironmentObject var pointerStore: CanvasPointerStore
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if state.showGrid, state.canvasMode != .archive {
+                DotGrid(camera: cameraStore.camera, pointer: pointerStore.location)
+                    .allowsHitTesting(false)
+            }
+            if state.nodes.isEmpty {
+                EmptyStateView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// The ABOVE-the-cards island (native shell): tool-input + smart-selection +
+/// alignment/spacing guides. `ToolInputLayer` is interactive in a tool mode;
+/// the rest are non-interactive. Hosted in a `ToolOverlayHostingView` (above the
+/// scroll) that passes clicks through to `CanvasInputView` in select mode.
+struct CanvasAboveOverlays: View {
+    @EnvironmentObject var state: CanvasState
+    @EnvironmentObject var cameraStore: CameraStore
+    @EnvironmentObject var smartSelection: SmartSelectionController
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if state.canvasMode == .canvas, state.focusedStackID == nil {
+                ToolInputLayer()
+                SmartSelectionLayer()
+                    .allowsHitTesting(false)
+            }
+            if state.canvasMode == .canvas {
+                AlignmentGuidesOverlay()
+                    .allowsHitTesting(false)
+                SpacingIndicatorsOverlay()
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }
 

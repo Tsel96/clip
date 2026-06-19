@@ -90,6 +90,28 @@ final class CLIPCanvasView: NSView {
         addSubview(scroll)
         self.scroll = scroll
 
+        // --- Screen-space islands (native shell collapse) ---
+        // BEHIND the scroll: dot-grid spotlight + empty-state. Click-transparent
+        // and visually behind the (transparent) scroll, so the grid shows
+        // through the gaps between cards.
+        if let behind = config.behindOverlay {
+            let host = PassthroughHostingView(rootView: behind)
+            host.frame = bounds
+            host.autoresizingMask = [.width, .height]
+            addSubview(host, positioned: .below, relativeTo: scroll)
+        }
+        // ABOVE the scroll: tool-input + smart-selection + alignment/spacing
+        // guides. In select mode it's click-through → CanvasInputView owns the
+        // click; in a tool mode it captures so ToolInputLayer draws.
+        if let above = config.aboveOverlay {
+            let host = ToolOverlayHostingView(rootView: above)
+            host.isSelectMode = { [weak coordinator] in coordinator?.config.isSelectMode() ?? true }
+            host.scrollRef = scroll
+            host.frame = bounds
+            host.autoresizingMask = [.width, .height]
+            addSubview(host, positioned: .above, relativeTo: scroll)
+        }
+
         scroll.contentView.postsBoundsChangedNotifications = true
         coordinator.boundsObserver = NotificationCenter.default.addObserver(
             forName: NSView.boundsDidChangeNotification,
