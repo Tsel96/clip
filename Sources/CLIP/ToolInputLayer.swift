@@ -27,6 +27,7 @@ struct ToolInputLayer: View {
         case .section:    sectionLayer
         case .stickyNote: stickyNoteLayer
         case .select:     selectLayer
+        case .hand:       Color.clear   // view/pan mode — no tool overlay
         }
     }
 

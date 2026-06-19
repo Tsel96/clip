@@ -25,6 +25,9 @@ struct ContentView: View {
                 // at small sizes, so the split view shoved the sidebar off the
                 // window's left edge (its labels clipped on the leading side).
                 // 480 always leaves room for the sidebar's 180–280.
+                // Fill under the hidden title bar so no blank strip shows at the
+                // top (traffic lights float over the sidebar, not the canvas).
+                .ignoresSafeArea(.container, edges: .top)
                 .frame(minWidth: 480, minHeight: 480)
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $state.isAddSheetPresented) {
