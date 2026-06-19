@@ -38,6 +38,14 @@ final class CanvasToolPaletteView: NSView {
     /// The round "+" / section pill (62 × 62).
     private let addPill = AddPillView()
 
+    /// Drop-shadows for both pills live HERE (in the full-size host) rather than
+    /// inside the pill views — a pill's bounds are only as tall as the pill, so a
+    /// shadow parented there is clipped at the pill's bottom edge before it can
+    /// reach the host's shadow-bleed room. Parented here, the host's totalW×totalH
+    /// bounds fully contain the shadow, so nothing can clip it.
+    private let mainShadows = makeCandyShadowLayers()
+    private let addShadows  = makeCandyShadowLayers()
+
     /// Callback injected by `configure(active:onTap:)`.
     var onToolTap: ((ToolMode) -> Void)?
     var onAddTap: (() -> Void)?
@@ -56,6 +64,13 @@ final class CanvasToolPaletteView: NSView {
 
     private func commonInit() {
         wantsLayer = true
+        layer?.masksToBounds = false
+
+        // Shadow layers go behind the pill subviews (zPosition keeps them back).
+        (mainShadows + addShadows).forEach {
+            $0.zPosition = -1
+            layer?.addSublayer($0)
+        }
 
         addSubview(mainPill)
         addSubview(addPill)
@@ -113,6 +128,17 @@ final class CanvasToolPaletteView: NSView {
             width: Self.addPillW,
             height: Self.contentH
         )
+
+        // Drop-shadows, in THIS view's non-flipped space (Y-up → "down" is -Y).
+        // The green capsule of each pill sits at the bottom contentH of its frame.
+        let mainCapsule = NSRect(x: leftEdge, y: bottomY,
+                                 width: Self.mainPillW, height: Self.contentH)
+        let addCapsule  = NSRect(x: leftEdge + Self.mainPillW + Self.gap, y: bottomY,
+                                 width: Self.addPillW, height: Self.contentH)
+        layoutCandyShadows(mainShadows, capsule: mainCapsule,
+                           radius: Self.contentH / 2, downSign: -1)
+        layoutCandyShadows(addShadows, capsule: addCapsule,
+                           radius: Self.contentH / 2, downSign: -1)
     }
 
     // MARK: - State
@@ -166,12 +192,12 @@ private func makeCandyShadowLayers() -> [CALayer] {
     }
 }
 
-/// Positions the shadow layers over `capsule`. Each layer's FRAME is offset
-/// downward by its level's Y using the same convention as the green capsule's
-/// frame (verified Y-down in these flipped hosts: `outerLayer.frame.y = pillTopY`
-/// renders the pill at the bottom). The shadowPath is just the layer's own
-/// bounds, so we never depend on `geometryFlipped` path orientation.
-private func layoutCandyShadows(_ layers: [CALayer], capsule: CGRect, radius: CGFloat) {
+/// Positions the shadow layers over `capsule`. Each layer's FRAME is offset by
+/// its level's Y in the "down" direction — `downSign` is +1 for a flipped host
+/// (Y-down) or -1 for a non-flipped host (Y-up). The shadowPath is just the
+/// layer's own bounds, so we never depend on `geometryFlipped` path orientation.
+private func layoutCandyShadows(_ layers: [CALayer], capsule: CGRect,
+                                radius: CGFloat, downSign: CGFloat) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     let path = CGPath(
@@ -179,7 +205,7 @@ private func layoutCandyShadows(_ layers: [CALayer], capsule: CGRect, radius: CG
         cornerWidth: radius, cornerHeight: radius, transform: nil
     )
     for (i, l) in layers.enumerated() {
-        l.frame = capsule.offsetBy(dx: 0, dy: candyShadowLevels[i].y)
+        l.frame = capsule.offsetBy(dx: 0, dy: candyShadowLevels[i].y * downSign)
         l.shadowPath = path
     }
     CATransaction.commit()
@@ -225,7 +251,6 @@ private final class MainPillView: NSView {
 
     // MARK: Layers
 
-    private let shadowLayers = makeCandyShadowLayers() // 4-level green drop-shadow
     private let outerLayer   = CALayer()      // green border
     private let innerLayer   = CAGradientLayer() // yellow gradient
     private let rimLayer     = CALayer()      // top highlight rim
@@ -252,10 +277,7 @@ private final class MainPillView: NSView {
     private func commonInit() {
         wantsLayer = true
 
-        // --- Layered green drop-shadow (behind the capsule) ---
-        shadowLayers.forEach { layer?.addSublayer($0) }
-
-        // --- Outer green border layer ---
+        // --- Outer green border layer ---  (drop-shadow is host-parented)
         outerLayer.backgroundColor  = NSColor.fromHex(0x3DA726).cgColor
         outerLayer.masksToBounds    = false
         layer?.addSublayer(outerLayer)
@@ -346,13 +368,6 @@ private final class MainPillView: NSView {
         innerLayer.cornerCurve  = .continuous
         CATransaction.commit()
 
-        // Layered drop-shadow tracks the green capsule rect.
-        layoutCandyShadows(
-            shadowLayers,
-            capsule: CGRect(x: 0, y: pillTopY, width: bounds.width, height: pillH),
-            radius: pillH / 2
-        )
-
         // Tool buttons (coords relative to inner capsule top-left, then shifted by
         // (innerSideInset, innerTop + pillTopY) to land in view space)
         let innerOriginX = Self.innerSideInset
@@ -412,7 +427,6 @@ private final class AddPillView: NSView {
 
     var onTap: (() -> Void)?
 
-    private let shadowLayers = makeCandyShadowLayers()
     private let outerLayer = CALayer()
     private let innerLayer = CAGradientLayer()
     private let iconView   = NSImageView()
@@ -431,8 +445,6 @@ private final class AddPillView: NSView {
 
     private func commonInit() {
         wantsLayer = true
-
-        shadowLayers.forEach { layer?.addSublayer($0) }
 
         outerLayer.backgroundColor = NSColor.fromHex(0x3DA726).cgColor
         outerLayer.masksToBounds   = false
@@ -479,10 +491,6 @@ private final class AddPillView: NSView {
         outerLayer.frame        = CGRect(x: 0, y: 0, width: w, height: h)
         outerLayer.cornerRadius = h / 2
         outerLayer.cornerCurve  = .continuous
-
-        layoutCandyShadows(shadowLayers,
-                           capsule: CGRect(x: 0, y: 0, width: w, height: h),
-                           radius: h / 2)
 
         // Inner: 2pt inset all sides  → 58 × 58
         let innerSize: CGFloat = 58
