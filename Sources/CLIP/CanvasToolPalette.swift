@@ -264,9 +264,9 @@ private final class MainPillView: NSView {
     // Tool button views (index-matched to buttonModes)
     private var buttonViews: [ToolPaletteButton] = []
 
-    // Decorative prop image views
-    private let markerView   = NSImageView()
-    private let stickersView = NSImageView()
+    // Decorative prop views — clickable (Marker = Draw, Stickers = Sticky).
+    private let markerView   = PropButton(image: nil)
+    private let stickersView = PropButton(image: nil)
 
     // MARK: - Init
 
