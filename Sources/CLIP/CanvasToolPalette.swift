@@ -93,17 +93,20 @@ final class CanvasToolPaletteView: NSView {
         let leftEdge = (b.width  - (Self.mainPillW + Self.gap + Self.addPillW)) / 2
         let bottomY  = Self.shadowBleed  // Y=0 is visually below pill
 
-        // Main pill  (includes its own propOverflow header)
+        // Main pill  (includes its own propOverflow header above the 62-pt pill)
         mainPill.frame = NSRect(
             x: leftEdge,
             y: bottomY,
             width: Self.mainPillW,
             height: Self.contentH + Self.propOverflow
         )
-        // Add pill — vertically centered on the pill strip
+        // Add pill — Figma's parent flex is `items-center`, both pills are 62 pt,
+        // so the add capsule must be flush with the main pill's capsule (which sits
+        // in the BOTTOM 62 pt of mainPill, i.e. at `bottomY`). NOT offset up by the
+        // prop overflow — that was lifting the "+" 14 pt above the row.
         addPill.frame = NSRect(
             x: leftEdge + Self.mainPillW + Self.gap,
-            y: bottomY + Self.propOverflow,
+            y: bottomY,
             width: Self.addPillW,
             height: Self.contentH
         )
@@ -114,6 +117,66 @@ final class CanvasToolPaletteView: NSView {
     func configure(active: ToolMode) {
         mainPill.configure(active: active)
     }
+}
+
+// MARK: - Candy drop-shadow (Figma node 60:12982 / 60:13020)
+
+/// One level of the pill's layered green drop-shadow. A `CALayer` holds only a
+/// single shadow, so the four Figma levels are rendered as four stacked
+/// shadow-casting layers behind the capsule.
+private struct CandyShadowLevel {
+    let y: CGFloat      // downward offset (pt)
+    let blur: CGFloat   // → shadowRadius
+    let alpha: Float    // → shadowOpacity
+}
+
+/// Figma drop-shadow on the green capsule, top → bottom (the 38 px level is
+/// fully transparent in Figma and omitted):
+///   0 2  1.5 rgba(0,92,2,0.12)
+///   0 6  3   rgba(0,92,2,0.10)
+///   0 14 4   rgba(0,92,2,0.06)
+///   0 24 5   rgba(0,92,2,0.02)
+private let candyShadowLevels: [CandyShadowLevel] = [
+    .init(y: 2,  blur: 1.5, alpha: 0.12),
+    .init(y: 6,  blur: 3,   alpha: 0.10),
+    .init(y: 14, blur: 4,   alpha: 0.06),
+    .init(y: 24, blur: 5,   alpha: 0.02),
+]
+
+/// `rgba(0, 92, 2, 1)` — the shadow's green tint (#005C02).
+private let candyShadowColor =
+    NSColor(srgbRed: 0, green: 92.0 / 255, blue: 2.0 / 255, alpha: 1).cgColor
+
+/// Builds the four shadow-casting layers (clear-filled; the shadow comes from
+/// `shadowPath`, set per-layout). Add these BEHIND the green capsule.
+private func makeCandyShadowLayers() -> [CALayer] {
+    candyShadowLevels.map { level in
+        let l = CALayer()
+        l.backgroundColor = NSColor.clear.cgColor
+        l.shadowColor     = candyShadowColor
+        l.shadowOpacity   = level.alpha
+        l.shadowRadius    = level.blur
+        l.shadowOffset    = .zero        // offset is baked into the path (below)
+        l.masksToBounds   = false
+        return l
+    }
+}
+
+/// Positions the shadow layers over `capsule` (in the host's flipped layer space,
+/// where +Y is DOWN) with each level's silhouette translated downward by its
+/// offset — deterministic regardless of layer `geometryFlipped`.
+private func layoutCandyShadows(_ layers: [CALayer], capsule: CGRect, radius: CGFloat) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for (i, l) in layers.enumerated() {
+        l.frame = capsule
+        let local = CGRect(origin: .zero, size: capsule.size)
+        l.shadowPath = CGPath(
+            roundedRect: local.offsetBy(dx: 0, dy: candyShadowLevels[i].y),
+            cornerWidth: radius, cornerHeight: radius, transform: nil
+        )
+    }
+    CATransaction.commit()
 }
 
 // MARK: - MainPillView
@@ -156,6 +219,7 @@ private final class MainPillView: NSView {
 
     // MARK: Layers
 
+    private let shadowLayers = makeCandyShadowLayers() // 4-level green drop-shadow
     private let outerLayer   = CALayer()      // green border
     private let innerLayer   = CAGradientLayer() // yellow gradient
     private let rimLayer     = CALayer()      // top highlight rim
@@ -182,16 +246,12 @@ private final class MainPillView: NSView {
     private func commonInit() {
         wantsLayer = true
 
+        // --- Layered green drop-shadow (behind the capsule) ---
+        shadowLayers.forEach { layer?.addSublayer($0) }
+
         // --- Outer green border layer ---
         outerLayer.backgroundColor  = NSColor.fromHex(0x3DA726).cgColor
         outerLayer.masksToBounds    = false
-        // Drop shadow (Figma: multi-level green shadow)
-        // Approximated as a single layered shadow at y=6, spread matching the
-        // Figma "0px 6px 3px rgba(0,92,2,0.10)" dominant level.
-        outerLayer.shadowColor      = NSColor(red: 0, green: 0.361, blue: 0.008, alpha: 1).cgColor
-        outerLayer.shadowOffset     = CGSize(width: 0, height: -6)  // AppKit Y is flipped vs CSS
-        outerLayer.shadowRadius     = 3
-        outerLayer.shadowOpacity    = 0.10
         layer?.addSublayer(outerLayer)
 
         // --- Inner yellow gradient ---
@@ -274,6 +334,13 @@ private final class MainPillView: NSView {
         innerLayer.cornerCurve  = .continuous
         CATransaction.commit()
 
+        // Layered drop-shadow tracks the green capsule rect.
+        layoutCandyShadows(
+            shadowLayers,
+            capsule: CGRect(x: 0, y: pillTopY, width: bounds.width, height: pillH),
+            radius: pillH / 2
+        )
+
         // Tool buttons (coords relative to inner capsule top-left, then shifted by
         // (innerSideInset, innerTop + pillTopY) to land in view space)
         let innerOriginX = Self.innerSideInset
@@ -333,6 +400,7 @@ private final class AddPillView: NSView {
 
     var onTap: (() -> Void)?
 
+    private let shadowLayers = makeCandyShadowLayers()
     private let outerLayer = CALayer()
     private let innerLayer = CAGradientLayer()
     private let iconView   = NSImageView()
@@ -352,11 +420,9 @@ private final class AddPillView: NSView {
     private func commonInit() {
         wantsLayer = true
 
+        shadowLayers.forEach { layer?.addSublayer($0) }
+
         outerLayer.backgroundColor = NSColor.fromHex(0x3DA726).cgColor
-        outerLayer.shadowColor     = NSColor(red: 0, green: 0.361, blue: 0.008, alpha: 1).cgColor
-        outerLayer.shadowOffset    = CGSize(width: 0, height: -6)
-        outerLayer.shadowRadius    = 3
-        outerLayer.shadowOpacity   = 0.10
         outerLayer.masksToBounds   = false
         layer?.addSublayer(outerLayer)
 
@@ -398,6 +464,10 @@ private final class AddPillView: NSView {
         outerLayer.frame        = CGRect(x: 0, y: 0, width: w, height: h)
         outerLayer.cornerRadius = h / 2
         outerLayer.cornerCurve  = .continuous
+
+        layoutCandyShadows(shadowLayers,
+                           capsule: CGRect(x: 0, y: 0, width: w, height: h),
+                           radius: h / 2)
 
         // Inner: 2pt inset all sides  → 58 × 58
         let innerSize: CGFloat = 58
