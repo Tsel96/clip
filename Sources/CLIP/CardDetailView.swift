@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import WebKit
 
 // MARK: - Native detail view (Spatial CanvasTransition* 1:1)
 
@@ -32,6 +33,7 @@ final class CardDetailView: NSView {
     private var player: AVQueuePlayer?                 // retains the looping player
     private var looper: AVPlayerLooper?
     private var itemObs: NSKeyValueObservation?        // logs load failures, kicks play on ready
+    private var webEmbed: WKWebView?                   // live YT / IG embed, revealed on load
     private let paletteColumn = NSStackView()
     private let metadataColumn = NSStackView()
     private let noteField = NSTextField()
@@ -279,6 +281,14 @@ final class CardDetailView: NSView {
                 mountPlayer(url: videoURL)
             }
         }
+        // YouTube / Instagram play their web embed in the lightbox (no direct
+        // MP4): a WKWebView mounted over the poster, revealed once it loads.
+        if case .youtube(let u) = node.kind, let embed = YouTubeService.embedURL(from: u) {
+            mountWebEmbed(embed)
+        }
+        if case .instagram(let u) = node.kind, let embed = InstagramService.embedURL(from: u) {
+            mountWebEmbed(embed)
+        }
     }
 
     private func mountPlayer(url: URL) {
@@ -324,6 +334,35 @@ final class CardDetailView: NSView {
         player = nil
         playerLayer.player = nil
         playerLayer.isHidden = true
+        teardownWebEmbed()
+    }
+
+    /// Mount a live web embed (YouTube / Instagram) over the poster, revealed
+    /// once it finishes loading — the poster shows through during the morph +
+    /// load. Interactive, so the embed's own player controls work.
+    private func mountWebEmbed(_ url: URL) {
+        teardownWebEmbed()
+        let cfg = WKWebViewConfiguration()
+        cfg.allowsAirPlayForMediaPlayback = true
+        cfg.mediaTypesRequiringUserActionForPlayback = []          // allow autoplay
+        let web = WKWebView(frame: contentTargetRect(), configuration: cfg)
+        web.navigationDelegate = self
+        web.wantsLayer = true
+        web.layer?.cornerRadius = Self.contentRadius
+        web.layer?.cornerCurve = .continuous
+        web.layer?.masksToBounds = true
+        web.alphaValue = 0                                          // revealed on didFinish
+        addSubview(web, positioned: .above, relativeTo: contentClip)
+        web.load(URLRequest(url: url))
+        webEmbed = web
+    }
+
+    private func teardownWebEmbed() {
+        webEmbed?.stopLoading()
+        webEmbed?.loadHTMLString("", baseURL: nil)
+        webEmbed?.navigationDelegate = nil
+        webEmbed?.removeFromSuperview()
+        webEmbed = nil
     }
 
     // MARK: Palette (left) — color circles with haptic-on-hover + click-to-copy
@@ -454,6 +493,7 @@ final class CardDetailView: NSView {
 
         let target = contentTargetRect()
         if presentedID != nil, !inLiveAnimation { layoutContent() }
+        webEmbed?.frame = target
 
         // Palette column just LEFT of the content, top-aligned. 40pt circles.
         paletteColumn.spacing = (D.swatchPitch - D.swatch) * s
@@ -807,6 +847,17 @@ final class ToolbarPill: NSView {
             b.enabled = it.enabled
             b.onClick = it.action
             stack.addArrangedSubview(b)
+        }
+    }
+}
+
+extension CardDetailView: WKNavigationDelegate {
+    /// Reveal the embed once its page is up (the poster carried the morph).
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView == webEmbed else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.25
+            webView.animator().alphaValue = 1
         }
     }
 }
