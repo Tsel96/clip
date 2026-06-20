@@ -304,7 +304,26 @@ struct CollectionCanvas: NSViewRepresentable {
             }
             seenNodeIDs = currentIDs
             didInitialApply = true
-            if !removedIDs.isEmpty { spawnExitSnapshots(removedIDs) }
+            if !removedIDs.isEmpty {
+                // A card that left the canvas because it was FILED into a folder
+                // flies INTO that folder (Spatial's "jump inside"); a genuinely
+                // deleted card springs out + down. Tell them apart by whether the
+                // removed id now appears in some folder's childIDs.
+                var deleted = Set<UUID>()
+                var filed: [UUID: Set<UUID>] = [:]
+                for rid in removedIDs {
+                    if let folder = p.nodes.first(where: {
+                        if case .folder(_, _, let kids) = $0.kind { return kids.contains(rid) }
+                        return false
+                    }) {
+                        filed[folder.id, default: []].insert(rid)
+                    } else {
+                        deleted.insert(rid)
+                    }
+                }
+                if !deleted.isEmpty { spawnExitSnapshots(deleted) }
+                for (fid, cards) in filed { spawnFolderDropSnapshots(cards, into: fid) }
+            }
             nodes = p.nodes
             layout?.itemFrames = frames
             layout?.contentSize = p.worldBounds.size
@@ -525,6 +544,64 @@ struct CollectionCanvas: NSViewRepresentable {
             }
         }
 
+        /// A card FILED into a folder flies into it: snapshot the card, then
+        /// shrink + translate the ghost to the folder's centre and fade — Spatial's
+        /// "card jumps inside". Reuses `spawnExitSnapshots`' bitmap-ghost trick but
+        /// aims at the folder instead of straight down. Purely cosmetic + guarded.
+        private func spawnFolderDropSnapshots(_ filed: Set<UUID>, into folderID: UUID) {
+            guard let cv = collection, let container = container,
+                  let folderCard = cv.visibleItems()
+                      .compactMap({ ($0 as? HostingCollectionItem)?.cardView })
+                      .first(where: { $0.nodeID == folderID }),
+                  folderCard.bounds.width > 1
+            else { return }
+            let folderCenter = container.convert(
+                CGPoint(x: folderCard.bounds.midX, y: folderCard.bounds.midY), from: folderCard)
+            var flew = false
+            for item in cv.visibleItems() {
+                guard let card = (item as? HostingCollectionItem)?.cardView,
+                      let id = card.nodeID, filed.contains(id),
+                      card.bounds.width > 1, card.bounds.height > 1,
+                      let rep = card.bitmapImageRepForCachingDisplay(in: card.bounds)
+                else { continue }
+                card.cacheDisplay(in: card.bounds, to: rep)
+                guard let cg = rep.cgImage else { continue }
+                // Start at the card's current visual position (fold in the live drag
+                // translation if it's still on the layer, so the fly-in begins where
+                // the user released rather than at the card's home slot).
+                var frame = container.convert(card.bounds, from: card)
+                if let t = card.layer?.transform { frame.origin.x += t.m41; frame.origin.y += t.m42 }
+                let ghost = CALayer()
+                ghost.contents = cg
+                ghost.frame = frame
+                ghost.contentsGravity = .resizeAspect
+                ghost.zPosition = 60
+                container.layer?.addSublayer(ghost)
+
+                let c = CGPoint(x: ghost.bounds.midX, y: ghost.bounds.midY)
+                let dx = folderCenter.x - frame.midX, dy = folderCenter.y - frame.midY
+                let target = CATransform3DConcat(
+                    CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
+                                        CATransform3DMakeScale(0.12, 0.12, 1)),
+                    CATransform3DMakeTranslation(c.x + dx, c.y + dy, 0))
+                CATransaction.begin()
+                CATransaction.setCompletionBlock { ghost.removeFromSuperlayer() }
+                let s = CASpringAnimation(keyPath: "transform")
+                s.fromValue = CATransform3DIdentity; s.toValue = target
+                s.stiffness = CLIPSpring.Preset.settle.stiffness
+                s.damping = CLIPSpring.Preset.settle.caDamping
+                s.duration = s.settlingDuration
+                let o = CABasicAnimation(keyPath: "opacity")
+                o.fromValue = 1; o.toValue = 0; o.duration = 0.38
+                o.timingFunction = CLIPSpring.easeOutSoft
+                ghost.transform = target; ghost.opacity = 0
+                ghost.add(s, forKey: "dropFly"); ghost.add(o, forKey: "dropFade")
+                CATransaction.commit()
+                flew = true
+            }
+            if flew { MainActor.assumeIsolated { Haptics.generic() } }
+        }
+
         /// Center + fit the actual content (the nodes' bounding rect, not the
         /// padded world) in the viewport. Run once the scroll view has a real
         /// size, so the canvas opens framed on the cards rather than off in the
@@ -690,6 +767,10 @@ final class CardItemView: NSView {
         // Selection ring geometry (always sized so it's correct the instant it
         // fades in). One native ring per card; hosted cards' SwiftUI ring is off.
         let selected = valid && nodeID.map { coordinator?.config.liveSelection().contains($0) == true } ?? false
+        // Folders show selection via their glow art + a slight scale (Spatial),
+        // not the white ring.
+        let folderView = subviews.compactMap { $0 as? FolderCardView }.first
+        folderView?.setSelected(selected)
         if valid {
             let inset = 1.25 / mag
             selectionLayer.path = CGPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
@@ -717,9 +798,43 @@ final class CardItemView: NSView {
         CATransaction.commit()
 
         // Animated visibility (fade) — OUTSIDE the no-animation transaction.
-        fade(selectionLayer, to: selected ? 1 : 0)
+        // Folders show selection via their own subtle scale (FolderCardView.setSelected),
+        // NOT the node-bounds ring — that rect ring doesn't trace the folder silhouette
+        // and reads as a broken stray outline.
+        fade(selectionLayer, to: (selected && folderView == nil) ? 1 : 0)
+        // Every NON-folder card pops with the same subtle scale folders use
+        // (folders apply it via FolderCardView.setSelected above).
+        if folderView == nil { applySelectionScale(selected) }
         let showHandles = selected && resizeEnabled
         for h in handleLayers { fade(h, to: showHandles ? 1 : 0) }
+    }
+
+    private var lastSelectedForScale = false
+    /// Subtle "pop" on selection for every card (Spatial). Scales the content
+    /// subviews (they fill the card) around the card centre — NOT the item's own
+    /// layer, which carries the live-drag transform, so the two compose cleanly.
+    private func applySelectionScale(_ selected: Bool) {
+        guard bounds.width > 1, bounds.height > 1 else { return }
+        let factor: CGFloat = selected ? 1.04 : 1.0
+        let cx = bounds.width / 2, cy = bounds.height / 2
+        let t = CATransform3DConcat(
+            CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
+                                CATransform3DMakeScale(factor, factor, 1)),
+            CATransform3DMakeTranslation(cx, cy, 0))
+        let animate = selected != lastSelectedForScale
+        lastSelectedForScale = selected
+        for sv in subviews {
+            guard let layer = sv.layer else { continue }
+            if animate {
+                let a = CABasicAnimation(keyPath: "transform")
+                a.fromValue = layer.presentation()?.transform ?? layer.transform
+                a.toValue = t
+                a.duration = 0.18
+                a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                layer.add(a, forKey: "selectScale")
+            }
+            layer.transform = t
+        }
     }
 
     /// Animate a chrome layer's opacity toward `target` (Spatial-style selection
@@ -859,6 +974,13 @@ final class HostingCollectionItem: NSCollectionViewItem {
     /// the SwiftUI card for natively-rendered kinds.
     func setContent(node: CanvasNode, swiftUI: @autoclosure () -> AnyView,
                     isEditing: Bool = false) {
+        // The outgoing video VIEW is cached by node id (NativeVideoCache) so it's
+        // re-parented to its next item instead of rebuilt — no reload/blink. Tell
+        // the cache it detached so off-screen videos still tear down ~1.2s later.
+        if FeatureFlags.useWebViewCache,
+           let vid = nativeContent as? CardVideoContentView, let id = vid.cacheNodeID {
+            NativeVideoCache.shared.park(id)
+        }
         // A text node in edit mode falls back to the SwiftUI inline editor
         // (auto-sizing field + focus); every other case prefers native content.
         if let native = isEditing ? nil : makeNativeCardContent(for: node) {

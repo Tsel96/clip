@@ -19,5 +19,18 @@ import SwiftUI
 /// (`isLive`) depends on.
 @MainActor
 final class CameraStore: ObservableObject {
-    @Published var camera: Camera = Camera()
+    /// Last 10%-zoom bucket a haptic fired on (Int.min = none yet). Lives here —
+    /// not in `CanvasState.zoom(by:)` — because the NATIVE scroll path writes the
+    /// camera straight to this store; `zoom(by:)` is only the SwiftUI/event-monitor
+    /// path and never runs on the native canvas, so a haptic there never fired.
+    private var lastHapticZoomStep = Int.min
+    @Published var camera: Camera = Camera() {
+        didSet {
+            // Freeform-style zoom tick: one subtle haptic per 10% magnification step.
+            let step = Int((camera.zoom * 10).rounded(.down))
+            guard step != lastHapticZoomStep else { return }
+            if lastHapticZoomStep != .min { Haptics.threshold() }
+            lastHapticZoomStep = step
+        }
+    }
 }

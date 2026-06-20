@@ -2391,6 +2391,7 @@ final class CanvasState: ObservableObject {
             if FeatureFlags.useWebViewCache {
                 WebViewCache.shared.evict(cid)
                 PlayerCache.shared.evict(cid)
+                NativeVideoCache.shared.evict(cid)
             }
         }
         selectedConnectorIDs.subtract(extraConnectorIDs)

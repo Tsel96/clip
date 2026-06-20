@@ -37,7 +37,6 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private static let twoItemsImage  = loadSVG("Folder_2-items")
     private static let threeItemsImage = loadSVG("Folder_3-items")
     private static let outlineImage   = loadSVG("Folder_Outline")
-    private static let selectedImage  = loadSVG("Folder_Selected")   // 1163×1099 (glow)
     /// Folder art for an item count — the card-peek is baked into each SVG.
     private static func art(forCount count: Int) -> NSImage? {
         switch count {
@@ -67,11 +66,10 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         addSubview(shapeView)
         outlineView.image = Self.outlineImage
         outlineView.imageScaling = .scaleAxesIndependently
-        // Hidden: outline.svg (994×854) is a different canvas than the folder
-        // SVGs (1163×1044) so the silhouettes don't align as an overlay. Re-enable
-        // once the outline is baked into the per-count SVGs (or exported at the
-        // same 1163×1044 framing).
-        outlineView.isHidden = true
+        // Crisp white edge tracing the folder silhouette (Figma outline.svg, 994×854,
+        // tab included). Its ~1.16 aspect matches the folder, so stretched to the node
+        // bounds it follows the folder shape.
+        outlineView.isHidden = false
         addSubview(outlineView)
 
         countField.textColor = NSColor(white: 0, alpha: 0.4)
@@ -106,7 +104,8 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         if !icon.isEmpty {
             iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
         }
-        shapeView.image = Self.art(forCount: childIDs.count)
+        currentCount = childIDs.count
+        refreshArt()
         // The 1/2/3-item SVGs bake in their own count + "Untitled" (as outlined
         // paths), so suppress our dynamic overlays whenever a baked-text SVG is
         // shown — only the text-stripped empty Folder_Rest needs them. (4+ caps at
@@ -116,6 +115,37 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         countField.isHidden = svgHasText
         titleField.isHidden = svgHasText
         needsLayout = true
+    }
+
+    private func refreshArt() {
+        // Always the per-count art (so the count + card peek stay visible when
+        // selected); selection is shown by the scale + ring, not an art swap.
+        shapeView.image = Self.art(forCount: currentCount)
+        currentArtHeight = 1044
+    }
+
+    /// Selection feedback: ONLY a subtle, animated scale (Spatial's "selected
+    /// folder is a bit scaled") — no ring, no art swap. Called from
+    /// CardItemView.updateChrome.
+    func setSelected(_ selected: Bool) {
+        guard selected != isSelected else { return }
+        isSelected = selected
+        // Scale from the CENTRE. A layer-backed NSView anchors its backing layer at
+        // the corner (anchorPoint 0,0), so `CATransform3DMakeScale` alone grows from
+        // a corner — build an explicit centre-pivot transform instead.
+        let cx = bounds.width / 2, cy = bounds.height / 2
+        let factor: CGFloat = selected ? 1.04 : 1.0
+        let target = CATransform3DConcat(
+            CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
+                                CATransform3DMakeScale(factor, factor, 1)),
+            CATransform3DMakeTranslation(cx, cy, 0))
+        let anim = CABasicAnimation(keyPath: "transform")
+        anim.fromValue = layer?.presentation()?.transform ?? layer?.transform
+        anim.toValue = target
+        anim.duration = 0.18
+        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer?.transform = target
+        layer?.add(anim, forKey: "selectScale")
     }
 
     override func layout() {
@@ -129,7 +159,7 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         shapeView.frame = CGRect(x: -Self.folderRect.minX * sx,
                                  y: -Self.folderRect.minY * sy,
                                  width: Self.svgSize.width * sx,
-                                 height: Self.svgSize.height * sy)
+                                 height: currentArtHeight * sy)
         // Outline art (994×854) is tight to its canvas, same ~1.16 ratio as the
         // folder, so it traces the silhouette when filling the node bounds.
         outlineView.frame = bounds
