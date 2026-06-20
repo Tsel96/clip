@@ -154,6 +154,8 @@ struct CanvasConfig {
     let useNativeConnectors: Bool
     /// Select (or clear) a connector — native connector click-select.
     let onSelectConnector: (UUID?) -> Void
+    /// Set a connector's midpoint label (double-click to edit).
+    let onSetConnectorLabel: (UUID, String) -> Void
     /// Selected connector ids — drives the native connector highlight colour.
     let selectedConnectorIDs: Set<UUID>
     /// Empty-canvas click → deselect (cards handle their own selection taps).
@@ -247,6 +249,9 @@ struct CollectionCanvas: NSViewRepresentable {
         var colorPicker: RadialColorPicker?
         var connectorController: ConnectorOverlayController?
         var guideController: GuideOverlayController?
+        // Inline connector-label editor (double-click a connector).
+        var editingConnectorID: UUID?
+        var editingConnectorField: NSTextField?
         // internal (not private) so the camera-sync seam in
         // CanvasCameraController.swift can read/write the echo-suppression state.
         var lastCamera: Camera?

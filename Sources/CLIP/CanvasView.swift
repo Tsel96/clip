@@ -402,6 +402,7 @@ struct CanvasView: View {
                             connectors: state.connectors,
                             useNativeConnectors: useNativeConnectors,
                             onSelectConnector: { state.selectConnector($0) },
+                            onSetConnectorLabel: { id, text in state.setConnectorLabel(id, text) },
                             selectedConnectorIDs: state.selectedConnectorIDs,
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }

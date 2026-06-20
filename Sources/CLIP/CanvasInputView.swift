@@ -147,6 +147,13 @@ final class CanvasInputView: NSView {
         if event.clickCount == 2, let n = hitNode(at: pt, p), !n.isSection {
             p.onActivate(n.id); mode = .idle; return
         }
+        // Double-click on a connector → edit its midpoint label (Obsidian-style).
+        if event.clickCount == 2, p.useNativeConnectors,
+           let cid = coordinator?.connectorController?.hitTest(pt, tolerance: 16 / mag) {
+            coordinator?.beginEditingConnectorLabel(cid)
+            mode = .idle
+            return
+        }
         // Corner / edge resize on the single selected resizable node.
         if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
            isResizable(sel), let g = grip(at: pt, of: sel, p) {
