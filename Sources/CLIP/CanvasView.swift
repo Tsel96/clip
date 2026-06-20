@@ -353,8 +353,10 @@ struct CanvasView: View {
                             // World-space connectors, drawn inside the scrolled
                             // content so they pan/zoom with the cards. No camera
                             // here — CollectionCanvas supplies the content-coord one.
-                            overlay: useNativeConnectors ? AnyView(EmptyView()) : AnyView(
-                                ConnectorsLayer()
+                            overlay: AnyView(
+                                // Native mode: committed lines drawn natively; this
+                                // overlay keeps ONLY the live connect-drag preview.
+                                ConnectorsLayer(committedHidden: useNativeConnectors)
                                     .frame(width: worldBounds.width,
                                            height: worldBounds.height,
                                            alignment: .topLeading)
