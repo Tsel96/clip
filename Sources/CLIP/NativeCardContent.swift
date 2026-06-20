@@ -26,10 +26,13 @@ func makeNativeCardContent(for node: CanvasNode) -> NSView? {
         return CardStickyContentView(content: content, color: color)
     case .folder:
         let v = FolderCardView(); v.update(for: node); return v
+    case .text(let content, let fontSize):
+        // Native at-rest render. `HostingCollectionItem.setContent(isEditing:)`
+        // swaps to the SwiftUI inline editor while this node is being edited.
+        return CardTextContentView(content: content, fontSize: fontSize)
     default:
-        // tweet / instagram / youtube / webclip / text — still SwiftUI for now.
-        // (Web cards keep their semantic-zoom live↔poster lifecycle; text keeps
-        // its inline SwiftUI editor. See task #17.)
+        // tweet / instagram / youtube / webclip — still SwiftUI (web cards keep
+        // their semantic-zoom live↔poster lifecycle). See task #17.
         return nil
     }
 }
@@ -225,6 +228,62 @@ final class CardStickyContentView: NSView, NativeCardUpdatable {
         color.shadowLipNS.setFill()
         NSBezierPath(rect: NSRect(x: 0, y: 0, width: bounds.width, height: lipHeight)).fill()
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Native canvas text — Spatial's at-rest `CanvasLabel`. Renders the node's text
+/// with no chrome (the selection rect on `CardItemView` hugs it). Sized to the
+/// glyphs and centred, matching the SwiftUI `TextNodeView` display (`.fixedSize()`
+/// hosted in an item that centres it). The inline EDITOR stays SwiftUI:
+/// `HostingCollectionItem.setContent(isEditing:)` swaps to it while this node is
+/// `editingTextNodeID`, so the auto-sizing field + focus all stay proven.
+final class CardTextContentView: NSView, NativeCardUpdatable {
+    private var content: String
+    private var fontSize: CGFloat
+    private let field = NSTextField(labelWithString: "")
+
+    init(content: String, fontSize: CGFloat) {
+        self.content = content; self.fontSize = fontSize
+        super.init(frame: .zero)
+        wantsLayer = true
+        field.isEditable = false
+        field.isSelectable = false
+        field.drawsBackground = false
+        field.isBordered = false
+        field.maximumNumberOfLines = 0           // honour committed \n line breaks
+        field.cell?.wraps = false                // no wrap (≈ SwiftUI .fixedSize)
+        field.cell?.isScrollable = false
+        field.alignment = .left
+        addSubview(field)
+        apply()
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    func update(for node: CanvasNode) {
+        guard case .text(let t, let s) = node.kind else { return }
+        content = t; fontSize = s; apply()
+    }
+
+    private func apply() {
+        field.font = .systemFont(ofSize: fontSize)
+        if content.isEmpty {
+            field.stringValue = "Text"
+            field.textColor = .tertiaryLabelColor
+        } else {
+            field.stringValue = content
+            field.textColor = .labelColor
+        }
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        field.sizeToFit()
+        let w = field.frame.width, h = field.frame.height
+        field.frame = NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2,
+                             width: w, height: h)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }

@@ -1556,6 +1556,9 @@ final class CanvasState: ObservableObject {
         }()
         let node = CanvasNode.text(content: "", position: position)
         withUndoable { nodes.append(node) }
+        // Native text: editingTextNodeID makes the new item mount the SwiftUI
+        // inline editor immediately (pendingFocus then focuses it on appear).
+        editingTextNodeID = node.id
         pendingFocusNodeID = node.id
         select(node.id)
         toolMode = .select

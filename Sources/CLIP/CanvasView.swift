@@ -424,7 +424,13 @@ struct CanvasView: View {
                                 guard state.toolMode == .select else { return }
                                 if let node = state.nodes.first(where: { $0.id == id }) {
                                     if case .text = node.kind {
-                                        state.select(id); state.pendingFocusNodeID = id
+                                        // Native text card: setting editingTextNodeID
+                                        // swaps the item to the SwiftUI inline editor
+                                        // (HostingCollectionItem.setContent); pendingFocus
+                                        // makes that editor grab focus on appear.
+                                        state.select(id)
+                                        state.editingTextNodeID = id
+                                        state.pendingFocusNodeID = id
                                     } else if state.isStackHead(id), state.focusedStackID == nil {
                                         state.enterStackFocus(headID: id)
                                     } else if state.canvasMode == .canvas, !node.isSection {

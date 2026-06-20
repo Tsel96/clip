@@ -381,8 +381,24 @@ struct CollectionCanvas: NSViewRepresentable {
             if !countChanged, let cv = collection {
                 for ip in cv.indexPathsForVisibleItems() where ip.item < p.nodes.count {
                     let newNode = p.nodes[ip.item]
-                    guard let it = cv.item(at: ip) as? HostingCollectionItem,
-                          let updatable = it.nativeContentView as? NativeCardUpdatable,
+                    guard let it = cv.item(at: ip) as? HostingCollectionItem else { continue }
+                    // Native text ⇄ SwiftUI editor swap when this node enters or
+                    // leaves edit mode (editingTextNodeID isn't in nativeContentKey,
+                    // so the content-only branch below would miss the transition).
+                    if case .text = newNode.kind {
+                        let shouldEdit = (p.editingTextNodeID == newNode.id)
+                        if shouldEdit == it.usesNativeContent {
+                            // Mismatch: editing → SwiftUI field, resting → native.
+                            it.setContent(node: newNode, swiftUI: p.content(newNode),
+                                          isEditing: shouldEdit)
+                        } else if let u = it.nativeContentView as? NativeCardUpdatable,
+                                  let old = oldByID[newNode.id],
+                                  nativeContentKey(for: old) != nativeContentKey(for: newNode) {
+                            u.update(for: newNode)
+                        }
+                        continue
+                    }
+                    guard let updatable = it.nativeContentView as? NativeCardUpdatable,
                           let old = oldByID[newNode.id],
                           nativeContentKey(for: old) != nativeContentKey(for: newNode) else { continue }
                     updatable.update(for: newNode)
@@ -563,7 +579,8 @@ struct CollectionCanvas: NSViewRepresentable {
                 let node = nodes[indexPath.item]
                 hosting.cardView.nodeID = node.id
                 hosting.cardView.coordinator = self
-                hosting.setContent(node: node, swiftUI: config.content(node))
+                hosting.setContent(node: node, swiftUI: config.content(node),
+                                   isEditing: config.editingTextNodeID == node.id)
                 hosting.cardView.updateShadow()
                 hosting.cardView.updateChrome()
                 if pendingAppearIDs.remove(node.id) != nil {
@@ -923,8 +940,11 @@ final class HostingCollectionItem: NSCollectionViewItem {
     /// Install native content for the node if a native renderer exists; else
     /// host the SwiftUI fallback. `swiftUI` is an autoclosure so we don't build
     /// the SwiftUI card for natively-rendered kinds.
-    func setContent(node: CanvasNode, swiftUI: @autoclosure () -> AnyView) {
-        if let native = makeNativeCardContent(for: node) {
+    func setContent(node: CanvasNode, swiftUI: @autoclosure () -> AnyView,
+                    isEditing: Bool = false) {
+        // A text node in edit mode falls back to the SwiftUI inline editor
+        // (auto-sizing field + focus); every other case prefers native content.
+        if let native = isEditing ? nil : makeNativeCardContent(for: node) {
             hosting?.removeFromSuperview(); hosting = nil
             nativeContent?.removeFromSuperview()
             native.translatesAutoresizingMaskIntoConstraints = false
