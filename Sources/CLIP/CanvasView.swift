@@ -388,6 +388,7 @@ struct CanvasView: View {
                             onCommitStroke: { world in state.commitStroke(worldPoints: world) },
                             connectors: state.connectors,
                             useNativeConnectors: useNativeConnectors,
+                            onSelectConnector: { state.selectConnector($0) },
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }
                             },

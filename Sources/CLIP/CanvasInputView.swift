@@ -173,6 +173,15 @@ final class CanvasInputView: NSView {
             moveStartPos = [:]
             for m in p.nodes where ids.contains(m.id) { moveStartPos[m.id] = m.position }
         } else {
+            // Native connector click-select (before marquee): if the click lands
+            // on a connector line, select it and stop.
+            if p.useNativeConnectors,
+               let cid = coordinator?.connectorController?.hitTest(pt, tolerance: 16 / mag) {
+                p.onSelectConnector(cid)
+                coordinator?.refreshChrome()
+                mode = .idle
+                return
+            }
             // Empty canvas OR a section body → marquee, or deselect if no drag.
             mode = .pendingMarquee
         }

@@ -69,6 +69,18 @@ final class ConnectorOverlayController {
         CATransaction.commit()
     }
 
+    /// The connector whose line passes within `tolerance` (content units) of
+    /// `point` — used by CanvasInputView to select/delete a connector. nil = none.
+    func hitTest(_ point: CGPoint, tolerance: CGFloat) -> UUID? {
+        for (id, pair) in pairs {
+            guard let path = pair.line.path else { continue }
+            let outline = path.copy(strokingWithWidth: max(tolerance, 1),
+                                    lineCap: .round, lineJoin: .round, miterLimit: 1)
+            if outline.contains(point) { return id }
+        }
+        return nil
+    }
+
     private func makePair(for id: UUID) -> Pair {
         let line = CAShapeLayer()
         line.fillColor = nil

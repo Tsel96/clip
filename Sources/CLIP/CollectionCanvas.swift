@@ -152,6 +152,8 @@ struct CanvasConfig {
     /// scrolled container and the SwiftUI ConnectorsLayer overlay is left empty.
     let connectors: [Connector]
     let useNativeConnectors: Bool
+    /// Select (or clear) a connector — native connector click-select.
+    let onSelectConnector: (UUID?) -> Void
     /// Empty-canvas click → deselect (cards handle their own selection taps).
     let onBackgroundClick: () -> Void
     /// The lone selected node (drives native corner-resize hit-testing in the
@@ -405,12 +407,13 @@ struct CollectionCanvas: NSViewRepresentable {
         /// them into the CAShapeLayer controller. Driven from `refreshChrome`, so
         /// it tracks node changes (apply → refreshChrome) AND zoom (bounds
         /// observer → refreshChrome). No-op unless `useNativeConnectors`.
-        func refreshConnectors() {
+        func refreshConnectors(offsets: [UUID: CGPoint] = [:]) {
             guard let cc = connectorController else { return }
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
             var frames: [UUID: CGRect] = [:]
             for n in config.nodes {
-                frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
+                let o = offsets[n.id] ?? .zero
+                frames[n.id] = CGRect(x: n.position.x - minX + o.x, y: n.position.y - minY + o.y,
                                       width: max(1, n.width), height: max(1, n.height ?? 120))
             }
             cc.update(connectors: config.connectors, nodeFrames: frames,
@@ -437,6 +440,13 @@ struct CollectionCanvas: NSViewRepresentable {
                 cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = t
             }
             CATransaction.commit()
+            // Native connectors track the dragged cards live (no per-tick model
+            // write — the model commits on mouse-up; this feeds the offset directly).
+            if connectorController != nil {
+                var offs: [UUID: CGPoint] = [:]
+                for id in startPos.keys { offs[id] = CGPoint(x: dx, y: dy) }
+                refreshConnectors(offsets: offs)
+            }
         }
 
         /// End of a move: write each dragged item's final frame into the layout
