@@ -12,6 +12,9 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private let titleField = NSTextField(labelWithString: "Untitled")
     private let iconChip = NSView()
     private let iconView = NSImageView()
+    /// White stroke tracing the folder silhouette (Figma node 58:232), overlaid
+    /// on the fill so the folder has a crisp outline.
+    private let outlineView = NSImageView()
 
     /// The folder occupies this sub-rect of the rest SVG's 1163×1044 canvas
     /// (the rest is shadow margin) — used to bleed the margin outside the node.
@@ -28,6 +31,7 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private static let oneItemImage   = loadSVG("Folder_1-item")
     private static let twoItemsImage  = loadSVG("Folder_2-items")
     private static let threeItemsImage = loadSVG("Folder_3-items")
+    private static let outlineImage   = loadSVG("Folder_Outline")
     /// Folder art for an item count — the card-peek is baked into each SVG.
     private static func art(forCount count: Int) -> NSImage? {
         switch count {
@@ -55,6 +59,9 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         shapeView.layer?.shadowRadius = 12
         shapeView.layer?.shadowOffset = .zero
         addSubview(shapeView)
+        outlineView.image = Self.outlineImage
+        outlineView.imageScaling = .scaleAxesIndependently
+        addSubview(outlineView)   // on top of the fill, under the text
 
         countField.textColor = NSColor(white: 0, alpha: 0.4)
         addSubview(countField)
@@ -112,6 +119,9 @@ final class FolderCardView: NSView, NativeCardUpdatable {
                                  y: -Self.folderRect.minY * sy,
                                  width: Self.svgSize.width * sx,
                                  height: Self.svgSize.height * sy)
+        // Outline art (994×854) is tight to its canvas, same ~1.16 ratio as the
+        // folder, so it traces the silhouette when filling the node bounds.
+        outlineView.frame = bounds
 
         // Live text, lower-left (the baked text sat at ≈12% in, 69%/77% down).
         let pad = w * 0.118
