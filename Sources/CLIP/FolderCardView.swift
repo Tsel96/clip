@@ -12,6 +12,25 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private let titleField = NSTextField(labelWithString: "Untitled")
     private let iconChip = NSView()
     private let iconView = NSImageView()
+    /// Up to 3 child-card "covers" that peek out the folder's top when it has
+    /// contents (Spatial's stacked peek). Added BEHIND `shapeView` so the folder
+    /// body tucks their lower halves in; only the tops show.
+    private let peekCovers: [NSView] = (0..<3).map { _ in
+        let v = NSView()
+        v.wantsLayer = true
+        v.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.97).cgColor
+        v.layer?.cornerRadius = 9
+        v.layer?.cornerCurve = .continuous
+        v.layer?.borderWidth = 1
+        v.layer?.borderColor = NSColor(white: 0, alpha: 0.07).cgColor
+        v.layer?.shadowColor = NSColor.black.cgColor
+        v.layer?.shadowOpacity = 0.12
+        v.layer?.shadowRadius = 7
+        v.layer?.shadowOffset = CGSize(width: 0, height: 3)
+        v.layer?.masksToBounds = false
+        v.isHidden = true
+        return v
+    }
 
     /// The folder occupies this sub-rect of the rest SVG's 1163×1044 canvas
     /// (the rest is shadow margin) — used to bleed the margin outside the node.
@@ -36,6 +55,8 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         shapeView.wantsLayer = true
         shapeView.layer?.masksToBounds = false
         addSubview(shapeView)
+        // Behind the folder body so only their tops peek out.
+        for cover in peekCovers { addSubview(cover, positioned: .below, relativeTo: shapeView) }
 
         countField.textColor = NSColor(white: 0, alpha: 0.4)
         addSubview(countField)
@@ -69,6 +90,8 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         if !icon.isEmpty {
             iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
         }
+        let visible = min(childIDs.count, peekCovers.count)
+        for (i, c) in peekCovers.enumerated() { c.isHidden = i >= visible }
         needsLayout = true
     }
 
@@ -98,5 +121,18 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         iconChip.frame = CGRect(x: w - pad - chip, y: h * 0.70, width: chip, height: chip)
         iconChip.layer?.cornerRadius = chip * 0.28
         iconView.frame = iconChip.bounds.insetBy(dx: chip * 0.26, dy: chip * 0.26)
+
+        // Peeking child-card covers — a small receding stack out the folder's
+        // top (centred, right of the tab). Behind the body so only the tops show.
+        let coverW = w * 0.46, coverH = h * 0.36
+        let vis = peekCovers.enumerated().filter { !$0.element.isHidden }
+        let n = vis.count
+        for (slot, pair) in vis.enumerated() {
+            let backDepth = CGFloat(n - 1 - slot)          // backmost peeks highest
+            let cx = w / 2 + (CGFloat(slot) - CGFloat(n - 1) / 2) * (w * 0.06)
+            let topY = -h * 0.14 - backDepth * (h * 0.03)  // negative = above the top (flipped)
+            pair.element.frame = NSRect(x: cx - coverW / 2, y: topY,
+                                        width: coverW, height: coverH)
+        }
     }
 }

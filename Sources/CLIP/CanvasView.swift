@@ -843,9 +843,9 @@ struct DotGrid: View {
     private static let baseDot: CGFloat = 2.4
     /// Reveal radius around the cursor, in screen points.
     private static let spotlightRadius: CGFloat = 220
-    /// Screen spacing never drops below this (octave-doubled if it
-    /// would) — bounds the dot count at extreme zoom-out.
-    private static let minScreenSpacing: CGFloat = 6
+    /// Screen spacing never drops below this (octave-doubled if it would) —
+    /// bounds the dot count for the now full-screen grid at extreme zoom-out.
+    private static let minScreenSpacing: CGFloat = 12
 
     /// 0…1 reveal, animated up when the pointer enters the canvas and
     /// down when it leaves so the pool fades rather than popping.
@@ -856,10 +856,6 @@ struct DotGrid: View {
 
     var body: some View {
         Canvas { context, size in
-            guard strength > 0.001 else { return }
-            let center = pointer ?? lastPointer
-            let radius = Self.spotlightRadius
-
             // Spacing scales with zoom; octave-double only as a floor.
             var spacing = Self.baseSpacing * camera.zoom
             while spacing < Self.minScreenSpacing { spacing *= 2 }
@@ -872,49 +868,36 @@ struct DotGrid: View {
             var phaseY = camera.y.truncatingRemainder(dividingBy: spacing)
             if phaseY > 0 { phaseY -= spacing }
 
-            // Clip iteration to the spotlight's bounding box.
-            let loMinX = max(phaseX, center.x - radius)
-            let loMaxX = min(size.width, center.x + radius)
-            let loMinY = max(phaseY, center.y - radius)
-            let loMaxY = min(size.height, center.y + radius)
-            guard loMinX <= loMaxX, loMinY <= loMaxY else { return }
-
-            let firstX = phaseX + ((loMinX - phaseX) / spacing).rounded(.down) * spacing
-            let firstY = phaseY + ((loMinY - phaseY) / spacing).rounded(.down) * spacing
-            let r2 = radius * radius
-
+            // Full-screen, world-anchored dot field (whole background, not just
+            // a cursor patch).
             var path = Path()
-            var x = firstX
-            while x <= loMaxX {
-                let dx = x - center.x
-                var y = firstY
-                while y <= loMaxY {
-                    let dy = y - center.y
-                    if dx * dx + dy * dy <= r2 {
-                        path.addEllipse(in: CGRect(
-                            x: x - dotSize / 2, y: y - dotSize / 2,
-                            width: dotSize, height: dotSize))
-                    }
+            var x = phaseX
+            while x <= size.width {
+                var y = phaseY
+                while y <= size.height {
+                    path.addEllipse(in: CGRect(x: x - dotSize / 2, y: y - dotSize / 2,
+                                               width: dotSize, height: dotSize))
                     y += spacing
                 }
                 x += spacing
             }
 
-            // One fill — the radial gradient fades the dots out toward
-            // the spotlight edge.
-            context.fill(
-                path,
-                with: .radialGradient(
+            // Persistent faint background grid — always visible, even with the
+            // cursor off the canvas.
+            context.fill(path, with: .color(Color.primary.opacity(0.13)))
+
+            // Cursor spotlight — brightens the dots near the pointer (the nice
+            // Spatial-style reveal), layered ON TOP of the base grid.
+            if strength > 0.001 {
+                let center = pointer ?? lastPointer
+                context.fill(path, with: .radialGradient(
                     Gradient(colors: [
-                        Color.primary.opacity(0.55 * strength),
-                        Color.primary.opacity(0.35 * strength),
+                        Color.primary.opacity(0.32 * strength),
+                        Color.primary.opacity(0.14 * strength),
                         .clear
                     ]),
-                    center: center,
-                    startRadius: 0,
-                    endRadius: radius
-                )
-            )
+                    center: center, startRadius: 0, endRadius: Self.spotlightRadius))
+            }
         }
         // Fade the pool in/out only on enter/leave transitions.
         .onChange(of: pointer == nil) { gone in
