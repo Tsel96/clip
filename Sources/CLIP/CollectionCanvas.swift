@@ -802,8 +802,39 @@ final class CardItemView: NSView {
         // NOT the node-bounds ring — that rect ring doesn't trace the folder silhouette
         // and reads as a broken stray outline.
         fade(selectionLayer, to: (selected && folderView == nil) ? 1 : 0)
+        // Every NON-folder card pops with the same subtle scale folders use
+        // (folders apply it via FolderCardView.setSelected above).
+        if folderView == nil { applySelectionScale(selected) }
         let showHandles = selected && resizeEnabled
         for h in handleLayers { fade(h, to: showHandles ? 1 : 0) }
+    }
+
+    private var lastSelectedForScale = false
+    /// Subtle "pop" on selection for every card (Spatial). Scales the content
+    /// subviews (they fill the card) around the card centre — NOT the item's own
+    /// layer, which carries the live-drag transform, so the two compose cleanly.
+    private func applySelectionScale(_ selected: Bool) {
+        guard bounds.width > 1, bounds.height > 1 else { return }
+        let factor: CGFloat = selected ? 1.04 : 1.0
+        let cx = bounds.width / 2, cy = bounds.height / 2
+        let t = CATransform3DConcat(
+            CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
+                                CATransform3DMakeScale(factor, factor, 1)),
+            CATransform3DMakeTranslation(cx, cy, 0))
+        let animate = selected != lastSelectedForScale
+        lastSelectedForScale = selected
+        for sv in subviews {
+            guard let layer = sv.layer else { continue }
+            if animate {
+                let a = CABasicAnimation(keyPath: "transform")
+                a.fromValue = layer.presentation()?.transform ?? layer.transform
+                a.toValue = t
+                a.duration = 0.18
+                a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                layer.add(a, forKey: "selectScale")
+            }
+            layer.transform = t
+        }
     }
 
     /// Animate a chrome layer's opacity toward `target` (Spatial-style selection
