@@ -10,7 +10,10 @@ import AppKit
 /// lifecycle `InstagramCardView` / `VideoNodeView` use.
 struct YouTubeNodeView: View {
     let url: String
-    let nodeID: UUID
+    /// Canvas node id — drives the `WebViewCache` reuse (blink fix). nil ⇒
+    /// uncached (the lightbox passes nil so it never shares the canvas card's
+    /// cached web view).
+    var nodeID: UUID? = nil
     /// Live iff the card intersects the viewport AND is projected at a
     /// large-enough size (and the user hasn't forced previews-only).
     var isLive: Bool = true
@@ -87,13 +90,13 @@ struct YouTubeNodeView: View {
 
 struct YouTubeWebView: NSViewRepresentable {
     let url: URL
-    let nodeID: UUID
+    var nodeID: UUID?
     @Binding var isLoading: Bool
     @Binding var didFail: Bool
 
     func makeNSView(context: Context) -> WKWebView {
         let webView: WKWebView
-        if FeatureFlags.useWebViewCache {
+        if FeatureFlags.useWebViewCache, let nodeID {
             webView = WebViewCache.shared.webView(for: nodeID) { Self.makeWebView(url: url) }
         } else {
             webView = Self.makeWebView(url: url)
@@ -116,9 +119,9 @@ struct YouTubeWebView: NSViewRepresentable {
     /// (page switch, deletion, semantic-zoom poster fallback). Cache mode: defer
     /// the teardown so a select-remount reuses the warm view.
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
-        if FeatureFlags.useWebViewCache {
+        if FeatureFlags.useWebViewCache, let id = coordinator.nodeID {
             nsView.navigationDelegate = nil
-            WebViewCache.shared.scheduleTeardown(for: coordinator.nodeID)
+            WebViewCache.shared.scheduleTeardown(for: id)
             return
         }
         nsView.stopLoading()
@@ -137,11 +140,11 @@ struct YouTubeWebView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
-        let nodeID: UUID
+        let nodeID: UUID?
         @Binding var isLoading: Bool
         @Binding var didFail: Bool
 
-        init(nodeID: UUID, isLoading: Binding<Bool>, didFail: Binding<Bool>) {
+        init(nodeID: UUID?, isLoading: Binding<Bool>, didFail: Binding<Bool>) {
             self.nodeID = nodeID
             self._isLoading = isLoading
             self._didFail = didFail

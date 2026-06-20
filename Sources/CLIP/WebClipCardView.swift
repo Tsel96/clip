@@ -21,7 +21,10 @@ struct WebClipCardView: View {
     /// SwiftUI's `.scaleEffect` zoom transform (and composites above any SwiftUI
     /// cover) — the snapshot is a plain bitmap that scales cleanly.
     var suppressLive: Bool = false
-    let nodeID: UUID
+    /// Canvas node id — drives `WebViewCache` reuse + the snapshot poster store.
+    /// nil ⇒ uncached + no snapshot I/O (the lightbox passes nil so it never
+    /// shares the canvas card's cached web view).
+    var nodeID: UUID? = nil
 
     @State private var hovering = false
     @State private var isLoading = true
@@ -110,6 +113,7 @@ struct WebClipCardView: View {
     }
 
     private func loadCachedSnapshot() {
+        guard let nodeID else { return }
         Task {
             cachedSnapshot = await WebClipSnapshotStore.shared.image(for: nodeID)
         }
@@ -120,7 +124,7 @@ struct WebClipCardView: View {
 
 struct WebClipWebView: NSViewRepresentable {
     let url: URL
-    let nodeID: UUID
+    var nodeID: UUID?
     @Binding var isLoading: Bool
     @Binding var didFail: Bool
     @Binding var cachedSnapshot: NSImage?
@@ -130,7 +134,7 @@ struct WebClipWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let webView: WKWebView
-        if FeatureFlags.useWebViewCache {
+        if FeatureFlags.useWebViewCache, let nodeID {
             // Reuse a warm cached view across remounts (kills the select-blink).
             webView = WebViewCache.shared.webView(for: nodeID) { Self.makeWebView(url: url) }
         } else {
@@ -157,9 +161,9 @@ struct WebClipWebView: NSViewRepresentable {
         // Cache mode: keep the warm view (deferred teardown) so a select-remount
         // reuses it instead of reloading. Clear the delegate so the outgoing
         // coordinator can't be called while the view is parked.
-        if FeatureFlags.useWebViewCache {
+        if FeatureFlags.useWebViewCache, let id = coordinator.nodeID {
             nsView.navigationDelegate = nil
-            WebViewCache.shared.scheduleTeardown(for: coordinator.nodeID)
+            WebViewCache.shared.scheduleTeardown(for: id)
             return
         }
         nsView.stopLoading()
@@ -183,12 +187,12 @@ struct WebClipWebView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
-        let nodeID: UUID
+        let nodeID: UUID?
         @Binding var isLoading: Bool
         @Binding var didFail: Bool
         @Binding var cachedSnapshot: NSImage?
 
-        init(nodeID: UUID,
+        init(nodeID: UUID?,
              isLoading: Binding<Bool>,
              didFail: Binding<Bool>,
              cachedSnapshot: Binding<NSImage?>) {
@@ -232,12 +236,13 @@ struct WebClipWebView: NSViewRepresentable {
         }
 
         private func takeSnapshot(of webView: WKWebView) {
+            guard let nodeID = self.nodeID else { return }
             let config = WKSnapshotConfiguration()
             config.rect = webView.bounds
             webView.takeSnapshot(with: config) { image, error in
                 guard let image else { return }
                 Task {
-                    await WebClipSnapshotStore.shared.save(image, for: self.nodeID)
+                    await WebClipSnapshotStore.shared.save(image, for: nodeID)
                     DispatchQueue.main.async {
                         self.cachedSnapshot = image
                     }

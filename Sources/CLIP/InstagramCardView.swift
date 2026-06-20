@@ -18,7 +18,10 @@ import AppKit
 /// semantic-zoom mechanic that `TweetCardView` / `VideoNodeView` use.
 struct InstagramCardView: View {
     let url: String
-    let nodeID: UUID
+    /// Canvas node id — drives the `WebViewCache` reuse (blink fix). nil ⇒
+    /// uncached (the lightbox passes nil so it never shares the canvas card's
+    /// cached web view).
+    var nodeID: UUID? = nil
     /// Same flag the video paths consume: live iff the card intersects the
     /// viewport AND is projected at ≥ `livePlaybackMinScreenSide`. Default
     /// true keeps preview/test sites that don't pass the prop unaffected.
@@ -105,7 +108,7 @@ struct InstagramCardView: View {
 
 struct InstagramWebView: NSViewRepresentable {
     let url: URL
-    let nodeID: UUID
+    var nodeID: UUID?
     @Binding var isLoading: Bool
     @Binding var didFail: Bool
 
@@ -118,7 +121,7 @@ struct InstagramWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let webView: WKWebView
-        if FeatureFlags.useWebViewCache {
+        if FeatureFlags.useWebViewCache, let nodeID {
             webView = WebViewCache.shared.webView(for: nodeID) { Self.makeWebView(url: url) }
         } else {
             webView = Self.makeWebView(url: url)
@@ -152,9 +155,9 @@ struct InstagramWebView: NSViewRepresentable {
     /// cached JS + <video> decoders), and break the navigation delegate
     /// retain cycle.
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
-        if FeatureFlags.useWebViewCache {
+        if FeatureFlags.useWebViewCache, let id = coordinator.nodeID {
             nsView.navigationDelegate = nil
-            WebViewCache.shared.scheduleTeardown(for: coordinator.nodeID)
+            WebViewCache.shared.scheduleTeardown(for: id)
             return
         }
         nsView.stopLoading()
@@ -227,11 +230,11 @@ struct InstagramWebView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
-        let nodeID: UUID
+        let nodeID: UUID?
         @Binding var isLoading: Bool
         @Binding var didFail: Bool
 
-        init(nodeID: UUID, isLoading: Binding<Bool>, didFail: Binding<Bool>) {
+        init(nodeID: UUID?, isLoading: Binding<Bool>, didFail: Binding<Bool>) {
             self.nodeID = nodeID
             self._isLoading = isLoading
             self._didFail = didFail
