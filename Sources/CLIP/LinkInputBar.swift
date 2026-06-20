@@ -80,7 +80,14 @@ struct LinkInputBar: View {
         // Panel is always mounted (so it can scale OUT of the "+"); focus the
         // field only when it actually opens, and clear it each time.
         .onChange(of: state.isLinkInputPresented) { shown in
-            if shown { text = ""; focused = true } else { focused = false }
+            if shown {
+                text = ""
+                // Defer one runloop so the field is in the responder chain before
+                // we focus it — makes it immediately ready for ⌘V / typing.
+                DispatchQueue.main.async { focused = true }
+            } else {
+                focused = false
+            }
         }
     }
 
@@ -123,7 +130,7 @@ struct LinkInputBar: View {
 
     private func dismiss() {
         focused = false
-        withAnimation(Motion.pop) { state.isLinkInputPresented = false }
+        withAnimation(Motion.popper) { state.isLinkInputPresented = false }
     }
 }
 

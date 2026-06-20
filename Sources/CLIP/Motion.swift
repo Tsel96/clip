@@ -27,6 +27,10 @@ enum Motion {
     /// Element entrance: creation pop, chips, toasts.
     static let pop = Animation.spring(response: 0.5, dampingFraction: 0.72)
 
+    /// Inline popper / panel open-close — modelled on Spatial's toolbar springs:
+    /// fast, snappy, smooth, almost no overshoot. Much quicker than `pop`.
+    static let popper = Animation.spring(response: 0.28, dampingFraction: 0.84)
+
     /// Per-tick gesture tracking (cursor pursuit with a hint of lag).
     static let track = Animation.interactiveSpring(
         response: 0.12, dampingFraction: 0.86, blendDuration: 0.05)

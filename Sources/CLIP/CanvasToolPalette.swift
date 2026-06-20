@@ -939,7 +939,7 @@ struct _PaletteRepresentable: NSViewRepresentable {
         // "+" toggles the inline link input (Figma 72:36784); its green
         // selected skin follows `isLinkInputPresented`.
         v.onAddTap = {
-            withAnimation(Motion.pop) { state.isLinkInputPresented.toggle() }
+            withAnimation(Motion.popper) { state.isLinkInputPresented.toggle() }
         }
     }
 
