@@ -317,34 +317,18 @@ struct CollectionCanvas: NSViewRepresentable {
                 overlayHost?.setFrameSize(p.worldBounds.size)
             }
             if countChanged {
-                // Items added/removed. A full `reloadData` recreates EVERY item,
-                // which re-mounts every video/web player — the "all videos blink"
-                // when a folder (or any card) is added/deleted. Instead, diff to
-                // the exact inserted / removed index paths and apply an incremental
-                // batch update so the SURVIVING items (and their live players) are
-                // left untouched. Fall back to reloadData only when it isn't a clean
-                // insert/delete (e.g. a z-order reorder), which batch updates can't
-                // express.
-                let oldIDset = Set(oldOrderedIDs)
-                let removed = oldOrderedIDs.enumerated()
-                    .filter { !currentIDs.contains($0.element) }
-                    .map { IndexPath(item: $0.offset, section: 0) }
-                let inserted = p.nodes.enumerated()
-                    .filter { !oldIDset.contains($0.element.id) }
-                    .map { IndexPath(item: $0.offset, section: 0) }
-                let oldSurvivors = oldOrderedIDs.filter { currentIDs.contains($0) }
-                let newSurvivors = p.nodes.map(\.id).filter { oldIDset.contains($0) }
-                let isCleanDiff = oldSurvivors == newSurvivors &&
-                    oldOrderedIDs.count - removed.count + inserted.count == p.nodes.count
-                if isCleanDiff, let cv = collection {
-                    cv.performBatchUpdates({
-                        if !removed.isEmpty  { cv.deleteItems(at: Set(removed)) }
-                        if !inserted.isEmpty { cv.insertItems(at: Set(inserted)) }
-                    }, completionHandler: nil)
-                } else {
-                    layout?.invalidateLayout()
-                    collection?.reloadData()
-                }
+                // Items added / removed / filtered (e.g. a card filed into a folder
+                // disappears from `canvasDisplayNodes`). `reloadData` is the only
+                // update that can't desync the data-source count from the batch ops:
+                // the incremental `performBatchUpdates` diff raised an
+                // NSInternalInconsistencyException on the folder count-change (the
+                // data-source count and the delete op got out of sync inside a
+                // re-entrant layout pass). Web / video cards reuse their cached
+                // views across the reload (WebViewCache / PlayerCache), so this
+                // does NOT reintroduce the add/delete blink.
+                _ = (oldOrderedIDs, currentIDs)   // (kept for the diff comment above)
+                layout?.invalidateLayout()
+                collection?.reloadData()
             } else if framesChanged {
                 // Position/size change (drag, resize). Refresh the layout cache…
                 layout?.invalidateLayout()
