@@ -61,7 +61,12 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         addSubview(shapeView)
         outlineView.image = Self.outlineImage
         outlineView.imageScaling = .scaleAxesIndependently
-        addSubview(outlineView)   // on top of the fill, under the text
+        // Hidden: outline.svg (994×854) is a different canvas than the folder
+        // SVGs (1163×1044) so the silhouettes don't align as an overlay. Re-enable
+        // once the outline is baked into the per-count SVGs (or exported at the
+        // same 1163×1044 framing).
+        outlineView.isHidden = true
+        addSubview(outlineView)
 
         countField.textColor = NSColor(white: 0, alpha: 0.4)
         addSubview(countField)
