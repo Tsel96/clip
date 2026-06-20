@@ -650,6 +650,26 @@ struct CanvasView: View {
                     .padding(.bottom, 18)
             }
         }
+        // Unfolded-folder back chip (top-centre): re-fold to the main canvas.
+        // Esc does the same; this is the discoverable affordance.
+        .overlay(alignment: .top) {
+            if state.canvasMode == .canvas, let fid = state.focusedFolderID,
+               case .folder(let title, _, _)? = state.nodeByID[fid]?.kind {
+                Button { state.exitFolderFocus() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                        Text(title.isEmpty ? "Untitled" : title).lineLimit(1)
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 14)
+            }
+        }
         // Liquid-glass minimap dome — anchored to the bottom-right corner
         // with most of the circle bleeding off-screen, so its top-left
         // quadrant sweeps across the viewport. Mounted here (window
