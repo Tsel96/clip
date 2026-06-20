@@ -277,11 +277,10 @@ final class CanvasInputView: NSView {
     /// Live polyline preview of the in-progress native stroke (content space).
     private func updateDrawPreview(_ p: CanvasConfig) {
         guard drawPoints.count >= 2 else { return }
-        let path = CGMutablePath()
-        path.move(to: drawPoints[0])
-        for pt in drawPoints.dropFirst() { path.addLine(to: pt) }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        drawLayer.path = path
+        // Same smoothing the committed stroke uses (DrawingNodeView) so the live
+        // preview matches the final result exactly.
+        drawLayer.path = smoothCGPath(through: drawPoints)
         drawLayer.strokeColor = p.drawColor().cgColor
         drawLayer.lineWidth = p.drawWidth()   // content units → scales with zoom
         drawLayer.isHidden = false
