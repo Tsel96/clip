@@ -81,6 +81,31 @@ enum CLIPSpring {
         layer.add(a, forKey: key)
     }
 
+    /// Fast, NON-spring press-DOWN scale — mirrors Spatial's `BaseView` press
+    /// visual: the button snaps down quickly (~0.06s ease-out), then the release
+    /// uses `scale(... preset:.control)` for the springy overshoot settle (their
+    /// `resetScaleWithStiffness:damping:` + `allowsOverdamping`). Using the spring
+    /// for the down-stroke too is what makes a press feel mushy/unlike Spatial.
+    /// Share the same `key` as the release so the spring retargets from mid-press.
+    static func pressScale(_ view: NSView, to scale: CGFloat,
+                           duration: CFTimeInterval = 0.07, key: String = "clipScale") {
+        guard let layer = view.layer else { return }
+        let c = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
+        let from = layer.presentation()?.transform ?? layer.transform
+        let to = CATransform3DConcat(
+            CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
+                                CATransform3DMakeScale(scale, scale, 1)),
+            CATransform3DMakeTranslation(c.x, c.y, 0))
+        let a = CABasicAnimation(keyPath: "transform")
+        a.fromValue = from
+        a.toValue = to
+        a.duration = duration
+        a.timingFunction = easeOutSoft
+        a.fillMode = .forwards
+        layer.transform = to
+        layer.add(a, forKey: key)
+    }
+
     /// Cubic-bézier timing function (mirrors Spatial's `ControlPoints`), for the
     /// non-spring fades. A subtle overshoot pair gives the "pop".
     static func curve(_ c1x: Float, _ c1y: Float, _ c2x: Float, _ c2y: Float) -> CAMediaTimingFunction {

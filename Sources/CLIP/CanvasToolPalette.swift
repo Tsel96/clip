@@ -507,6 +507,9 @@ private final class AddPillView: NSView {
 
     private let outerLayer = CALayer()
     private let innerLayer = CAGradientLayer()
+    /// Spatial's `clickHighlight` — a dark overlay clipped to the inner circle
+    /// that fades in on press (under the icon), giving the "dim while pressed".
+    private let pressHighlight = CALayer()
     private let iconView   = NSImageView()
     private var isHovered  = false
     private var isPressed  = false
@@ -558,6 +561,11 @@ private final class AddPillView: NSView {
         innerLayer.masksToBounds = true
         outerLayer.addSublayer(innerLayer)
 
+        // clickHighlight — dark wash, hidden at rest, fades in on press.
+        pressHighlight.backgroundColor = NSColor.black.withAlphaComponent(0.12).cgColor
+        pressHighlight.opacity = 0
+        innerLayer.addSublayer(pressHighlight)
+
         // "+" SF Symbol icon — centred at 24 × 24
         iconView.image         = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
         iconView.imageScaling  = .scaleProportionallyUpOrDown
@@ -589,6 +597,9 @@ private final class AddPillView: NSView {
                                           width: innerSize, height: innerSize)
         innerLayer.cornerRadius = innerSize / 2
         innerLayer.cornerCurve  = .continuous
+        pressHighlight.frame        = innerLayer.bounds
+        pressHighlight.cornerRadius = innerSize / 2
+        pressHighlight.cornerCurve  = .continuous
         CATransaction.commit()
 
         // Icon: 24 × 24, centred within the 52 × 52 button circle (inset 3+2=5 each side)
@@ -611,24 +622,50 @@ private final class AddPillView: NSView {
             options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
             owner: self))
     }
-    override func mouseEntered(with event: NSEvent) { isHovered = true; refreshScale() }
-    override func mouseExited(with event: NSEvent)  { isHovered = false; isPressed = false; refreshScale() }
+    // Spatial's BaseView press feel, reproduced 1:1:
+    //   • hover  → spring-grow to 1.05 (their hover scale)
+    //   • press  → FAST snap-down to 0.94 (~0.06s, no spring) + clickHighlight dim
+    //   • release→ resetScaleWithStiffness: spring back with overshoot (.control)
+    private static let hoverScale: CGFloat = 1.05
+    private static let pressScale: CGFloat = 0.94
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        if !isPressed { CLIPSpring.scale(self, to: Self.hoverScale, key: "xform") }
+    }
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false; isPressed = false
+        CLIPSpring.scale(self, to: 1.0, key: "xform")
+        setPressHighlight(false)
+    }
 
     /// Claim every in-bounds click so the icon subview never swallows it.
     override func hitTest(_ point: NSPoint) -> NSView? {
         super.hitTest(point) != nil ? self : nil
     }
-    override func mouseDown(with event: NSEvent) { isPressed = true; refreshScale() }
+    override func mouseDown(with event: NSEvent) {
+        isPressed = true
+        CLIPSpring.pressScale(self, to: Self.pressScale, duration: 0.06, key: "xform")
+        setPressHighlight(true)
+    }
     override func mouseUp(with event: NSEvent) {
         let inside = bounds.contains(convert(event.locationInWindow, from: nil))
         isPressed = false
-        refreshScale()
+        CLIPSpring.scale(self, to: isHovered ? Self.hoverScale : 1.0, key: "xform")
+        setPressHighlight(false)
         if inside { onTap?() }
     }
 
-    private func refreshScale() {
-        let s: CGFloat = isPressed ? 0.94 : (isHovered ? 1.04 : 1.0)
-        CLIPSpring.scale(self, to: s, key: "xform")
+    /// Fade the clickHighlight in (fast, on press) / out (softer, on release).
+    private func setPressHighlight(_ on: Bool) {
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = pressHighlight.presentation()?.opacity ?? pressHighlight.opacity
+        a.toValue   = on ? 1 : 0
+        a.duration  = on ? 0.06 : 0.18
+        a.timingFunction = CLIPSpring.easeOutSoft
+        a.fillMode  = .forwards
+        pressHighlight.opacity = on ? 1 : 0
+        pressHighlight.add(a, forKey: "press")
     }
 
     // MARK: - Selected (link-input open) skin
