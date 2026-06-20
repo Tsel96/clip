@@ -726,14 +726,13 @@ struct CanvasView: View {
         // "+", so the panel scales up directly OUT OF the "+" below it.
         .overlay(alignment: .bottom) {
             if state.canvasMode == .canvas {
+                // Shared bottom-toolbar panel motion (grows out of the "+"); see
+                // `ToolbarPanelTransition`. Always mounted; positioned by the
+                // constant offset AFTER the modifier so the scale pivot lands on
+                // the "+". (x: 542/2 − 31 = 240 right of centre; y: −92 above.)
                 LinkInputBar()
-                    .scaleEffect(state.isLinkInputPresented ? 1 : 0.5, anchor: .bottom)
-                    .opacity(state.isLinkInputPresented ? 1 : 0)
-                    // Closed: lower (−60, nearer the "+") + scaled down; open:
-                    // settles up to −92. So it rises OUT of the "+" as it grows.
-                    .offset(x: 240, y: state.isLinkInputPresented ? -92 : -60)
-                    .allowsHitTesting(state.isLinkInputPresented)
-                    .animation(Motion.popper, value: state.isLinkInputPresented)
+                    .toolbarPanelTransition(isPresented: state.isLinkInputPresented)
+                    .offset(x: 240, y: -92)
             }
         }
         // Acute tool-mode visibility — while a non-Select tool is active,

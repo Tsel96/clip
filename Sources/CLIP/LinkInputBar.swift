@@ -35,19 +35,25 @@ struct LinkInputBar: View {
             // not render here, so the placeholder is drawn manually and shown
             // whenever the field is empty (Figma 72:36786 — black @ 20%).
             ZStack(alignment: .leading) {
-                if text.isEmpty {
-                    Text(verbatim: "INSERT LINK HERE")
-                        .font(Self.inputFont)
-                        .foregroundStyle(.black.opacity(0.2))
-                        .allowsHitTesting(false)
-                }
+                // Display layer — placeholder when empty, else the typed text shown
+                // UPPERCASE (Figma). `.textCase` is ignored on an editable TextField,
+                // so we draw the display ourselves and keep the field's text clear.
+                Text(text.isEmpty ? "INSERT LINK HERE" : text.uppercased())
+                    .font(Self.inputFont)
+                    .foregroundStyle(.black.opacity(text.isEmpty ? 0.2 : 1.0))
+                    .lineLimit(1)
+                    .allowsHitTesting(false)
+                // Real editable field — transparent text so only the uppercase
+                // display shows, but the field still owns the caret + the RAW value
+                // (real case preserved for the URL). SF Mono is monospaced, so the
+                // hidden real text and the uppercase overlay share metrics → the
+                // green caret lands in the right spot.
                 TextField("", text: $text)
                     .textFieldStyle(.plain)
                     .font(Self.inputFont)
-                    .foregroundStyle(.black)
-                    .textCase(.uppercase)           // display caps (Figma); `text` keeps real case for the URL
-                    .autocorrectionDisabled()
+                    .foregroundStyle(.clear)
                     .tint(Color(rgb: 0x3DA726))     // brand-green caret (Figma 72:36791)
+                    .autocorrectionDisabled()
                     .focused($focused)
                     .onSubmit(submit)
             }
