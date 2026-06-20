@@ -690,8 +690,8 @@ struct CardContentView: View {
     var body: some View {
         switch node.kind {
         case .tweet(let url):       TweetCardView(url: url, isLive: isLive)
-        case .instagram(let url):   InstagramCardView(url: url, isLive: isLive)
-        case .youtube(let url):     YouTubeNodeView(url: url, isLive: isLive)
+        case .instagram(let url):   InstagramCardView(url: url, nodeID: node.id, isLive: isLive)
+        case .youtube(let url):     YouTubeNodeView(url: url, nodeID: node.id, isLive: isLive)
         case .webclip(let url):     WebClipCardView(url: url, isLive: isLive, nodeID: node.id)
         case .image(let data, let filename):
             ImageNodeView(data: data, filename: filename, isLive: isLive)

@@ -133,14 +133,16 @@ struct YouTubeWebView: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isLoading: $isLoading, didFail: $didFail)
+        Coordinator(nodeID: nodeID, isLoading: $isLoading, didFail: $didFail)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
+        let nodeID: UUID
         @Binding var isLoading: Bool
         @Binding var didFail: Bool
 
-        init(isLoading: Binding<Bool>, didFail: Binding<Bool>) {
+        init(nodeID: UUID, isLoading: Binding<Bool>, didFail: Binding<Bool>) {
+            self.nodeID = nodeID
             self._isLoading = isLoading
             self._didFail = didFail
         }

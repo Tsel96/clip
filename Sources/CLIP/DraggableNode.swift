@@ -443,14 +443,14 @@ struct DraggableNode: View {
             // for AVPlayer cards: when not "live," `InstagramCardView`
             // unmounts the web view entirely and shows a static poster,
             // freeing the WebKit content process.
-            InstagramCardView(url: url, isLive: liveGate,
+            InstagramCardView(url: url, nodeID: node.id, isLive: liveGate,
                               suppressLive: state.isCameraInteracting)
                 .revealOnAdd(state: state, node: node)
 
         case .youtube(let url):
             // Same WKWebView lifecycle as Instagram: live = embedded muted
             // autoplay; not-live = static thumbnail poster, web view torn down.
-            YouTubeNodeView(url: url, isLive: liveGate,
+            YouTubeNodeView(url: url, nodeID: node.id, isLive: liveGate,
                             suppressLive: state.isCameraInteracting)
                 .revealOnAdd(state: state, node: node)
 

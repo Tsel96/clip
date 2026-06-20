@@ -18,6 +18,7 @@ import AppKit
 /// semantic-zoom mechanic that `TweetCardView` / `VideoNodeView` use.
 struct InstagramCardView: View {
     let url: String
+    let nodeID: UUID
     /// Same flag the video paths consume: live iff the card intersects the
     /// viewport AND is projected at ≥ `livePlaybackMinScreenSide`. Default
     /// true keeps preview/test sites that don't pass the prop unaffected.
@@ -36,6 +37,7 @@ struct InstagramCardView: View {
                 if isLive && !suppressLive {
                     InstagramWebView(
                         url: embedURL,
+                        nodeID: nodeID,
                         isLoading: $isLoading,
                         didFail: $didFail
                     )
@@ -103,6 +105,7 @@ struct InstagramCardView: View {
 
 struct InstagramWebView: NSViewRepresentable {
     let url: URL
+    let nodeID: UUID
     @Binding var isLoading: Bool
     @Binding var didFail: Bool
 
@@ -114,22 +117,30 @@ struct InstagramWebView: NSViewRepresentable {
     private static let sharedProcessPool = WKProcessPool()
 
     func makeNSView(context: Context) -> WKWebView {
+        let webView: WKWebView
+        if FeatureFlags.useWebViewCache {
+            webView = WebViewCache.shared.webView(for: nodeID) { Self.makeWebView(url: url) }
+        } else {
+            webView = Self.makeWebView(url: url)
+        }
+        webView.navigationDelegate = context.coordinator
+        return webView
+    }
+
+    private static func makeWebView(url: URL) -> WKWebView {
         let cfg = WKWebViewConfiguration()
-        cfg.processPool = Self.sharedProcessPool
+        cfg.processPool = sharedProcessPool
         cfg.allowsAirPlayForMediaPlayback = true
         // Browser-level permission: don't require a user click for media.
         cfg.mediaTypesRequiringUserActionForPlayback = []
         // Inject the autoplay shim BEFORE Instagram's own embed JS runs the
-        // "click-to-play" gate. The shim watches the DOM and forces .play()
-        // on whatever <video> IG drops in.
+        // "click-to-play" gate.
         cfg.userContentController.addUserScript(WKUserScript(
-            source: Self.autoplayShim,
+            source: autoplayShim,
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: false   // also runs inside IG's nested iframe
         ))
-
         let webView = WKWebView(frame: .zero, configuration: cfg)
-        webView.navigationDelegate = context.coordinator
         webView.layer?.masksToBounds = true
         webView.load(URLRequest(url: url))
         return webView
@@ -141,6 +152,11 @@ struct InstagramWebView: NSViewRepresentable {
     /// cached JS + <video> decoders), and break the navigation delegate
     /// retain cycle.
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        if FeatureFlags.useWebViewCache {
+            nsView.navigationDelegate = nil
+            WebViewCache.shared.scheduleTeardown(for: coordinator.nodeID)
+            return
+        }
         nsView.stopLoading()
         nsView.loadHTMLString("", baseURL: nil)
         nsView.navigationDelegate = nil
@@ -207,14 +223,16 @@ struct InstagramWebView: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isLoading: $isLoading, didFail: $didFail)
+        Coordinator(nodeID: nodeID, isLoading: $isLoading, didFail: $didFail)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
+        let nodeID: UUID
         @Binding var isLoading: Bool
         @Binding var didFail: Bool
 
-        init(isLoading: Binding<Bool>, didFail: Binding<Bool>) {
+        init(nodeID: UUID, isLoading: Binding<Bool>, didFail: Binding<Bool>) {
+            self.nodeID = nodeID
             self._isLoading = isLoading
             self._didFail = didFail
         }
