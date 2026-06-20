@@ -10,6 +10,7 @@ import AppKit
 /// lifecycle `InstagramCardView` / `VideoNodeView` use.
 struct YouTubeNodeView: View {
     let url: String
+    let nodeID: UUID
     /// Live iff the card intersects the viewport AND is projected at a
     /// large-enough size (and the user hasn't forced previews-only).
     var isLive: Bool = true
@@ -25,7 +26,7 @@ struct YouTubeNodeView: View {
         ZStack {
             if YouTubeService.embedURL(from: url) != nil {
                 if isLive && !suppressLive, let embedURL = YouTubeService.embedURL(from: url) {
-                    YouTubeWebView(url: embedURL, isLoading: $isLoading, didFail: $didFail)
+                    YouTubeWebView(url: embedURL, nodeID: nodeID, isLoading: $isLoading, didFail: $didFail)
                         // Non-interactive so the whole card surface drags via
                         // DraggableNode (WKWebView would otherwise eat events).
                         .allowsHitTesting(false)
@@ -86,23 +87,40 @@ struct YouTubeNodeView: View {
 
 struct YouTubeWebView: NSViewRepresentable {
     let url: URL
+    let nodeID: UUID
     @Binding var isLoading: Bool
     @Binding var didFail: Bool
 
     func makeNSView(context: Context) -> WKWebView {
+        let webView: WKWebView
+        if FeatureFlags.useWebViewCache {
+            webView = WebViewCache.shared.webView(for: nodeID) { Self.makeWebView(url: url) }
+        } else {
+            webView = Self.makeWebView(url: url)
+        }
+        webView.navigationDelegate = context.coordinator
+        return webView
+    }
+
+    private static func makeWebView(url: URL) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         cfg.allowsAirPlayForMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
         let webView = WKWebView(frame: .zero, configuration: cfg)
-        webView.navigationDelegate = context.coordinator
         webView.layer?.masksToBounds = true
         webView.load(URLRequest(url: url))
         return webView
     }
 
     /// Release every WebKit-side resource when SwiftUI removes the view
-    /// (page switch, deletion, semantic-zoom poster fallback).
+    /// (page switch, deletion, semantic-zoom poster fallback). Cache mode: defer
+    /// the teardown so a select-remount reuses the warm view.
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        if FeatureFlags.useWebViewCache {
+            nsView.navigationDelegate = nil
+            WebViewCache.shared.scheduleTeardown(for: coordinator.nodeID)
+            return
+        }
         nsView.stopLoading()
         nsView.loadHTMLString("", baseURL: nil)
         nsView.navigationDelegate = nil

@@ -129,22 +129,39 @@ struct WebClipWebView: NSViewRepresentable {
     private static let sharedProcessPool = WKProcessPool()
 
     func makeNSView(context: Context) -> WKWebView {
+        let webView: WKWebView
+        if FeatureFlags.useWebViewCache {
+            // Reuse a warm cached view across remounts (kills the select-blink).
+            webView = WebViewCache.shared.webView(for: nodeID) { Self.makeWebView(url: url) }
+        } else {
+            webView = Self.makeWebView(url: url)
+        }
+        webView.navigationDelegate = context.coordinator
+        return webView
+    }
+
+    private static func makeWebView(url: URL) -> WKWebView {
         let cfg = WKWebViewConfiguration()
-        cfg.processPool = Self.sharedProcessPool
+        cfg.processPool = sharedProcessPool
         cfg.allowsAirPlayForMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
-        // Desktop User-Agent so sites render their full experience
-        // (not mobile-optimized).
+        // Desktop User-Agent so sites render their full experience.
         cfg.applicationNameForUserAgent = "Version/1.0 Safari (macOS)"
-
         let webView = WKWebView(frame: .zero, configuration: cfg)
-        webView.navigationDelegate = context.coordinator
         webView.layer?.masksToBounds = true
         webView.load(URLRequest(url: url))
         return webView
     }
 
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        // Cache mode: keep the warm view (deferred teardown) so a select-remount
+        // reuses it instead of reloading. Clear the delegate so the outgoing
+        // coordinator can't be called while the view is parked.
+        if FeatureFlags.useWebViewCache {
+            nsView.navigationDelegate = nil
+            WebViewCache.shared.scheduleTeardown(for: coordinator.nodeID)
+            return
+        }
         nsView.stopLoading()
         nsView.loadHTMLString("", baseURL: nil)
         nsView.navigationDelegate = nil
