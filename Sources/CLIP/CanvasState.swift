@@ -584,9 +584,9 @@ final class CanvasState: ObservableObject {
     /// App appearance (light / dark / follow-system). Persisted across launches.
     /// Drives `preferredColorScheme` + the resolved `ClipTheme` injected at the
     /// root, so the whole UI flips with a single toggle.
-    @Published var themeMode: ThemeMode =
-        ThemeMode(rawValue: UserDefaults.standard.string(forKey: "clip.themeMode") ?? "") ?? .dark
-    {
+    // Forced to .light: the dark theme is unfinished, so every launch starts light
+    // regardless of any previously-persisted value. (Toggling still works in-session.)
+    @Published var themeMode: ThemeMode = .light {
         didSet { UserDefaults.standard.set(themeMode.rawValue, forKey: "clip.themeMode") }
     }
 
