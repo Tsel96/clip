@@ -863,6 +863,10 @@ final class HostingCollectionItem: NSCollectionViewItem {
     /// the SwiftUI card for natively-rendered kinds.
     func setContent(node: CanvasNode, swiftUI: @autoclosure () -> AnyView,
                     isEditing: Bool = false) {
+        // Hand any outgoing video's player to the cache BEFORE building the
+        // replacement below, so the new instance (same node, after a reloadData)
+        // reclaims it instead of reloading → no select/move blink.
+        (nativeContent as? CardVideoContentView)?.parkForReuse()
         // A text node in edit mode falls back to the SwiftUI inline editor
         // (auto-sizing field + focus); every other case prefers native content.
         if let native = isEditing ? nil : makeNativeCardContent(for: node) {

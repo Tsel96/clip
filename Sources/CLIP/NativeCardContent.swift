@@ -17,7 +17,8 @@ func makeNativeCardContent(for node: CanvasNode) -> NSView? {
         return CardImageContentView(data: data)
     case .video(let fileURL, _):
         return CardVideoContentView(fileURL: fileURL,
-                                    trimStart: node.trimStart, trimEnd: node.trimEnd)
+                                    trimStart: node.trimStart, trimEnd: node.trimEnd,
+                                    nodeID: node.id)
     case .drawing(let stroke):
         return CardDrawingContentView(stroke: stroke)
     case .section(let title, let color):
@@ -461,6 +462,17 @@ final class CardVideoContentView: NSView {
     // Pass-through: the AVPlayerLayer host must NOT swallow clicks — the
     // CardItemView owns select/move/resize.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    /// Hand our player to the cache so the same node's NEXT instance (built right
+    /// after the select/move `reloadData`) reclaims it instead of reloading. Nils
+    /// our refs so `deinit` won't re-park a player the new instance now owns.
+    func parkForReuse() {
+        guard FeatureFlags.useWebViewCache, let nodeID, let player else { return }
+        PlayerCache.shared.park(nodeID, player: player, looper: looper,
+                                url: fileURL, timeRange: timeRange)
+        self.player = nil
+        self.looper = nil
+    }
 
     deinit { player?.pause() }
 }
