@@ -1,26 +1,38 @@
 import AppKit
-import SwiftUI   // ElbowRoute returns a SwiftUI Path (→ .cgPath)
 
-/// Phase B — native connectors. Renders `state.connectors` as `CAShapeLayer`s
-/// directly in the scrolled `FlippedContainer`, so the scroll view's
-/// magnification pans/zooms them for free (no camera-sync code). Stroke +
-/// arrowhead widths are divided by `magnification` to stay a constant on-screen
-/// size. Reuses the existing `ElbowRoute` routing math via `Path.cgPath`.
-///
-/// Flag-gated off by default (`CanvasView.useNativeConnectors`); when off, the
-/// SwiftUI `ConnectorsLayer` (config.overlay) renders connectors as before.
-/// This type owns ONLY drawing — hit-testing / drag-to-connect stay where they
-/// are until verified.
+/// Phase B — native connectors, Obsidian-Canvas style. Renders `state.connectors`
+/// as `CAShapeLayer`s directly in the scrolled `FlippedContainer`, so the scroll
+/// view's magnification pans/zooms them for free. Each edge is a single green
+/// cubic bezier (see `ConnectorPathMath`) with a filled arrowhead at the target
+/// side-center and an optional text-label pill at the midpoint. Stroke / arrow /
+/// label sizes are divided by `magnification` to stay a constant on-screen size,
+/// so they redraw live as cards are dragged (`refreshConnectors(offsets:)`).
 final class ConnectorOverlayController {
 
     private let root = CALayer()
-    private struct Pair { let line: CAShapeLayer; let arrow: CAShapeLayer }
-    private var pairs: [UUID: Pair] = [:]
 
-    /// Base on-screen sizes (divided by magnification each refresh).
+    private struct Bundle {
+        let line: CAShapeLayer
+        let arrow: CAShapeLayer
+        let labelBG: CALayer
+        let labelText: CATextLayer
+    }
+    private var bundles: [UUID: Bundle] = [:]
+
+    /// Midpoint of each connector in content space — used by the double-click
+    /// label editor to position its field. Refreshed every `update`.
+    private(set) var midpoints: [UUID: CGPoint] = [:]
+
+    // Base on-screen sizes (divided by magnification each refresh).
     private static let screenLineWidth: CGFloat = 2
-    private static let arrowLen: CGFloat = 11
-    private static let arrowHalf: CGFloat = 6
+    private static let selectedLineWidth: CGFloat = 3.5
+    private static let arrowLen: CGFloat = 12
+    private static let arrowHalf: CGFloat = 7
+    private static let labelFontSize: CGFloat = 13
+
+    /// Brand green (#3DA726) for the line/arrow; brighter green when selected.
+    private static let green = NSColor(srgbRed: 0.239, green: 0.655, blue: 0.149, alpha: 1)
+    private static let greenSelected = NSColor(srgbRed: 0.298, green: 0.769, blue: 0.196, alpha: 1)
 
     func attach(to container: NSView) {
         container.wantsLayer = true
@@ -30,50 +42,52 @@ final class ConnectorOverlayController {
 
     func removeFromSuperlayer() { root.removeFromSuperlayer() }
 
-    /// `nodeFrames`: content-space frames keyed by node id (the same space the
-    /// collection items live in). `selected`: the selected connector id, if any.
+    /// `nodeFrames`: content-space frames keyed by node id. `selected`: selected
+    /// connector ids. Recomputes every bezier (cheap) so live drag offsets and
+    /// zoom changes both flow through one path.
     func update(connectors: [Connector],
                 nodeFrames: [UUID: CGRect],
                 selected: Set<UUID>,
                 magnification: CGFloat) {
         let mag = max(magnification, 0.0001)
-        let lineWidth = Self.screenLineWidth / mag
-
         var seen = Set<UUID>()
+        var mids: [UUID: CGPoint] = [:]
+
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for c in connectors {
-            guard let s = nodeFrames[c.sourceID],
-                  let t = nodeFrames[c.targetID]
-            else { continue }
-            let route = ElbowRoute.build(source: s, target: t, cornerRadius: 14)
+            guard let s = nodeFrames[c.sourceID], let t = nodeFrames[c.targetID] else { continue }
             seen.insert(c.id)
+            let isSel = selected.contains(c.id)
+            let route = ConnectorPathMath.route(source: s, target: t)
+            mids[c.id] = route.midpoint
 
-            let pair = pairs[c.id] ?? makePair(for: c.id)
-            let color = (selected.contains(c.id)
-                         ? NSColor.controlAccentColor
-                         : NSColor.secondaryLabelColor).cgColor
+            let b = bundles[c.id] ?? makeBundle(for: c.id)
+            let color = (isSel ? Self.greenSelected : Self.green).cgColor
 
-            pair.line.path = route.path.cgPath
-            pair.line.lineWidth = lineWidth
-            pair.line.strokeColor = color
+            b.line.path = route.path
+            b.line.lineWidth = (isSel ? Self.selectedLineWidth : Self.screenLineWidth) / mag
+            b.line.strokeColor = color
 
-            pair.arrow.path = arrowPath(tip: route.arrowTip, from: route.arrowFrom, mag: mag)
-            pair.arrow.fillColor = color
+            b.arrow.path = arrowPath(tip: route.arrowTip, from: route.arrowFrom, mag: mag)
+            b.arrow.fillColor = color
+
+            layoutLabel(b, text: c.label, center: route.midpoint, mag: mag, selected: isSel)
         }
         // Drop layers for connectors that no longer exist.
-        for (id, p) in pairs where !seen.contains(id) {
-            p.line.removeFromSuperlayer()
-            p.arrow.removeFromSuperlayer()
-            pairs[id] = nil
+        for (id, b) in bundles where !seen.contains(id) {
+            b.line.removeFromSuperlayer(); b.arrow.removeFromSuperlayer()
+            b.labelBG.removeFromSuperlayer(); b.labelText.removeFromSuperlayer()
+            bundles[id] = nil
         }
+        midpoints = mids
         CATransaction.commit()
     }
 
     /// The connector whose line passes within `tolerance` (content units) of
-    /// `point` — used by CanvasInputView to select/delete a connector. nil = none.
+    /// `point` — used by CanvasInputView to select / edit / delete a connector.
     func hitTest(_ point: CGPoint, tolerance: CGFloat) -> UUID? {
-        for (id, pair) in pairs {
-            guard let path = pair.line.path else { continue }
+        for (id, b) in bundles {
+            guard let path = b.line.path else { continue }
             let outline = path.copy(strokingWithWidth: max(tolerance, 1),
                                     lineCap: .round, lineJoin: .round, miterLimit: 1)
             if outline.contains(point) { return id }
@@ -81,22 +95,39 @@ final class ConnectorOverlayController {
         return nil
     }
 
-    private func makePair(for id: UUID) -> Pair {
+    // MARK: - Layer construction
+
+    private func makeBundle(for id: UUID) -> Bundle {
         let line = CAShapeLayer()
         line.fillColor = nil
         line.lineCap = .round
         line.lineJoin = .round
+
         let arrow = CAShapeLayer()
         arrow.strokeColor = nil
+
+        let labelBG = CALayer()
+        labelBG.backgroundColor = NSColor(srgbRed: 0.96, green: 0.96, blue: 0.96, alpha: 1).cgColor
+        labelBG.borderColor = Self.green.withAlphaComponent(0.45).cgColor
+        labelBG.cornerCurve = .continuous
+        labelBG.isHidden = true
+
+        let labelText = CATextLayer()
+        labelText.alignmentMode = .center
+        labelText.truncationMode = .end
+        labelText.foregroundColor = NSColor(srgbRed: 0.1, green: 0.12, blue: 0.1, alpha: 1).cgColor
+        labelText.isHidden = true
+
         root.addSublayer(line)
         root.addSublayer(arrow)
-        let pair = Pair(line: line, arrow: arrow)
-        pairs[id] = pair
-        return pair
+        root.addSublayer(labelBG)
+        root.addSublayer(labelText)
+        let b = Bundle(line: line, arrow: arrow, labelBG: labelBG, labelText: labelText)
+        bundles[id] = b
+        return b
     }
 
-    /// Filled triangle at `tip`, pointing along (tip − from). Sized in content
-    /// units scaled by 1/mag so it stays a constant on-screen size.
+    /// Filled triangle at `tip`, pointing along (tip − from). Constant on-screen.
     private func arrowPath(tip: CGPoint, from: CGPoint, mag: CGFloat) -> CGPath {
         let dx = tip.x - from.x, dy = tip.y - from.y
         let len = max(hypot(dx, dy), 0.0001)
@@ -104,12 +135,44 @@ final class ConnectorOverlayController {
         let size = Self.arrowLen / mag
         let half = Self.arrowHalf / mag
         let baseX = tip.x - ux * size, baseY = tip.y - uy * size
-        let px = -uy, py = ux   // perpendicular
+        let px = -uy, py = ux
         let path = CGMutablePath()
         path.move(to: tip)
         path.addLine(to: CGPoint(x: baseX + px * half, y: baseY + py * half))
         path.addLine(to: CGPoint(x: baseX - px * half, y: baseY - py * half))
         path.closeSubpath()
         return path
+    }
+
+    /// Position/size the midpoint label pill (content units; text stays constant
+    /// on screen). Hidden when the label is empty.
+    private func layoutLabel(_ b: Bundle, text: String, center: CGPoint, mag: CGFloat, selected: Bool) {
+        guard !text.isEmpty else {
+            b.labelBG.isHidden = true; b.labelText.isHidden = true
+            return
+        }
+        b.labelBG.isHidden = false; b.labelText.isHidden = false
+
+        let fontSize = Self.labelFontSize          // on-screen size
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        let measured = (text as NSString).size(withAttributes: [.font: font])
+        let padH: CGFloat = 7, padV: CGFloat = 3
+        // Convert on-screen sizes into content units (÷ mag).
+        let w = (measured.width + padH * 2) / mag
+        let h = (measured.height + padV * 2) / mag
+
+        b.labelBG.frame = CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
+        b.labelBG.cornerRadius = h / 2
+        b.labelBG.borderWidth = (selected ? 1.5 : 1) / mag
+
+        b.labelText.frame = b.labelBG.frame
+        b.labelText.string = text
+        b.labelText.fontSize = fontSize / mag
+        b.labelText.font = font
+        // Vertically center one line of text inside the pill.
+        let textH = measured.height / mag
+        b.labelText.frame.origin.y = center.y - textH / 2
+        b.labelText.frame.size.height = textH
+        b.labelText.contentsScale = max(2, 2 * mag)
     }
 }

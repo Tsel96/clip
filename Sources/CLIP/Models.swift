@@ -469,11 +469,26 @@ struct Connector: Identifiable, Equatable, Codable {
     let id: UUID
     var sourceID: UUID
     var targetID: UUID
+    /// Optional text shown in a pill at the connector's midpoint (Obsidian-style
+    /// edge label). Empty = no label.
+    var label: String
 
-    init(id: UUID = UUID(), sourceID: UUID, targetID: UUID) {
+    init(id: UUID = UUID(), sourceID: UUID, targetID: UUID, label: String = "") {
         self.id = id
         self.sourceID = sourceID
         self.targetID = targetID
+        self.label = label
+    }
+
+    enum CodingKeys: String, CodingKey { case id, sourceID, targetID, label }
+
+    // Backward-compat: older documents have no `label` key — default to "".
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        sourceID = try c.decode(UUID.self, forKey: .sourceID)
+        targetID = try c.decode(UUID.self, forKey: .targetID)
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
     }
 }
 
