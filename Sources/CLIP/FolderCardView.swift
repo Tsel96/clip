@@ -106,7 +106,8 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         if !icon.isEmpty {
             iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
         }
-        shapeView.image = Self.art(forCount: childIDs.count)
+        currentCount = childIDs.count
+        refreshArt()
         // The 1/2/3-item SVGs bake in their own count + "Untitled" (as outlined
         // paths), so suppress our dynamic overlays whenever a baked-text SVG is
         // shown — only the text-stripped empty Folder_Rest needs them. (4+ caps at
@@ -115,6 +116,22 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         let svgHasText = childIDs.count >= 1
         countField.isHidden = svgHasText
         titleField.isHidden = svgHasText
+        needsLayout = true
+    }
+
+    private func refreshArt() {
+        shapeView.image = isSelected ? Self.selectedImage : Self.art(forCount: currentCount)
+        currentArtHeight = isSelected ? 1099 : 1044
+    }
+
+    /// Selection: swap to the glow art + scale the folder up a touch (Spatial's
+    /// "selected folder is a bit scaled"). Called from CardItemView.updateChrome.
+    func setSelected(_ selected: Bool) {
+        guard selected != isSelected else { return }
+        isSelected = selected
+        refreshArt()
+        layer?.transform = selected ? CATransform3DMakeScale(1.05, 1.05, 1)
+                                     : CATransform3DIdentity
         needsLayout = true
     }
 
@@ -129,7 +146,7 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         shapeView.frame = CGRect(x: -Self.folderRect.minX * sx,
                                  y: -Self.folderRect.minY * sy,
                                  width: Self.svgSize.width * sx,
-                                 height: Self.svgSize.height * sy)
+                                 height: currentArtHeight * sy)
         // Outline art (994×854) is tight to its canvas, same ~1.16 ratio as the
         // folder, so it traces the silhouette when filling the node bounds.
         outlineView.frame = bounds

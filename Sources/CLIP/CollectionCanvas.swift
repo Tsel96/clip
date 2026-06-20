@@ -690,6 +690,10 @@ final class CardItemView: NSView {
         // Selection ring geometry (always sized so it's correct the instant it
         // fades in). One native ring per card; hosted cards' SwiftUI ring is off.
         let selected = valid && nodeID.map { coordinator?.config.liveSelection().contains($0) == true } ?? false
+        // Folders show selection via their glow art + a slight scale (Spatial),
+        // not the white ring.
+        let folderView = subviews.compactMap { $0 as? FolderCardView }.first
+        folderView?.setSelected(selected)
         if valid {
             let inset = 1.25 / mag
             selectionLayer.path = CGPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
@@ -717,7 +721,7 @@ final class CardItemView: NSView {
         CATransaction.commit()
 
         // Animated visibility (fade) — OUTSIDE the no-animation transaction.
-        fade(selectionLayer, to: selected ? 1 : 0)
+        fade(selectionLayer, to: (selected && folderView == nil) ? 1 : 0)
         let showHandles = selected && resizeEnabled
         for h in handleLayers { fade(h, to: showHandles ? 1 : 0) }
     }

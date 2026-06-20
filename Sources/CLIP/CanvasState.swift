@@ -2909,10 +2909,19 @@ final class CanvasState: ObservableObject {
         )
     }
 
+    /// Last 10%-zoom bucket a haptic fired on (Int.min = none yet).
+    private var lastHapticZoomStep = Int.min
+
     func zoom(by factor: CGFloat, around screenPoint: CGPoint) {
         // Direct gesture — it owns the camera now; kill any glide.
         cancelCameraGlide()
         camera = cameraZooming(by: factor, around: screenPoint)
+        // Freeform-style zoom haptic: one subtle tick per 10% magnification step.
+        let step = Int(floor(camera.zoom * 10))
+        if step != lastHapticZoomStep {
+            if lastHapticZoomStep != .min { Haptics.threshold() }
+            lastHapticZoomStep = step
+        }
     }
 
     func pan(deltaX: CGFloat, deltaY: CGFloat) {
