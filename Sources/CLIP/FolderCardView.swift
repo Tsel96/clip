@@ -32,6 +32,7 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private static let twoItemsImage  = loadSVG("Folder_2-items")
     private static let threeItemsImage = loadSVG("Folder_3-items")
     private static let outlineImage   = loadSVG("Folder_Outline")
+    private static let selectedImage  = loadSVG("Folder_Selected")   // 1163×1099 (glow)
     /// Folder art for an item count — the card-peek is baked into each SVG.
     private static func art(forCount count: Int) -> NSImage? {
         switch count {
