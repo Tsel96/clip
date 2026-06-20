@@ -14,8 +14,8 @@ struct LinkInputBar: View {
     @State private var text = ""
     @FocusState private var focused: Bool
 
-    /// Figma: inner white field is 300 wide × 50 tall, wrapped in 4 pt of green.
-    static let fieldWidth: CGFloat  = 300
+    /// Figma 72:36785: inner white pill 292 × 50, 4 pt green padding → outer capsule 300 × 58.
+    static let fieldWidth: CGFloat  = 292
     static let fieldHeight: CGFloat = 50
 
     /// Enter.svg (Figma 72:36787) — 24×24 submit icon from bundle.
@@ -68,13 +68,19 @@ struct LinkInputBar: View {
 
     // MARK: Skins
 
-    /// White input pill: #EFEFEF → white vertical gradient + 2 pt white top rim.
+    /// White input pill: Figma 72:36785 — #EFEFEF at top, white reached at 43 % of height,
+    /// white for the remainder. 2 pt white border on all edges (Figma `border-t-2` + border-color white).
     private var whiteField: some View {
         ZStack {
             Capsule().fill(
                 LinearGradient(
-                    colors: [Color(rgb: 0xEFEFEF), .white],
-                    startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.45)))
+                    stops: [
+                        .init(color: Color(rgb: 0xEFEFEF), location: 0.00),
+                        .init(color: .white,               location: 0.43),
+                        .init(color: .white,               location: 1.00),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom))
             Capsule().strokeBorder(Color.white, lineWidth: 2)
         }
     }
