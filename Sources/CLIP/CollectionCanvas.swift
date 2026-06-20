@@ -721,7 +721,7 @@ final class CardItemView: NSView {
         CATransaction.commit()
 
         // Animated visibility (fade) — OUTSIDE the no-animation transaction.
-        fade(selectionLayer, to: (selected && folderView == nil) ? 1 : 0)
+        fade(selectionLayer, to: selected ? 1 : 0)
         let showHandles = selected && resizeEnabled
         for h in handleLayers { fade(h, to: showHandles ? 1 : 0) }
     }
