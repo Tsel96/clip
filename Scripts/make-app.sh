@@ -46,6 +46,12 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN"  "$APP/Contents/MacOS/CLIP"
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 
+# Copy the SPM resource bundle (lives next to the binary).
+BUNDLE_SRC="$(dirname "$BIN")/CLIP_CLIP.bundle"
+if [ -d "$BUNDLE_SRC" ]; then
+  cp -R "$BUNDLE_SRC" "$APP/Contents/Resources/"
+fi
+
 # Bundle the ONY Semimono fonts so Font.custom resolves them on any machine.
 if [ -d "$ROOT/Fonts" ]; then
   mkdir -p "$APP/Contents/Resources/Fonts"
