@@ -89,6 +89,10 @@ final class CLIPCanvasView: NSView {
             cc.attach(to: container)
             coordinator.connectorController = cc
         }
+        // Native alignment guides (active — the visual half of native snapping).
+        let gc = GuideOverlayController()
+        gc.attach(to: container)
+        coordinator.guideController = gc
         coordinator.apply(config)
 
         // Host the scroll, filling this container view.

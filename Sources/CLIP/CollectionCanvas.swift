@@ -241,6 +241,7 @@ struct CollectionCanvas: NSViewRepresentable {
         var colorKeyMonitor: Any?
         var colorPicker: RadialColorPicker?
         var connectorController: ConnectorOverlayController?
+        var guideController: GuideOverlayController?
         private var lastCamera: Camera?
         private var applyingProgrammatic = false
         // Card appear animation: track which node IDs we've already shown so a

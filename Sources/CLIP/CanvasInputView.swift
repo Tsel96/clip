@@ -201,12 +201,36 @@ final class CanvasInputView: NSView {
                 mode = .move
                 beginIfNeeded(p, primary: primaryMoveID)
             }
-            // Drive the move VISUALLY only (no per-tick model mutation). Mutating
-            // the model each tick kicks a SwiftUI re-render + `apply`, which races
-            // the direct item repositioning and clobbers it with stale frames — the
-            // "nothing moves" bug. The model is committed once on mouse-up.
-            moveDelta = CGPoint(x: dx, y: dy)
-            coordinator?.liveReposition(moveStartPos, dx: dx, dy: dy)   // live preview (renders at ≥~1× zoom)
+            // Figma-style alignment snapping — previously MISSING on the native
+            // canvas (the engine was only wired into the SwiftUI DraggableNode
+            // drag). Snap the PRIMARY node's prospective world frame to other
+            // nodes' edges/centres, then apply the same delta to the whole group.
+            // ⌘ frees it. Only the delta is adjusted — no `@Published` write — so
+            // it can't trigger a card re-render mid-drag.
+            var sdx = dx, sdy = dy
+            if !event.modifierFlags.contains(.command),
+               let pid = primaryMoveID, let sp = moveStartPos[pid],
+               let pn = p.nodes.first(where: { $0.id == pid }) {
+                let rect = CGRect(x: sp.x + dx, y: sp.y + dy,
+                                  width: pn.width, height: pn.height ?? 120)
+                let others = p.nodes.filter { moveStartPos[$0.id] == nil }.map {
+                    CGRect(x: $0.position.x, y: $0.position.y,
+                           width: $0.width, height: $0.height ?? 120)
+                }
+                let result = AlignmentEngine.snap(draggingRect: rect, otherRects: others,
+                                                  zoom: mag, snapToGrid: false)
+                sdx = result.rect.minX - sp.x
+                sdy = result.rect.minY - sp.y
+                coordinator?.guideController?.update(result.guides,
+                    worldMin: CGPoint(x: p.worldBounds.minX, y: p.worldBounds.minY),
+                    magnification: mag)
+            } else {
+                coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
+            }
+            // Drive the move VISUALLY only (no per-tick model mutation). The model
+            // is committed once on mouse-up.
+            moveDelta = CGPoint(x: sdx, y: sdy)
+            coordinator?.liveReposition(moveStartPos, dx: sdx, dy: sdy)   // live preview
         case .pendingMarquee, .marquee:
             if mode == .pendingMarquee {
                 // Don't start a marquee on trackpad click-jitter — a sub-threshold
@@ -264,6 +288,7 @@ final class CanvasInputView: NSView {
     private func reset() {
         marqueeLayer.isHidden = true; marqueeLayer.path = nil
         drawLayer.isHidden = true; drawLayer.path = nil; drawPoints = []
+        coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
         mode = .idle; resizeGrip = nil; resizeNodeID = nil
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
     }
