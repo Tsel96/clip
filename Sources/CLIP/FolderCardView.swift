@@ -64,7 +64,7 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         titleField.stringValue = title.isEmpty ? "Untitled" : title
         countField.stringValue = childIDs.isEmpty
             ? "No items"
-            : "\(childIDs.count) Item\(childIDs.count == 1 ? "" : "s")"
+            : "\(childIDs.count) Items"
         iconChip.isHidden = icon.isEmpty
         if !icon.isEmpty {
             iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)

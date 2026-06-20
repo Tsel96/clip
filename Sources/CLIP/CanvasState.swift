@@ -1740,18 +1740,24 @@ final class CanvasState: ObservableObject {
             if case .folder = nodeByID[id]?.kind { return false }
             return true
         }
-        guard let primary = cards.first, let n = nodeByID[primary] else { return }
-        let centre = CGPoint(x: n.position.x + n.width / 2,
-                             y: n.position.y + renderedHeight(of: n) / 2)
+        // The dragged cards' bounding rect (positions already committed by onMove).
+        guard !cards.isEmpty, let dragRect = boundingRect(of: Set(cards)) else { return }
+        // File into the folder the cards overlap MOST. Center-in-frame missed big
+        // cards (taller than the 223 px folder, their center sits off it), so use
+        // overlap area with a meaningful threshold (≥25% of the folder) — covering
+        // the folder files it; merely brushing past it does not.
+        var best: (id: UUID, area: CGFloat)?
         for f in nodes {
             guard case .folder = f.kind, !draggedIDs.contains(f.id) else { continue }
-            let frame = CGRect(x: f.position.x, y: f.position.y,
-                               width: f.width, height: renderedHeight(of: f))
-            if frame.contains(centre) {
-                addToFolder(f.id, nodeIDs: Set(cards))
-                return
-            }
+            let fr = CGRect(x: f.position.x, y: f.position.y,
+                            width: f.width, height: renderedHeight(of: f))
+            let inter = fr.intersection(dragRect)
+            guard !inter.isNull else { continue }
+            let area = inter.width * inter.height
+            guard area >= fr.width * fr.height * 0.25 else { continue }
+            if area > (best?.area ?? 0) { best = (f.id, area) }
         }
+        if let best { addToFolder(best.id, nodeIDs: Set(cards)) }
     }
 
     // MARK: - Sections
