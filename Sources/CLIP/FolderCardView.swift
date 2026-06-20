@@ -82,6 +82,14 @@ final class FolderCardView: NSView, NativeCardUpdatable {
             iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
         }
         shapeView.image = Self.art(forCount: childIDs.count)
+        // The 1/2/3-item SVGs bake in their own count + "Untitled" (as outlined
+        // paths), so suppress our dynamic overlays whenever a baked-text SVG is
+        // shown — only the text-stripped empty Folder_Rest needs them. (4+ caps at
+        // the 3-item art; re-export the SVGs text-free to make ALL counts dynamic
+        // + support renaming.)
+        let svgHasText = childIDs.count >= 1
+        countField.isHidden = svgHasText
+        titleField.isHidden = svgHasText
         needsLayout = true
     }
 
