@@ -737,6 +737,10 @@ final class CanvasState: ObservableObject {
     private var heightFlushScheduled = false
 
     @Published var isAddSheetPresented = false
+    /// The inline "Insert link here" field above the toolbar "+" (Figma
+    /// 72:36784). Toggled by the candy "+" button; drives its green selected
+    /// skin. The richer Link / From-Computer sheet stays on ⌘N.
+    @Published var isLinkInputPresented = false
     @Published var isSearchPresented = false
 
     /// Which sidebar tab is showing: the page list or the flat Outline of

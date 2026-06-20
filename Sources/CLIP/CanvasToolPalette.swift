@@ -149,6 +149,11 @@ final class CanvasToolPaletteView: NSView {
     func configure(active: ToolMode) {
         mainPill.configure(active: active)
     }
+
+    /// Drives the "+" button's green selected skin (link input open/closed).
+    func setAddSelected(_ on: Bool) {
+        addPill.setSelected(on)
+    }
 }
 
 // MARK: - Candy drop-shadow (Figma node 60:12982 / 60:13020)
@@ -505,6 +510,20 @@ private final class AddPillView: NSView {
     private let iconView   = NSImageView()
     private var isHovered  = false
     private var isPressed  = false
+    private var isSelected = false
+
+    /// Candy-yellow inner skin (default) — pale rim + warm gradient.
+    private static let yellowSkin: [CGColor] = [
+        NSColor.fromHex(0xFFFCA9).cgColor, NSColor.fromHex(0xFFFCA9).cgColor,
+        NSColor.fromHex(0xFFF53B).cgColor, NSColor.fromHex(0xF8DE47).cgColor
+    ]
+    /// Selected skin (Figma 72:36780): green gradient #3DA726→#4CC432 under a
+    /// 30% black overlay, with a darker top rim (the 30% black border) — i.e.
+    /// the brand greens pre-multiplied by the black wash.
+    private static let greenSkin: [CGColor] = [
+        NSColor.fromHex(0x1E5213).cgColor, NSColor.fromHex(0x1E5213).cgColor,  // top rim (≈ green ×0.49)
+        NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x358923).cgColor   // body  (green ×0.70)
+    ]
 
     // MARK: - Init
 
@@ -611,6 +630,22 @@ private final class AddPillView: NSView {
     private func refreshScale() {
         let s: CGFloat = isPressed ? 0.94 : (isHovered ? 1.04 : 1.0)
         CLIPSpring.scale(self, to: s, key: "xform")
+    }
+
+    // MARK: - Selected (link-input open) skin
+
+    /// Crossfade the inner surface between the candy-yellow rest skin and the
+    /// darkened-green selected skin (Figma Add / State=Selected).
+    func setSelected(_ on: Bool) {
+        guard on != isSelected else { return }
+        isSelected = on
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.16)
+        CATransaction.setAnimationTimingFunction(CLIPSpring.easeOutSoft)
+        innerLayer.colors = on ? Self.greenSkin : Self.yellowSkin
+        CATransaction.commit()
+        // The "+" stays dark; lift its opacity a touch for contrast on green.
+        iconView.alphaValue = on ? 0.85 : 0.7
     }
 }
 
@@ -798,12 +833,14 @@ struct _PaletteRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> CanvasToolPaletteView {
         let v = CanvasToolPaletteView()
         v.configure(active: state.toolMode)
+        v.setAddSelected(state.isLinkInputPresented)
         wireCallbacks(v, state: state)
         return v
     }
 
     func updateNSView(_ nsView: CanvasToolPaletteView, context: Context) {
         nsView.configure(active: state.toolMode)
+        nsView.setAddSelected(state.isLinkInputPresented)
         wireCallbacks(nsView, state: state)
     }
 
@@ -813,8 +850,12 @@ struct _PaletteRepresentable: NSViewRepresentable {
             if mode == .draw { state.drawColor = .amber }
             withAnimation(Motion.feedback) { state.toolMode = mode }
         }
-        v.onFolderTap = { state.addFolder() }                 // the Folder button
-        v.onAddTap    = { state.isAddSheetPresented = true }  // "+" opens the Add window
+        v.onFolderTap = { state.addFolder() }   // the Folder button
+        // "+" toggles the inline link input (Figma 72:36784); its green
+        // selected skin follows `isLinkInputPresented`.
+        v.onAddTap = {
+            withAnimation(Motion.pop) { state.isLinkInputPresented.toggle() }
+        }
     }
 
     func makeCoordinator() -> Void { }
