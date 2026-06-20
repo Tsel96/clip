@@ -583,7 +583,6 @@ private final class AddPillView: NSView {
         super.layout()
         let w = bounds.width   // 62
         let h = bounds.height  // 62
-        if let l = layer { NSLog("CLIP-DEBUG AddPill anchorPoint=\(l.anchorPoint) bounds=\(l.bounds)") }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
