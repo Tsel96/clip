@@ -82,6 +82,13 @@ final class CLIPCanvasView: NSView {
         coordinator.scroll = scroll
         coordinator.collection = collection
         coordinator.layout = layout
+        // Phase B native connectors (flag-gated off) — draw into the scrolled
+        // container so magnification pans/zooms them for free.
+        if config.useNativeConnectors {
+            let cc = ConnectorOverlayController()
+            cc.attach(to: container)
+            coordinator.connectorController = cc
+        }
         coordinator.apply(config)
 
         // Host the scroll, filling this container view.

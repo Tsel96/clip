@@ -147,6 +147,11 @@ struct CanvasConfig {
     let drawWidth: () -> CGFloat
     /// Commit a finished stroke (points in WORLD coords).
     let onCommitStroke: ([CGPoint]) -> Void
+    /// Phase B native connectors (flag-gated). When `useNativeConnectors` is
+    /// true, `ConnectorOverlayController` draws these as CAShapeLayers in the
+    /// scrolled container and the SwiftUI ConnectorsLayer overlay is left empty.
+    let connectors: [Connector]
+    let useNativeConnectors: Bool
     /// Empty-canvas click → deselect (cards handle their own selection taps).
     let onBackgroundClick: () -> Void
     /// The lone selected node (drives native corner-resize hit-testing in the
@@ -233,6 +238,7 @@ struct CollectionCanvas: NSViewRepresentable {
         var escMonitor: Any?
         var colorKeyMonitor: Any?
         var colorPicker: RadialColorPicker?
+        var connectorController: ConnectorOverlayController?
         private var lastCamera: Camera?
         private var applyingProgrammatic = false
         // Card appear animation: track which node IDs we've already shown so a
@@ -392,6 +398,23 @@ struct CollectionCanvas: NSViewRepresentable {
                     card.updateShadow()      // fade the float shadow with zoom
                 }
             }
+            refreshConnectors()
+        }
+
+        /// Phase B native connectors: rebuild content-space node frames and push
+        /// them into the CAShapeLayer controller. Driven from `refreshChrome`, so
+        /// it tracks node changes (apply → refreshChrome) AND zoom (bounds
+        /// observer → refreshChrome). No-op unless `useNativeConnectors`.
+        func refreshConnectors() {
+            guard let cc = connectorController else { return }
+            let minX = config.worldBounds.minX, minY = config.worldBounds.minY
+            var frames: [UUID: CGRect] = [:]
+            for n in config.nodes {
+                frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
+                                      width: max(1, n.width), height: max(1, n.height ?? 120))
+            }
+            cc.update(connectors: config.connectors, nodeFrames: frames,
+                      selected: nil, magnification: scroll?.magnification ?? 1)
         }
 
         /// Move the dragged items' VIEWS directly during a drag — bypassing the

@@ -224,6 +224,11 @@ struct CanvasView: View {
     /// `false` for the proven ZStack shell if select/tools misbehave.
     private let useNativeShell = true
 
+    /// Phase B: draw connectors as native CAShapeLayers in the scrolled
+    /// container (off → the proven SwiftUI ConnectorsLayer renders them). Flip on
+    /// to verify; the SwiftUI overlay is left empty when this is true.
+    private let useNativeConnectors = false
+
     /// Live cursor for the native-shell dot-grid spotlight. The behind-island
     /// observes this; `CanvasView.body` does NOT, so pointer moves re-render the
     /// grid in isolation instead of churning the whole body.
@@ -348,7 +353,7 @@ struct CanvasView: View {
                             // World-space connectors, drawn inside the scrolled
                             // content so they pan/zoom with the cards. No camera
                             // here — CollectionCanvas supplies the content-coord one.
-                            overlay: AnyView(
+                            overlay: useNativeConnectors ? AnyView(EmptyView()) : AnyView(
                                 ConnectorsLayer()
                                     .frame(width: worldBounds.width,
                                            height: worldBounds.height,
@@ -381,6 +386,8 @@ struct CanvasView: View {
                             },
                             drawWidth: { state.drawWidth },
                             onCommitStroke: { world in state.commitStroke(worldPoints: world) },
+                            connectors: state.connectors,
+                            useNativeConnectors: useNativeConnectors,
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }
                             },
