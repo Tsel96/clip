@@ -247,8 +247,10 @@ struct CollectionCanvas: NSViewRepresentable {
         var colorPicker: RadialColorPicker?
         var connectorController: ConnectorOverlayController?
         var guideController: GuideOverlayController?
-        private var lastCamera: Camera?
-        private var applyingProgrammatic = false
+        // internal (not private) so the camera-sync seam in
+        // CanvasCameraController.swift can read/write the echo-suppression state.
+        var lastCamera: Camera?
+        var applyingProgrammatic = false
         // Card appear animation: track which node IDs we've already shown so a
         // genuinely-new card (added after the first load) scales in, while the
         // initial board doesn't animate every card on open.
@@ -568,79 +570,6 @@ struct CollectionCanvas: NSViewRepresentable {
             scroll.reflectScrolledClipView(scroll.contentView)
             applyingProgrammatic = false
             pushCameraFromScroll()
-        }
-
-        // MARK: Data source
-
-        func collectionView(_ cv: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
-            nodes.count
-        }
-
-        func collectionView(_ cv: NSCollectionView,
-                            itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
-            let item = cv.makeItem(withIdentifier: Coordinator.itemID, for: indexPath)
-            if let hosting = item as? HostingCollectionItem, indexPath.item < nodes.count {
-                let node = nodes[indexPath.item]
-                hosting.cardView.nodeID = node.id
-                hosting.cardView.coordinator = self
-                hosting.setContent(node: node, swiftUI: config.content(node),
-                                   isEditing: config.editingTextNodeID == node.id)
-                hosting.cardView.updateShadow()
-                hosting.cardView.updateChrome()
-                if pendingAppearIDs.remove(node.id) != nil {
-                    hosting.cardView.wantsAppear = true   // fired in layout() when bounds are set
-                }
-            }
-            return item
-        }
-
-        // MARK: Camera sync
-
-        /// Derive a `Camera` from the scroll view's magnification + scroll
-        /// position and push it out (skipped mid programmatic apply).
-        func pushCameraFromScroll() {
-            guard !applyingProgrammatic, let scroll else { return }
-            let zoom = scroll.magnification
-            let visible = scroll.documentVisibleRect
-            let worldOriginX = visible.origin.x + config.worldBounds.minX
-            let worldOriginY = visible.origin.y + config.worldBounds.minY
-            let cam = Camera(x: -worldOriginX * zoom, y: -worldOriginY * zoom, zoom: zoom)
-            lastCamera = cam
-            config.onCameraChange(cam)
-        }
-
-        /// Apply an external camera ONLY if it genuinely differs from the scroll
-        /// view's *current* state. Live scrolling pushes a camera out and SwiftUI
-        /// feeds it straight back here; comparing against the scroll's live state
-        /// (not a stored `lastCamera`, which races across render cycles) makes
-        /// those echoes no-ops while real programmatic moves (zoom buttons, fit,
-        /// glide) still apply. This is what stops the drift/zoom-anchor fight.
-        func applyCameraIfChanged(_ cam: Camera) {
-            guard let scroll else { return }
-            let zoom = scroll.magnification
-            let visible = scroll.documentVisibleRect
-            let curX = -(visible.origin.x + config.worldBounds.minX) * zoom
-            let curY = -(visible.origin.y + config.worldBounds.minY) * zoom
-            // Echo of our own live scroll → skip. (Generous epsilons: anything
-            // this close is the round-trip, not a deliberate camera move.)
-            if abs(cam.zoom - zoom) < 0.0005,
-               abs(cam.x - curX) < 0.5,
-               abs(cam.y - curY) < 0.5 {
-                return
-            }
-            applyCamera(cam)
-        }
-
-        func applyCamera(_ cam: Camera) {
-            guard let scroll, cam.zoom > 0 else { return }
-            applyingProgrammatic = true
-            defer { applyingProgrammatic = false; lastCamera = cam }
-            scroll.magnification = cam.zoom
-            let worldOriginX = -cam.x / cam.zoom
-            let worldOriginY = -cam.y / cam.zoom
-            scroll.contentView.scroll(to: CGPoint(x: worldOriginX - config.worldBounds.minX,
-                                                  y: worldOriginY - config.worldBounds.minY))
-            scroll.reflectScrolledClipView(scroll.contentView)
         }
     }
 }
