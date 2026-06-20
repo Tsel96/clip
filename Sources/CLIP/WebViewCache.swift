@@ -3,11 +3,11 @@ import WebKit
 /// Feature flags for experimental paths that default OFF (verify on a running
 /// app before enabling).
 enum FeatureFlags {
-    /// Reuse `WKWebView`s across remounts to kill the "cards blink/reload on
-    /// select" bug. Default OFF — verify it stops the blink AND doesn't leak /
-    /// play audio in the background, then flip on. Currently wired into
-    /// `WebClipWebView` as a proof of concept; extend to YouTube/Instagram once
-    /// confirmed.
+    /// Reuse media views across remounts to kill the "cards blink/reload on
+    /// select" bug. Covers WKWebView cards (WebClip / YouTube / Instagram via
+    /// `WebViewCache`) AND tweet-video AVPlayers (`PlayerCache`). Default OFF —
+    /// verify it stops the blink AND doesn't leak / play audio in the background,
+    /// then flip on.
     static let useWebViewCache = false
 }
 

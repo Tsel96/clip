@@ -415,6 +415,7 @@ struct DraggableNode: View {
         case .tweet(let url):
             TweetCardView(
                 url: url,
+                nodeID: node.id,
                 isLive: liveGate,
                 trimStart: node.trimStart,
                 trimEnd: node.trimEnd,

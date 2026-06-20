@@ -2269,6 +2269,14 @@ final class CanvasState: ObservableObject {
             measuredHeights.removeValue(forKey: cid)
             selectedNodeIDs.remove(cid)
             if pendingFocusNodeID == cid { pendingFocusNodeID = nil }
+            // Release any cached web view / player for this card now, rather than
+            // letting it idle through the cache's deferred-teardown window (a
+            // deleted card shouldn't keep a WKWebView/AVPlayer alive). No-op when
+            // the cache is off or the node was never cached.
+            if FeatureFlags.useWebViewCache {
+                WebViewCache.shared.evict(cid)
+                PlayerCache.shared.evict(cid)
+            }
         }
         selectedConnectorIDs.subtract(extraConnectorIDs)
 
