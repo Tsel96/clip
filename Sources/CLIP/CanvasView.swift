@@ -225,9 +225,11 @@ struct CanvasView: View {
     private let useNativeShell = true
 
     /// Phase B: draw connectors as native CAShapeLayers in the scrolled
-    /// container (off → the proven SwiftUI ConnectorsLayer renders them). Flip on
-    /// to verify; the SwiftUI overlay is left empty when this is true.
-    private let useNativeConnectors = false
+    /// container (off → the proven SwiftUI ConnectorsLayer renders them). ENABLED
+    /// for the all-phases push: content-space frames match the cards, the layer
+    /// rides the scroll magnification, and drags track live via `liveReposition`.
+    /// The SwiftUI overlay is left empty when this is true (no double-render).
+    private let useNativeConnectors = true
 
     /// Live cursor for the native-shell dot-grid spotlight. The behind-island
     /// observes this; `CanvasView.body` does NOT, so pointer moves re-render the
@@ -391,6 +393,7 @@ struct CanvasView: View {
                             connectors: state.connectors,
                             useNativeConnectors: useNativeConnectors,
                             onSelectConnector: { state.selectConnector($0) },
+                            selectedConnectorIDs: state.selectedConnectorIDs,
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }
                             },

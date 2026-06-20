@@ -34,7 +34,7 @@ final class ConnectorOverlayController {
     /// collection items live in). `selected`: the selected connector id, if any.
     func update(connectors: [Connector],
                 nodeFrames: [UUID: CGRect],
-                selected: UUID?,
+                selected: Set<UUID>,
                 magnification: CGFloat) {
         let mag = max(magnification, 0.0001)
         let lineWidth = Self.screenLineWidth / mag
@@ -49,7 +49,7 @@ final class ConnectorOverlayController {
             seen.insert(c.id)
 
             let pair = pairs[c.id] ?? makePair(for: c.id)
-            let color = (c.id == selected
+            let color = (selected.contains(c.id)
                          ? NSColor.controlAccentColor
                          : NSColor.secondaryLabelColor).cgColor
 

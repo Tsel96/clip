@@ -8,7 +8,11 @@ enum FeatureFlags {
     /// `WebViewCache`) AND tweet-video AVPlayers (`PlayerCache`). Default OFF —
     /// verify it stops the blink AND doesn't leak / play audio in the background,
     /// then flip on.
-    static let useWebViewCache = false
+    ///
+    /// ENABLED for the all-phases push (covers WebClip/YouTube/Instagram +
+    /// tweet-video; lightbox is uncached so no view/player contention; cards
+    /// evict on delete). If a regression shows up, set back to false.
+    static let useWebViewCache = true
 }
 
 /// Caches `WKWebView`s by node id so a quick remount (e.g. a selection

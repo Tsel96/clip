@@ -154,6 +154,8 @@ struct CanvasConfig {
     let useNativeConnectors: Bool
     /// Select (or clear) a connector — native connector click-select.
     let onSelectConnector: (UUID?) -> Void
+    /// Selected connector ids — drives the native connector highlight colour.
+    let selectedConnectorIDs: Set<UUID>
     /// Empty-canvas click → deselect (cards handle their own selection taps).
     let onBackgroundClick: () -> Void
     /// The lone selected node (drives native corner-resize hit-testing in the
@@ -418,7 +420,8 @@ struct CollectionCanvas: NSViewRepresentable {
                                       width: max(1, n.width), height: max(1, n.height ?? 120))
             }
             cc.update(connectors: config.connectors, nodeFrames: frames,
-                      selected: nil, magnification: scroll?.magnification ?? 1)
+                      selected: config.selectedConnectorIDs,
+                      magnification: scroll?.magnification ?? 1)
         }
 
         /// Move the dragged items' VIEWS directly during a drag — bypassing the
