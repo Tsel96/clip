@@ -691,6 +691,19 @@ struct CanvasView: View {
                     .padding(.bottom, 18)
             }
         }
+        // Click-catcher: while the link input is open, a tap anywhere ELSE on the
+        // canvas dismisses it. Sits BELOW the palette + input overlays (added
+        // first), so the "+" and the field stay interactive — only outside
+        // clicks are caught.
+        .overlay {
+            if state.canvasMode == .canvas, state.isLinkInputPresented {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(Motion.pop) { state.isLinkInputPresented = false }
+                    }
+            }
+        }
         // Bottom-CENTER: the Spatial-style yellow tool palette + "+" (Figma 51:12692).
         .overlay(alignment: .bottom) {
             if state.canvasMode == .canvas {
@@ -706,12 +719,13 @@ struct CanvasView: View {
         // Inline "Insert link here" field (Figma 72:36784) — floats above the
         // toolbar, centered on the round "+" (240 pt right of the toolbar's
         // center: 542/2 − 31). Its own overlay so the palette's fixed frame
-        // can't clip it.
+        // can't clip it. Scales up FROM ITS BOTTOM-CENTER — i.e. out of the "+"
+        // directly below it (was `.bottomTrailing`, which read as "from the left").
         .overlay(alignment: .bottom) {
             if state.canvasMode == .canvas, state.isLinkInputPresented {
                 LinkInputBar()
                     .offset(x: 240, y: -92)
-                    .transition(.scale(scale: 0.85, anchor: .bottomTrailing)
+                    .transition(.scale(scale: 0.85, anchor: .bottom)
                         .combined(with: .opacity))
             }
         }

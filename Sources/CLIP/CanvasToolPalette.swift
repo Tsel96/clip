@@ -526,6 +526,12 @@ private final class AddPillView: NSView {
         NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x2B751B).cgColor,
         NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x358923).cgColor
     ]
+    /// Hover skin (Figma 72:36831): flat bright `#3DA726` fill — no rim, no
+    /// gradient. The whole "+" turns green on hover (it does NOT just grow).
+    private static let hoverSkin: [CGColor] = {
+        let g = NSColor.fromHex(0x3DA726).cgColor
+        return [g, g, g, g]
+    }()
 
     // MARK: - Init
 
@@ -626,19 +632,21 @@ private final class AddPillView: NSView {
     //   • hover  → spring-grow to 1.05 (their hover scale)
     //   • press  → FAST snap-down to 0.94 (~0.06s, no spring) + clickHighlight dim
     //   • release→ resetScaleWithStiffness: spring back with overshoot (.control)
-    private static let hoverScale: CGFloat = 1.6   // TEMP exaggerated for pivot test
     private static let pressScale: CGFloat = 0.94
-    /// Release / hover spring — Spatial's resetScale feel: a slight but felt
-    /// overshoot (response 0.30, damping 0.70 ≈ ~5 % overshoot, ~0.25s settle).
-    /// `.control` (damping 0.78) overshoots only ~2 % and reads as dead.
+    /// Release spring — Spatial's resetScale feel: a slight but felt overshoot
+    /// (response 0.30, damping 0.70 ≈ ~5 % overshoot, ~0.25s settle). `.control`
+    /// (damping 0.78) overshoots only ~2 % and reads as dead.
     private static let releaseSpring = CLIPSpring.Preset(response: 0.30, damping: 0.70)
 
+    // Hover recolors the surface to flat green (Figma 72:36831) — it does NOT
+    // scale. The only scale on this button is the Spatial press-down (below).
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
-        if !isPressed { CLIPSpring.scale(self, to: Self.hoverScale, preset: Self.releaseSpring, key: "xform") }
+        refreshSkin()
     }
     override func mouseExited(with event: NSEvent) {
         isHovered = false; isPressed = false
+        refreshSkin()
         CLIPSpring.scale(self, to: 1.0, preset: Self.releaseSpring, key: "xform")
         setPressHighlight(false)
     }
@@ -655,8 +663,7 @@ private final class AddPillView: NSView {
     override func mouseUp(with event: NSEvent) {
         let inside = bounds.contains(convert(event.locationInWindow, from: nil))
         isPressed = false
-        CLIPSpring.scale(self, to: isHovered ? Self.hoverScale : 1.0,
-                         preset: Self.releaseSpring, key: "xform")
+        CLIPSpring.scale(self, to: 1.0, preset: Self.releaseSpring, key: "xform")
         setPressHighlight(false)
         if inside { onTap?() }
     }
@@ -675,17 +682,28 @@ private final class AddPillView: NSView {
 
     // MARK: - Selected (link-input open) skin
 
-    /// Crossfade the inner surface + outer ring between the candy-yellow rest skin
-    /// and the darkened-green selected skin (Figma 72:36780).
+    /// Link-input open/closed → darkened-green selected skin (Figma 72:36780).
     func setSelected(_ on: Bool) {
         guard on != isSelected else { return }
         isSelected = on
+        refreshSkin()
+    }
+
+    /// Apply the correct inner skin for the current state. Priority:
+    /// selected (input open, darkened green) → hover (flat green, Figma 72:36831)
+    /// → rest (candy yellow). The outer ring stays `#3DA726` throughout.
+    private func refreshSkin() {
+        let colors: [CGColor]
+        let iconAlpha: CGFloat
+        if isSelected      { colors = Self.greenSkin;  iconAlpha = 0.85 }
+        else if isHovered  { colors = Self.hoverSkin;  iconAlpha = 0.85 }
+        else               { colors = Self.yellowSkin; iconAlpha = 0.70 }
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.16)
         CATransaction.setAnimationTimingFunction(CLIPSpring.easeOutSoft)
-        innerLayer.colors = on ? Self.greenSkin : Self.yellowSkin   // outer ring stays #3DA726
+        innerLayer.colors = colors
         CATransaction.commit()
-        iconView.alphaValue = on ? 0.85 : 0.7
+        iconView.alphaValue = iconAlpha
     }
 }
 
