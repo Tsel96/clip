@@ -37,23 +37,22 @@ struct LinkInputBar: View {
                 .onSubmit(submit)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Trailing submit affordance — Enter.svg (Figma 72:36787), 24×24.
+            // Trailing submit affordance — Enter.svg (Figma 72:36787), 24×24 at 40% opacity.
             Button(action: submit) {
                 if let icon = Self.enterIcon {
                     Image(nsImage: icon)
                         .resizable()
                         .renderingMode(.original)
                         .frame(width: 24, height: 24)
-                        .opacity(text.isEmpty ? 0.4 : 1.0)
+                        .opacity(0.4)
                 } else {
                     Image(systemName: "arrow.right")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.black.opacity(text.isEmpty ? 0.2 : 0.6))
+                        .foregroundStyle(.black.opacity(0.4))
                         .frame(width: 24, height: 24)
                 }
             }
             .buttonStyle(.plain)
-            .disabled(text.isEmpty)
             .help("Add link to canvas")
         }
         .padding(.leading, 19)

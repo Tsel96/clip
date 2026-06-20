@@ -517,13 +517,15 @@ private final class AddPillView: NSView {
         NSColor.fromHex(0xFFFCA9).cgColor, NSColor.fromHex(0xFFFCA9).cgColor,
         NSColor.fromHex(0xFFF53B).cgColor, NSColor.fromHex(0xF8DE47).cgColor
     ]
-    /// Selected skin (Figma 72:36780): green gradient #3DA726→#4CC432 under a
-    /// 30% black overlay, with a darker top rim (the 30% black border) — i.e.
-    /// the brand greens pre-multiplied by the black wash.
+    /// Selected skin (Figma 72:36780): #3DA726→#4CC432 gradient + 30% black overlay
+    /// = #2B751B→#358923. No separate rim — uniform dark green at top.
     private static let greenSkin: [CGColor] = [
-        NSColor.fromHex(0x1E5213).cgColor, NSColor.fromHex(0x1E5213).cgColor,  // top rim (≈ green ×0.49)
-        NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x358923).cgColor   // body  (green ×0.70)
+        NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x2B751B).cgColor,
+        NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x358923).cgColor
     ]
+    /// Outer ring colour in selected state: 30% black over #3DA726 = #2B751B.
+    private static let selectedOuterColor = NSColor.fromHex(0x2B751B).cgColor
+    private static let defaultOuterColor  = NSColor.fromHex(0x3DA726).cgColor
 
     // MARK: - Init
 
@@ -634,8 +636,8 @@ private final class AddPillView: NSView {
 
     // MARK: - Selected (link-input open) skin
 
-    /// Crossfade the inner surface between the candy-yellow rest skin and the
-    /// darkened-green selected skin (Figma Add / State=Selected).
+    /// Crossfade the inner surface + outer ring between the candy-yellow rest skin
+    /// and the darkened-green selected skin (Figma 72:36780).
     func setSelected(_ on: Bool) {
         guard on != isSelected else { return }
         isSelected = on
@@ -643,8 +645,8 @@ private final class AddPillView: NSView {
         CATransaction.setAnimationDuration(0.16)
         CATransaction.setAnimationTimingFunction(CLIPSpring.easeOutSoft)
         innerLayer.colors = on ? Self.greenSkin : Self.yellowSkin
+        outerLayer.backgroundColor = on ? Self.selectedOuterColor : Self.defaultOuterColor
         CATransaction.commit()
-        // The "+" stays dark; lift its opacity a touch for contrast on green.
         iconView.alphaValue = on ? 0.85 : 0.7
     }
 }
