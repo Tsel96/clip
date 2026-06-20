@@ -45,6 +45,8 @@ struct LinkInputBar: View {
                     .textFieldStyle(.plain)
                     .font(Self.inputFont)
                     .foregroundStyle(.black)
+                    .textCase(.uppercase)           // display caps (Figma); `text` keeps real case for the URL
+                    .autocorrectionDisabled()
                     .tint(Color(rgb: 0x3DA726))     // brand-green caret (Figma 72:36791)
                     .focused($focused)
                     .onSubmit(submit)
