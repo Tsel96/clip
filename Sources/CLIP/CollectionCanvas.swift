@@ -304,7 +304,26 @@ struct CollectionCanvas: NSViewRepresentable {
             }
             seenNodeIDs = currentIDs
             didInitialApply = true
-            if !removedIDs.isEmpty { spawnExitSnapshots(removedIDs) }
+            if !removedIDs.isEmpty {
+                // A card that left the canvas because it was FILED into a folder
+                // flies INTO that folder (Spatial's "jump inside"); a genuinely
+                // deleted card springs out + down. Tell them apart by whether the
+                // removed id now appears in some folder's childIDs.
+                var deleted = Set<UUID>()
+                var filed: [UUID: Set<UUID>] = [:]
+                for rid in removedIDs {
+                    if let folder = p.nodes.first(where: {
+                        if case .folder(_, _, let kids) = $0.kind { return kids.contains(rid) }
+                        return false
+                    }) {
+                        filed[folder.id, default: []].insert(rid)
+                    } else {
+                        deleted.insert(rid)
+                    }
+                }
+                if !deleted.isEmpty { spawnExitSnapshots(deleted) }
+                for (fid, cards) in filed { spawnFolderDropSnapshots(cards, into: fid) }
+            }
             nodes = p.nodes
             layout?.itemFrames = frames
             layout?.contentSize = p.worldBounds.size
@@ -523,6 +542,64 @@ struct CollectionCanvas: NSViewRepresentable {
                 ghost.add(s, forKey: "exitScale"); ghost.add(o, forKey: "exitFade")
                 CATransaction.commit()
             }
+        }
+
+        /// A card FILED into a folder flies into it: snapshot the card, then
+        /// shrink + translate the ghost to the folder's centre and fade — Spatial's
+        /// "card jumps inside". Reuses `spawnExitSnapshots`' bitmap-ghost trick but
+        /// aims at the folder instead of straight down. Purely cosmetic + guarded.
+        private func spawnFolderDropSnapshots(_ filed: Set<UUID>, into folderID: UUID) {
+            guard let cv = collection, let container = container,
+                  let folderCard = cv.visibleItems()
+                      .compactMap({ ($0 as? HostingCollectionItem)?.cardView })
+                      .first(where: { $0.nodeID == folderID }),
+                  folderCard.bounds.width > 1
+            else { return }
+            let folderCenter = container.convert(
+                CGPoint(x: folderCard.bounds.midX, y: folderCard.bounds.midY), from: folderCard)
+            var flew = false
+            for item in cv.visibleItems() {
+                guard let card = (item as? HostingCollectionItem)?.cardView,
+                      let id = card.nodeID, filed.contains(id),
+                      card.bounds.width > 1, card.bounds.height > 1,
+                      let rep = card.bitmapImageRepForCachingDisplay(in: card.bounds)
+                else { continue }
+                card.cacheDisplay(in: card.bounds, to: rep)
+                guard let cg = rep.cgImage else { continue }
+                // Start at the card's current visual position (fold in the live drag
+                // translation if it's still on the layer, so the fly-in begins where
+                // the user released rather than at the card's home slot).
+                var frame = container.convert(card.bounds, from: card)
+                if let t = card.layer?.transform { frame.origin.x += t.m41; frame.origin.y += t.m42 }
+                let ghost = CALayer()
+                ghost.contents = cg
+                ghost.frame = frame
+                ghost.contentsGravity = .resizeAspect
+                ghost.zPosition = 60
+                container.layer?.addSublayer(ghost)
+
+                let c = CGPoint(x: ghost.bounds.midX, y: ghost.bounds.midY)
+                let dx = folderCenter.x - frame.midX, dy = folderCenter.y - frame.midY
+                let target = CATransform3DConcat(
+                    CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
+                                        CATransform3DMakeScale(0.12, 0.12, 1)),
+                    CATransform3DMakeTranslation(c.x + dx, c.y + dy, 0))
+                CATransaction.begin()
+                CATransaction.setCompletionBlock { ghost.removeFromSuperlayer() }
+                let s = CASpringAnimation(keyPath: "transform")
+                s.fromValue = CATransform3DIdentity; s.toValue = target
+                s.stiffness = CLIPSpring.Preset.settle.stiffness
+                s.damping = CLIPSpring.Preset.settle.caDamping
+                s.duration = s.settlingDuration
+                let o = CABasicAnimation(keyPath: "opacity")
+                o.fromValue = 1; o.toValue = 0; o.duration = 0.38
+                o.timingFunction = CLIPSpring.easeOutSoft
+                ghost.transform = target; ghost.opacity = 0
+                ghost.add(s, forKey: "dropFly"); ghost.add(o, forKey: "dropFade")
+                CATransaction.commit()
+                flew = true
+            }
+            if flew { Haptics.generic() }
         }
 
         /// Center + fit the actual content (the nodes' bounding rect, not the
