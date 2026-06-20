@@ -131,8 +131,15 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     func setSelected(_ selected: Bool) {
         guard selected != isSelected else { return }
         isSelected = selected
-        let target = selected ? CATransform3DMakeScale(1.04, 1.04, 1)
-                              : CATransform3DIdentity
+        // Scale from the CENTRE. A layer-backed NSView anchors its backing layer at
+        // the corner (anchorPoint 0,0), so `CATransform3DMakeScale` alone grows from
+        // a corner — build an explicit centre-pivot transform instead.
+        let cx = bounds.width / 2, cy = bounds.height / 2
+        let factor: CGFloat = selected ? 1.04 : 1.0
+        let target = CATransform3DConcat(
+            CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
+                                CATransform3DMakeScale(factor, factor, 1)),
+            CATransform3DMakeTranslation(cx, cy, 0))
         let anim = CABasicAnimation(keyPath: "transform")
         anim.fromValue = layer?.presentation()?.transform ?? layer?.transform
         anim.toValue = target
