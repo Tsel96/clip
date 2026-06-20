@@ -583,6 +583,7 @@ private final class AddPillView: NSView {
         super.layout()
         let w = bounds.width   // 62
         let h = bounds.height  // 62
+        if let l = layer { NSLog("CLIP-DEBUG AddPill anchorPoint=\(l.anchorPoint) bounds=\(l.bounds)") }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -626,16 +627,20 @@ private final class AddPillView: NSView {
     //   • hover  → spring-grow to 1.05 (their hover scale)
     //   • press  → FAST snap-down to 0.94 (~0.06s, no spring) + clickHighlight dim
     //   • release→ resetScaleWithStiffness: spring back with overshoot (.control)
-    private static let hoverScale: CGFloat = 1.05
+    private static let hoverScale: CGFloat = 1.6   // TEMP exaggerated for pivot test
     private static let pressScale: CGFloat = 0.94
+    /// Release / hover spring — Spatial's resetScale feel: a slight but felt
+    /// overshoot (response 0.30, damping 0.70 ≈ ~5 % overshoot, ~0.25s settle).
+    /// `.control` (damping 0.78) overshoots only ~2 % and reads as dead.
+    private static let releaseSpring = CLIPSpring.Preset(response: 0.30, damping: 0.70)
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
-        if !isPressed { CLIPSpring.scale(self, to: Self.hoverScale, key: "xform") }
+        if !isPressed { CLIPSpring.scale(self, to: Self.hoverScale, preset: Self.releaseSpring, key: "xform") }
     }
     override func mouseExited(with event: NSEvent) {
         isHovered = false; isPressed = false
-        CLIPSpring.scale(self, to: 1.0, key: "xform")
+        CLIPSpring.scale(self, to: 1.0, preset: Self.releaseSpring, key: "xform")
         setPressHighlight(false)
     }
 
@@ -645,13 +650,14 @@ private final class AddPillView: NSView {
     }
     override func mouseDown(with event: NSEvent) {
         isPressed = true
-        CLIPSpring.pressScale(self, to: Self.pressScale, duration: 0.06, key: "xform")
+        CLIPSpring.pressScale(self, to: Self.pressScale, duration: 0.07, key: "xform")
         setPressHighlight(true)
     }
     override func mouseUp(with event: NSEvent) {
         let inside = bounds.contains(convert(event.locationInWindow, from: nil))
         isPressed = false
-        CLIPSpring.scale(self, to: isHovered ? Self.hoverScale : 1.0, key: "xform")
+        CLIPSpring.scale(self, to: isHovered ? Self.hoverScale : 1.0,
+                         preset: Self.releaseSpring, key: "xform")
         setPressHighlight(false)
         if inside { onTap?() }
     }
