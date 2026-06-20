@@ -7,6 +7,10 @@ import AppKit
 /// matching browser autoplay policies the prototype was built around.
 struct TweetVideoPlayer: NSViewRepresentable {
     let url: URL
+    /// Canvas node id — when set + `FeatureFlags.useWebViewCache`, the player is
+    /// cached/reused across remounts (kills the select-blink). nil = no cache
+    /// (e.g. lightbox / trim contexts).
+    var nodeID: UUID? = nil
     @Binding var isMuted: Bool
     @Binding var isPlaying: Bool
     /// When non-zero, clips the player layer to a rounded rect of this
@@ -19,7 +23,8 @@ struct TweetVideoPlayer: NSViewRepresentable {
 
     func makeNSView(context: Context) -> PlayerHostView {
         let view = PlayerHostView()
-        context.coordinator.install(in: view, url: url, timeRange: timeRange)
+        context.coordinator.install(in: view, url: url, timeRange: timeRange,
+                                    nodeID: nodeID, useCache: FeatureFlags.useWebViewCache)
         context.coordinator.player?.isMuted = isMuted
         if isPlaying { context.coordinator.player?.play() }
         view.playerLayer.cornerRadius = cornerRadius
@@ -31,7 +36,8 @@ struct TweetVideoPlayer: NSViewRepresentable {
         // Reinstall when the clip OR the loop range changes.
         if context.coordinator.url != url
             || !TweetVideoPlayer.rangesEqual(context.coordinator.timeRange, timeRange) {
-            context.coordinator.install(in: nsView, url: url, timeRange: timeRange)
+            context.coordinator.install(in: nsView, url: url, timeRange: timeRange,
+                                        nodeID: nodeID, useCache: FeatureFlags.useWebViewCache)
         }
         context.coordinator.player?.isMuted = isMuted
         if isPlaying {
@@ -44,6 +50,13 @@ struct TweetVideoPlayer: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: PlayerHostView, coordinator: Coordinator) {
+        // Cache mode: park the (muted, looping) player for a deferred teardown so a
+        // select-remount reuses it instead of re-buffering (the tweet-video blink).
+        if let id = coordinator.cacheNodeID, let player = coordinator.player, let url = coordinator.url {
+            PlayerCache.shared.park(id, player: player, looper: coordinator.looper,
+                                    url: url, timeRange: coordinator.timeRange)
+            return
+        }
         coordinator.tearDown()
     }
 
@@ -63,10 +76,26 @@ struct TweetVideoPlayer: NSViewRepresentable {
         fileprivate(set) var url: URL?
         fileprivate(set) var timeRange: CMTimeRange?
         fileprivate(set) var player: AVQueuePlayer?
-        private var looper: AVPlayerLooper?
+        fileprivate var looper: AVPlayerLooper?
+        /// Non-nil when this player participates in the reuse cache.
+        fileprivate var cacheNodeID: UUID?
 
-        func install(in host: PlayerHostView, url: URL, timeRange: CMTimeRange?) {
+        func install(in host: PlayerHostView, url: URL, timeRange: CMTimeRange?,
+                     nodeID: UUID? = nil, useCache: Bool = false) {
+            cacheNodeID = useCache ? nodeID : nil
+            // Reuse a parked player for this node (same url + range) — skips the
+            // re-buffer that shows as the select-blink black flash.
+            if let id = cacheNodeID,
+               let parked = PlayerCache.shared.take(id, url: url, timeRange: timeRange) {
+                self.url = url
+                self.timeRange = timeRange
+                self.player = parked.player
+                self.looper = parked.looper
+                host.attach(player: parked.player)
+                return
+            }
             tearDown()
+            cacheNodeID = useCache ? nodeID : nil   // tearDown() doesn't clear this
             self.url = url
             self.timeRange = timeRange
             let item = AVPlayerItem(url: url)
@@ -139,5 +168,59 @@ final class PlayerHostView: NSView {
 
     func attach(player: AVPlayer) {
         playerLayer.player = player
+    }
+}
+
+// MARK: - Player reuse cache
+
+/// The AVPlayer-side counterpart to `WebViewCache`: parks `AVQueuePlayer`s by
+/// node id so a select-remount reattaches a warm, still-looping player instead
+/// of allocating + re-buffering a new one (the tweet-video "blink"). Gated by
+/// `FeatureFlags.useWebViewCache`. Tweet players are muted, so a briefly parked
+/// (not-yet-torn-down) player stays silent.
+final class PlayerCache {
+    static let shared = PlayerCache()
+    private init() {}
+
+    private struct Parked {
+        let player: AVQueuePlayer
+        let looper: AVPlayerLooper?
+        let url: URL
+        let timeRange: CMTimeRange?
+    }
+
+    private var parked: [UUID: Parked] = [:]
+    private var teardowns: [UUID: Timer] = [:]
+
+    /// Hold a player for reuse; if not reclaimed within ~1.2 s, pause + drop it.
+    func park(_ id: UUID, player: AVQueuePlayer, looper: AVPlayerLooper?,
+              url: URL, timeRange: CMTimeRange?) {
+        teardowns[id]?.invalidate()
+        parked[id] = Parked(player: player, looper: looper, url: url, timeRange: timeRange)
+        teardowns[id] = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.parked[id]?.player.pause()
+            self.parked[id] = nil
+            self.teardowns[id] = nil
+        }
+    }
+
+    /// Reclaim a parked player iff it matches the requested url + loop range.
+    /// Cancels the pending teardown (the node came back).
+    func take(_ id: UUID, url: URL, timeRange: CMTimeRange?)
+        -> (player: AVQueuePlayer, looper: AVPlayerLooper?)? {
+        guard let p = parked[id], p.url == url,
+              TweetVideoPlayer.rangesEqual(p.timeRange, timeRange) else { return nil }
+        teardowns[id]?.invalidate()
+        teardowns[id] = nil
+        parked[id] = nil
+        return (p.player, p.looper)
+    }
+
+    /// Force-evict (e.g. on node deletion) — tears down immediately.
+    func evict(_ id: UUID) {
+        teardowns[id]?.invalidate(); teardowns[id] = nil
+        parked[id]?.player.pause()
+        parked[id] = nil
     }
 }
