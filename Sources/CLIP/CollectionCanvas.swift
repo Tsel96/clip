@@ -469,24 +469,12 @@ struct CollectionCanvas: NSViewRepresentable {
                 cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = t
             }
             CATransaction.commit()
-            // Native connectors: rebuild paths with the live visual positions.
-            // Use startPos (captured at drag-start) for dragged endpoints so
-            // config.nodes staleness can never cause a position mismatch.
-            if let cc = connectorController {
-                let minX = config.worldBounds.minX, minY = config.worldBounds.minY
-                var frames: [UUID: CGRect] = [:]
-                for n in config.nodes {
-                    if let sp = startPos[n.id] {
-                        frames[n.id] = CGRect(x: sp.x - minX + dx, y: sp.y - minY + dy,
-                                              width: max(1, n.width), height: max(1, n.height ?? 120))
-                    } else {
-                        frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
-                                              width: max(1, n.width), height: max(1, n.height ?? 120))
-                    }
-                }
-                cc.update(connectors: config.connectors, nodeFrames: frames,
-                          selected: config.selectedConnectorIDs,
-                          magnification: scroll?.magnification ?? 1)
+            // Native connectors track the dragged cards live (no per-tick model
+            // write — the model commits on mouse-up; this feeds the offset directly).
+            if connectorController != nil {
+                var offs: [UUID: CGPoint] = [:]
+                for id in startPos.keys { offs[id] = CGPoint(x: dx, y: dy) }
+                refreshConnectors(offsets: offs)
             }
         }
 
@@ -570,7 +558,6 @@ struct CollectionCanvas: NSViewRepresentable {
             let folderCenter = container.convert(
                 CGPoint(x: folderCard.bounds.midX, y: folderCard.bounds.midY), from: folderCard)
             var flew = false
-            var flyCount = 0
             for item in cv.visibleItems() {
                 guard let card = (item as? HostingCollectionItem)?.cardView,
                       let id = card.nodeID, filed.contains(id),
@@ -593,32 +580,24 @@ struct CollectionCanvas: NSViewRepresentable {
 
                 let c = CGPoint(x: ghost.bounds.midX, y: ghost.bounds.midY)
                 let dx = folderCenter.x - frame.midX, dy = folderCenter.y - frame.midY
-                // Compose: translate to folder center · scale ~0.12 · random ±8° rotate
-                let angle = CGFloat.random(in: -8...8) * .pi / 180
                 let target = CATransform3DConcat(
-                    CATransform3DConcat(
-                        CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
-                                            CATransform3DMakeScale(0.12, 0.12, 1)),
-                        CATransform3DMakeRotation(angle, 0, 0, 1)),
+                    CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
+                                        CATransform3DMakeScale(0.12, 0.12, 1)),
                     CATransform3DMakeTranslation(c.x + dx, c.y + dy, 0))
-                // Spatial: transform spring stiffness=400 (staggered +400 per card, cap 800),
-                // opacity spring stiffness=40/mass=0.1 so it fades faster than it moves.
-                let transformStiffness = min(CGFloat(flyCount) * 400 + 400, 800)
                 CATransaction.begin()
                 CATransaction.setCompletionBlock { ghost.removeFromSuperlayer() }
                 let s = CASpringAnimation(keyPath: "transform")
                 s.fromValue = CATransform3DIdentity; s.toValue = target
-                s.stiffness = transformStiffness; s.damping = 0; s.mass = 1
+                s.stiffness = CLIPSpring.Preset.settle.stiffness
+                s.damping = CLIPSpring.Preset.settle.caDamping
                 s.duration = s.settlingDuration
-                let o = CASpringAnimation(keyPath: "opacity")
-                o.fromValue = 1; o.toValue = 0
-                o.stiffness = 40; o.damping = 0; o.mass = 0.1
-                o.duration = o.settlingDuration
+                let o = CABasicAnimation(keyPath: "opacity")
+                o.fromValue = 1; o.toValue = 0; o.duration = 0.38
+                o.timingFunction = CLIPSpring.easeOutSoft
                 ghost.transform = target; ghost.opacity = 0
                 ghost.add(s, forKey: "dropFly"); ghost.add(o, forKey: "dropFade")
                 CATransaction.commit()
                 flew = true
-                flyCount += 1
             }
             if flew { MainActor.assumeIsolated { Haptics.generic() } }
         }
@@ -831,51 +810,43 @@ final class CardItemView: NSView {
     }
 
     private var lastSelectedForScale = false
-    /// Subtle "pop" on selection for every card (Spatial). Scales content subviews
-    /// around the card centre — NOT the item's own layer, which carries the live-drag
-    /// transform, so the two compose cleanly. Spring stiffness=100/damping=6.4 matches
-    /// Spatial's underdamped selection settle (damping ratio ≈ 0.32, slight bounce).
+    /// Subtle "pop" on selection for every card (Spatial). Scales the content
+    /// subviews (they fill the card) around the card centre — NOT the item's own
+    /// layer, which carries the live-drag transform, so the two compose cleanly.
     private func applySelectionScale(_ selected: Bool) {
         guard bounds.width > 1, bounds.height > 1 else { return }
-        guard selected != lastSelectedForScale else { return }
-        lastSelectedForScale = selected
         let factor: CGFloat = selected ? 1.04 : 1.0
         let cx = bounds.width / 2, cy = bounds.height / 2
         let t = CATransform3DConcat(
             CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
                                 CATransform3DMakeScale(factor, factor, 1)),
             CATransform3DMakeTranslation(cx, cy, 0))
+        let animate = selected != lastSelectedForScale
+        lastSelectedForScale = selected
         for sv in subviews {
             guard let layer = sv.layer else { continue }
-            let a = CASpringAnimation(keyPath: "transform")
-            a.fromValue = layer.presentation()?.transform ?? layer.transform
-            a.toValue = t
-            a.stiffness = 100; a.damping = 6.4; a.mass = 1
-            a.duration = a.settlingDuration
-            layer.add(a, forKey: "selectScale")
+            if animate {
+                let a = CABasicAnimation(keyPath: "transform")
+                a.fromValue = layer.presentation()?.transform ?? layer.transform
+                a.toValue = t
+                a.duration = 0.18
+                a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                layer.add(a, forKey: "selectScale")
+            }
             layer.transform = t
         }
     }
 
-    /// Animate a chrome layer's opacity toward `target`. Uses a spring for the
-    /// selection ring (matches Spatial's underdamped fade-in) and a basic animation
-    /// for handles (no bounce needed). No-op when already at target.
+    /// Animate a chrome layer's opacity toward `target` (Spatial-style selection
+    /// fade). No-op when already there, so resize/zoom ticks don't re-trigger it.
     private func fade(_ layer: CALayer, to target: Float) {
         guard layer.opacity != target else { return }
-        if layer === selectionLayer {
-            let a = CASpringAnimation(keyPath: "opacity")
-            a.fromValue = layer.presentation()?.opacity ?? layer.opacity
-            a.toValue = target
-            a.stiffness = 100; a.damping = 6.4; a.mass = 1
-            a.duration = a.settlingDuration
-            layer.add(a, forKey: "fade")
-        } else {
-            let a = CABasicAnimation(keyPath: "opacity")
-            a.fromValue = layer.presentation()?.opacity ?? layer.opacity
-            a.toValue = target; a.duration = 0.14
-            a.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            layer.add(a, forKey: "fade")
-        }
+        let anim = CABasicAnimation(keyPath: "opacity")
+        anim.fromValue = layer.presentation()?.opacity ?? layer.opacity
+        anim.toValue = target
+        anim.duration = 0.14
+        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(anim, forKey: "fade")
         layer.opacity = target
     }
 
@@ -907,9 +878,8 @@ final class CardItemView: NSView {
 
     // MARK: - Appear animation (Spatial zoom-in)
 
-    /// Scale-in + fade for a freshly-added card (Spatial's CanvasItemsAnimator pop).
-    /// Center-anchored, stiffness=100/damping=18/mass=1 for transform (Spatial exact);
-    /// stiffness=40/damping=6 for opacity so it fades in faster than it scales.
+    /// Scale-in + fade for a freshly-added card (Spatial's CanvasItemsAnimator
+    /// pop). Center-anchored so it grows in place; spring settle.
     func playAppear() {
         guard let layer = layer, bounds.width > 1, bounds.height > 1 else { return }
         let c = CGPoint(x: bounds.midX, y: bounds.midY)
@@ -920,16 +890,8 @@ final class CardItemView: NSView {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.transform = small; layer.opacity = 0
         CATransaction.commit()
-        let s = CASpringAnimation(keyPath: "transform")
-        s.fromValue = small; s.toValue = CATransform3DIdentity
-        s.stiffness = 100; s.damping = 18; s.mass = 1
-        s.duration = s.settlingDuration; s.fillMode = .forwards
-        layer.add(s, forKey: "appear"); layer.transform = CATransform3DIdentity
-        let o = CASpringAnimation(keyPath: "opacity")
-        o.fromValue = 0; o.toValue = 1
-        o.stiffness = 40; o.damping = 6; o.mass = 1
-        o.duration = o.settlingDuration; o.fillMode = .forwards
-        layer.add(o, forKey: "appearFade"); layer.opacity = 1
+        CLIPSpring.scale(self, to: 1.0, preset: .settle)
+        CLIPSpring.run(duration: 0.22) { layer.opacity = 1 }
     }
 
     // MARK: - Float shadow (Spatial-style)
@@ -1015,8 +977,6 @@ final class HostingCollectionItem: NSCollectionViewItem {
         // The outgoing video VIEW is cached by node id (NativeVideoCache) so it's
         // re-parented to its next item instead of rebuilt — no reload/blink. Tell
         // the cache it detached so off-screen videos still tear down ~1.2s later.
-        // (Park BEFORE calling makeNativeCardContent so the cache has the view ready
-        // to return; the teardown timer is cancelled if the same view is reclaimed.)
         if FeatureFlags.useWebViewCache,
            let vid = nativeContent as? CardVideoContentView, let id = vid.cacheNodeID {
             NativeVideoCache.shared.park(id)
@@ -1025,20 +985,15 @@ final class HostingCollectionItem: NSCollectionViewItem {
         // (auto-sizing field + focus); every other case prefers native content.
         if let native = isEditing ? nil : makeNativeCardContent(for: node) {
             hosting?.removeFromSuperview(); hosting = nil
-            // If NativeVideoCache returned the SAME view we already have installed,
-            // skip remove+add — re-parenting the same view causes a 1-frame blank
-            // that shows as a video blink on reloadData() (e.g. after a drag commit).
-            if native !== nativeContent {
-                nativeContent?.removeFromSuperview()
-                native.translatesAutoresizingMaskIntoConstraints = false
-                view.addSubview(native, positioned: .below, relativeTo: nil)
-                NSLayoutConstraint.activate([
-                    native.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                    native.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                    native.topAnchor.constraint(equalTo: view.topAnchor),
-                    native.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                ])
-            }
+            nativeContent?.removeFromSuperview()
+            native.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(native, positioned: .below, relativeTo: nil)
+            NSLayoutConstraint.activate([
+                native.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                native.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                native.topAnchor.constraint(equalTo: view.topAnchor),
+                native.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
             nativeContent = native
             cardView.usesNativeContent = true
         } else {
