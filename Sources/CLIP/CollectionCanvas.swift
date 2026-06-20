@@ -599,7 +599,7 @@ struct CollectionCanvas: NSViewRepresentable {
                 CATransaction.commit()
                 flew = true
             }
-            if flew { Haptics.generic() }
+            if flew { MainActor.assumeIsolated { Haptics.generic() } }
         }
 
         /// Center + fit the actual content (the nodes' bounding rect, not the
@@ -798,7 +798,10 @@ final class CardItemView: NSView {
         CATransaction.commit()
 
         // Animated visibility (fade) — OUTSIDE the no-animation transaction.
-        fade(selectionLayer, to: selected ? 1 : 0)
+        // Folders show selection via their own subtle scale (FolderCardView.setSelected),
+        // NOT the node-bounds ring — that rect ring doesn't trace the folder silhouette
+        // and reads as a broken stray outline.
+        fade(selectionLayer, to: (selected && folderView == nil) ? 1 : 0)
         let showHandles = selected && resizeEnabled
         for h in handleLayers { fade(h, to: showHandles ? 1 : 0) }
     }

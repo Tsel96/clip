@@ -125,15 +125,21 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         currentArtHeight = 1044
     }
 
-    /// Selection: swap to the glow art + scale the folder up a touch (Spatial's
-    /// "selected folder is a bit scaled"). Called from CardItemView.updateChrome.
+    /// Selection feedback: ONLY a subtle, animated scale (Spatial's "selected
+    /// folder is a bit scaled") — no ring, no art swap. Called from
+    /// CardItemView.updateChrome.
     func setSelected(_ selected: Bool) {
         guard selected != isSelected else { return }
         isSelected = selected
-        refreshArt()
-        layer?.transform = selected ? CATransform3DMakeScale(1.05, 1.05, 1)
-                                     : CATransform3DIdentity
-        needsLayout = true
+        let target = selected ? CATransform3DMakeScale(1.04, 1.04, 1)
+                              : CATransform3DIdentity
+        let anim = CABasicAnimation(keyPath: "transform")
+        anim.fromValue = layer?.presentation()?.transform ?? layer?.transform
+        anim.toValue = target
+        anim.duration = 0.18
+        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer?.transform = target
+        layer?.add(anim, forKey: "selectScale")
     }
 
     override func layout() {
