@@ -718,20 +718,20 @@ struct CanvasView: View {
         }
         // Inline "Insert link here" field (Figma 72:36784) — floats above the
         // toolbar, centered on the round "+" (240 pt right of the toolbar's
-        // center: 542/2 − 31). Its own overlay so the palette's fixed frame
-        // can't clip it. Scales up FROM ITS BOTTOM-CENTER — i.e. out of the "+"
-        // directly below it (was `.bottomTrailing`, which read as "from the left").
+        // center: 542/2 − 31). ALWAYS mounted (not `if`-inserted): a SwiftUI
+        // `.transition` scale anchors to the un-offset layout frame (canvas
+        // center, ~240pt left of the "+"), so it grew "from the left". Instead we
+        // drive `.scaleEffect(anchor:.bottom)` ourselves — that pins the panel's
+        // bottom-centre, and the `.offset` then carries that pinned point onto the
+        // "+", so the panel scales up directly OUT OF the "+" below it.
         .overlay(alignment: .bottom) {
-            if state.canvasMode == .canvas, state.isLinkInputPresented {
+            if state.canvasMode == .canvas {
                 LinkInputBar()
-                    // Transition must be applied BEFORE the offset: otherwise the
-                    // scale anchors to the panel's un-offset layout frame (canvas
-                    // center, ~240pt left of the "+"), so it grows from the left
-                    // and slides right. Inside the offset, the pivot moves with
-                    // the panel — it scales up out of the "+" directly below it.
-                    .transition(.scale(scale: 0.6, anchor: .bottom)
-                        .combined(with: .opacity))
+                    .scaleEffect(state.isLinkInputPresented ? 1 : 0.5, anchor: .bottom)
+                    .opacity(state.isLinkInputPresented ? 1 : 0)
                     .offset(x: 240, y: -92)
+                    .allowsHitTesting(state.isLinkInputPresented)
+                    .animation(Motion.pop, value: state.isLinkInputPresented)
             }
         }
         // Acute tool-mode visibility — while a non-Select tool is active,

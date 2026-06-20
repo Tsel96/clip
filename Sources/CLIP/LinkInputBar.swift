@@ -75,7 +75,11 @@ struct LinkInputBar: View {
         .padding(4)
         .background(greenWrapper)
         .onExitCommand(perform: dismiss)            // Escape
-        .onAppear { text = ""; focused = true }
+        // Panel is always mounted (so it can scale OUT of the "+"); focus the
+        // field only when it actually opens, and clear it each time.
+        .onChange(of: state.isLinkInputPresented) { shown in
+            if shown { text = ""; focused = true } else { focused = false }
+        }
     }
 
     // MARK: Skins
