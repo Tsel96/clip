@@ -120,8 +120,10 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     }
 
     private func refreshArt() {
-        shapeView.image = isSelected ? Self.selectedImage : Self.art(forCount: currentCount)
-        currentArtHeight = isSelected ? 1099 : 1044
+        // Always the per-count art (so the count + card peek stay visible when
+        // selected); selection is shown by the scale + ring, not an art swap.
+        shapeView.image = Self.art(forCount: currentCount)
+        currentArtHeight = 1044
     }
 
     /// Selection: swap to the glow art + scale the folder up a touch (Spatial's
