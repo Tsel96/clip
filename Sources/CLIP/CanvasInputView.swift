@@ -219,9 +219,15 @@ final class CanvasInputView: NSView {
                 }
                 let result = AlignmentEngine.snap(draggingRect: rect, otherRects: others,
                                                   zoom: mag, snapToGrid: false)
-                sdx = result.rect.minX - sp.x
-                sdy = result.rect.minY - sp.y
-                coordinator?.guideController?.update(result.guides,
+                // Equal-spacing pass — on the alignment-snapped rect, only on an
+                // axis alignment left free (so the two never fight a coordinate).
+                let claimedX = result.guides.contains { $0.axis == .vertical }
+                let claimedY = result.guides.contains { $0.axis == .horizontal }
+                let spacing = AlignmentEngine.equalSpacing(draggingRect: result.rect,
+                    otherRects: others, zoom: mag, allowX: !claimedX, allowY: !claimedY)
+                sdx = spacing.rect.minX - sp.x
+                sdy = spacing.rect.minY - sp.y
+                coordinator?.guideController?.update(result.guides, spacing: spacing.indicators,
                     worldMin: CGPoint(x: p.worldBounds.minX, y: p.worldBounds.minY),
                     magnification: mag)
             } else {

@@ -10,7 +10,8 @@ import AppKit
 final class GuideOverlayController {
 
     private let root = CALayer()
-    private var layers: [CAShapeLayer] = []
+    private var layers: [CAShapeLayer] = []        // red alignment guides
+    private var spacingLayers: [CAShapeLayer] = [] // pink equal-gap indicators
 
     func attach(to container: NSView) {
         container.wantsLayer = true
@@ -20,7 +21,9 @@ final class GuideOverlayController {
 
     /// `guides` carry WORLD coords; `worldMin` is `worldBounds.origin` (content
     /// space = world − worldMin). Pass `[]` to clear (drag end / ⌘ held).
-    func update(_ guides: [AlignmentGuide], worldMin: CGPoint, magnification: CGFloat) {
+    func update(_ guides: [AlignmentGuide],
+                spacing: [SpacingIndicator] = [],
+                worldMin: CGPoint, magnification: CGFloat) {
         let mag = max(magnification, 0.0001)
         let lineWidth = 1.0 / mag
 
@@ -30,6 +33,13 @@ final class GuideOverlayController {
             l.fillColor = nil
             root.addSublayer(l)
             layers.append(l)
+        }
+        while spacingLayers.count < spacing.count {
+            let l = CAShapeLayer()
+            l.strokeColor = NSColor.systemPink.cgColor
+            l.fillColor = nil
+            root.addSublayer(l)
+            spacingLayers.append(l)
         }
 
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -47,6 +57,16 @@ final class GuideOverlayController {
                 path.move(to: CGPoint(x: g.extent.lowerBound - worldMin.x, y: y))
                 path.addLine(to: CGPoint(x: g.extent.upperBound - worldMin.x, y: y))
             }
+            layer.path = path
+            layer.lineWidth = lineWidth
+            layer.isHidden = false
+        }
+        for (i, layer) in spacingLayers.enumerated() {
+            guard i < spacing.count else { layer.isHidden = true; layer.path = nil; continue }
+            let s = spacing[i]
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: s.from.x - worldMin.x, y: s.from.y - worldMin.y))
+            path.addLine(to: CGPoint(x: s.to.x - worldMin.x, y: s.to.y - worldMin.y))
             layer.path = path
             layer.lineWidth = lineWidth
             layer.isHidden = false
