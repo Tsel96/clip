@@ -47,6 +47,13 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         shapeView.imageScaling = .scaleAxesIndependently
         shapeView.wantsLayer = true
         shapeView.layer?.masksToBounds = false
+        // NSImage doesn't render the SVG's baked filter shadow, so add it on the
+        // layer (Figma: black 13%, radius 22 @ the 494-wide art → ~12 at the
+        // 260-pt node). No shadowPath ⇒ derived from the folder+peek silhouette.
+        shapeView.layer?.shadowColor = NSColor.black.cgColor
+        shapeView.layer?.shadowOpacity = 0.13
+        shapeView.layer?.shadowRadius = 12
+        shapeView.layer?.shadowOffset = .zero
         addSubview(shapeView)
 
         countField.textColor = NSColor(white: 0, alpha: 0.4)
