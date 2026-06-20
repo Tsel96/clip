@@ -382,8 +382,19 @@ final class CardVideoContentView: NSView {
     private let posterLayer = CALayer()
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
+    private let fileURL: URL
+    private let timeRange: CMTimeRange?
+    private let nodeID: UUID?
 
-    init(fileURL: URL, trimStart: Double?, trimEnd: Double?) {
+    init(fileURL: URL, trimStart: Double?, trimEnd: Double?, nodeID: UUID? = nil) {
+        self.fileURL = fileURL
+        self.nodeID = nodeID
+        if let s = trimStart, let e = trimEnd, e > s {
+            self.timeRange = CMTimeRange(start: CMTime(seconds: s, preferredTimescale: 600),
+                                         end: CMTime(seconds: e, preferredTimescale: 600))
+        } else {
+            self.timeRange = nil
+        }
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = CardChrome.cornerRadius
@@ -414,20 +425,29 @@ final class CardVideoContentView: NSView {
             host.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        let item = AVPlayerItem(url: fileURL)
-        let player = AVQueuePlayer()
-        if let s = trimStart, let e = trimEnd, e > s {
-            let range = CMTimeRange(start: CMTime(seconds: s, preferredTimescale: 600),
-                                    end: CMTime(seconds: e, preferredTimescale: 600))
-            looper = AVPlayerLooper(player: player, templateItem: item, timeRange: range)
-            player.seek(to: range.start, toleranceBefore: .zero, toleranceAfter: .zero)
+        // Reclaim a player parked by this node's previous instance — it survives
+        // the select/move `reloadData` so the video doesn't reload + blink; else
+        // build a fresh looping player.
+        if FeatureFlags.useWebViewCache, let nodeID,
+           let reused = PlayerCache.shared.take(nodeID, url: fileURL, timeRange: timeRange) {
+            player = reused.player
+            looper = reused.looper
         } else {
-            looper = AVPlayerLooper(player: player, templateItem: item)
+            let item = AVPlayerItem(url: fileURL)
+            let p = AVQueuePlayer()
+            if let range = timeRange {
+                looper = AVPlayerLooper(player: p, templateItem: item, timeRange: range)
+                p.seek(to: range.start, toleranceBefore: .zero, toleranceAfter: .zero)
+            } else {
+                looper = AVPlayerLooper(player: p, templateItem: item)
+            }
+            p.isMuted = true
+            player = p
         }
-        player.isMuted = true
-        self.player = player
-        host.attach(player: player)
-        player.play()
+        if let player {
+            host.attach(player: player)
+            player.play()
+        }
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
