@@ -724,9 +724,14 @@ struct CanvasView: View {
         .overlay(alignment: .bottom) {
             if state.canvasMode == .canvas, state.isLinkInputPresented {
                 LinkInputBar()
-                    .offset(x: 240, y: -92)
-                    .transition(.scale(scale: 0.85, anchor: .bottom)
+                    // Transition must be applied BEFORE the offset: otherwise the
+                    // scale anchors to the panel's un-offset layout frame (canvas
+                    // center, ~240pt left of the "+"), so it grows from the left
+                    // and slides right. Inside the offset, the pivot moves with
+                    // the panel — it scales up out of the "+" directly below it.
+                    .transition(.scale(scale: 0.6, anchor: .bottom)
                         .combined(with: .opacity))
+                    .offset(x: 240, y: -92)
             }
         }
         // Acute tool-mode visibility — while a non-Select tool is active,

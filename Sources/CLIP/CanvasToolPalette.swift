@@ -507,6 +507,9 @@ private final class AddPillView: NSView {
 
     private let outerLayer = CALayer()
     private let innerLayer = CAGradientLayer()
+    /// White wash that fades in on hover (Figma 72:36831 — 40% white over the
+    /// candy yellow, brightening it). Clipped to the inner circle, under the icon.
+    private let hoverHighlight = CALayer()
     /// Spatial's `clickHighlight` — a dark overlay clipped to the inner circle
     /// that fades in on press (under the icon), giving the "dim while pressed".
     private let pressHighlight = CALayer()
@@ -526,12 +529,6 @@ private final class AddPillView: NSView {
         NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x2B751B).cgColor,
         NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x358923).cgColor
     ]
-    /// Hover skin (Figma 72:36831): flat bright `#3DA726` fill — no rim, no
-    /// gradient. The whole "+" turns green on hover (it does NOT just grow).
-    private static let hoverSkin: [CGColor] = {
-        let g = NSColor.fromHex(0x3DA726).cgColor
-        return [g, g, g, g]
-    }()
 
     // MARK: - Init
 
@@ -566,6 +563,11 @@ private final class AddPillView: NSView {
         innerLayer.endPoint   = CGPoint(x: 0.5, y: 1)
         innerLayer.masksToBounds = true
         outerLayer.addSublayer(innerLayer)
+
+        // hover wash — white, hidden at rest, fades to 40% on hover (under press).
+        hoverHighlight.backgroundColor = NSColor.white.cgColor
+        hoverHighlight.opacity = 0
+        innerLayer.addSublayer(hoverHighlight)
 
         // clickHighlight — dark wash, hidden at rest, fades in on press.
         pressHighlight.backgroundColor = NSColor.black.withAlphaComponent(0.12).cgColor
@@ -603,6 +605,9 @@ private final class AddPillView: NSView {
                                           width: innerSize, height: innerSize)
         innerLayer.cornerRadius = innerSize / 2
         innerLayer.cornerCurve  = .continuous
+        hoverHighlight.frame        = innerLayer.bounds
+        hoverHighlight.cornerRadius = innerSize / 2
+        hoverHighlight.cornerCurve  = .continuous
         pressHighlight.frame        = innerLayer.bounds
         pressHighlight.cornerRadius = innerSize / 2
         pressHighlight.cornerCurve  = .continuous
@@ -689,21 +694,30 @@ private final class AddPillView: NSView {
         refreshSkin()
     }
 
-    /// Apply the correct inner skin for the current state. Priority:
-    /// selected (input open, darkened green) → hover (flat green, Figma 72:36831)
-    /// → rest (candy yellow). The outer ring stays `#3DA726` throughout.
+    /// Apply the correct inner surface for the current state. The gradient is
+    /// darkened green only when SELECTED (input open, Figma 72:36780), otherwise
+    /// candy yellow. HOVER does not change the gradient — it fades in a 40% white
+    /// wash (Figma 72:36831), brightening the yellow. Outer ring stays `#3DA726`.
     private func refreshSkin() {
-        let colors: [CGColor]
-        let iconAlpha: CGFloat
-        if isSelected      { colors = Self.greenSkin;  iconAlpha = 0.85 }
-        else if isHovered  { colors = Self.hoverSkin;  iconAlpha = 0.85 }
-        else               { colors = Self.yellowSkin; iconAlpha = 0.70 }
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.16)
         CATransaction.setAnimationTimingFunction(CLIPSpring.easeOutSoft)
-        innerLayer.colors = colors
+        innerLayer.colors = isSelected ? Self.greenSkin : Self.yellowSkin
         CATransaction.commit()
-        iconView.alphaValue = iconAlpha
+        setHoverHighlight(isHovered && !isSelected)
+        iconView.alphaValue = isSelected ? 0.85 : 0.70
+    }
+
+    /// Fade the white hover wash (Figma 72:36831 — 40% white over the candy).
+    private func setHoverHighlight(_ on: Bool) {
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = hoverHighlight.presentation()?.opacity ?? hoverHighlight.opacity
+        a.toValue   = on ? 0.40 : 0
+        a.duration  = 0.16
+        a.timingFunction = CLIPSpring.easeOutSoft
+        a.fillMode  = .forwards
+        hoverHighlight.opacity = on ? 0.40 : 0
+        hoverHighlight.add(a, forKey: "hover")
     }
 }
 
