@@ -559,15 +559,21 @@ private final class AddPillView: NSView {
 
 // MARK: - ToolPaletteButton
 
-/// A single 52 × 52 tool button.  Active state = green (#3DA726) filled
-/// capsule behind the icon; inactive = no background, icon at designed opacity.
+/// A single 52 × 52 tool button.
+/// - Inactive: 24×24 black icon on transparent background.
+/// - Active: 52×52 pre-composed SVG (`tool_*_active.svg`) that bakes the green
+///   circle + yellow icon, exactly matching the Figma active-state art.
+///   Falls back to the old green-bg + yellow-tint approach if the active SVG
+///   isn't found (e.g. for dynamically-added tool buttons).
 final class ToolPaletteButton: NSView {
 
     var onTap: (() -> Void)?
 
-    private let bgLayer   = CALayer()
-    private let iconView  = NSImageView()
-    private var isActive  = false
+    private let bgLayer       = CALayer()      // fallback green circle (hidden when SVG available)
+    private let iconView      = NSImageView()  // 24×24 idle icon
+    private let activeView    = NSImageView()  // 52×52 pre-composed active SVG
+    private var isActive      = false
+    private var hasActiveSVG  = false
     private let iconName: String
 
     // MARK: - Init
@@ -583,18 +589,28 @@ final class ToolPaletteButton: NSView {
     private func commonInit() {
         wantsLayer = true
 
-        // Green active-state background (hidden until active)
+        // Fallback green active-state background (hidden until active AND no SVG).
         bgLayer.backgroundColor = NSColor.fromHex(0x3DA726).cgColor
         bgLayer.cornerCurve     = .continuous
         bgLayer.opacity         = 0
         layer?.addSublayer(bgLayer)
 
-        // Icon
+        // 24×24 idle icon (template so we can tint it).
         iconView.image            = Self.loadIcon(iconName)
         iconView.imageScaling     = .scaleProportionallyUpOrDown
-        iconView.contentTintColor = nil  // SVG icons carry their own colour
+        iconView.contentTintColor = .black
         iconView.wantsLayer       = true
         addSubview(iconView)
+
+        // 52×52 pre-composed active state (Figma-exported, green circle + yellow icon).
+        if let activeImg = Self.loadActiveIcon(iconName + "_active") {
+            activeView.image        = activeImg
+            activeView.imageScaling = .scaleAxesIndependently
+            activeView.wantsLayer   = true
+            activeView.alphaValue   = 0
+            addSubview(activeView)
+            hasActiveSVG = true
+        }
 
         let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick))
         addGestureRecognizer(click)
@@ -610,15 +626,15 @@ final class ToolPaletteButton: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         bgLayer.frame        = sz
-        // "rounded-[60px]" in Figma means a corner radius of 60pt —
-        // capped to half the button side so it never exceeds a full circle.
         bgLayer.cornerRadius = min(60, sz.height / 2)
         CATransaction.commit()
 
-        // Icon: 24 × 24 centred in 52 × 52 → x=14, y=14  (from Figma)
+        // Idle icon: 24×24 centred in 52×52.
         let iconSize: CGFloat = 24
         let pad: CGFloat = (bounds.width - iconSize) / 2
-        iconView.frame = NSRect(x: pad, y: pad, width: iconSize, height: iconSize)
+        iconView.frame  = NSRect(x: pad, y: pad, width: iconSize, height: iconSize)
+        // Active SVG: fills the full button.
+        activeView.frame = sz
     }
 
     // MARK: - Active state
@@ -626,19 +642,36 @@ final class ToolPaletteButton: NSView {
     func setActive(_ active: Bool, animated: Bool) {
         guard active != isActive else { return }
         isActive = active
-        if animated {
-            let anim = CABasicAnimation(keyPath: "opacity")
-            anim.fromValue = bgLayer.presentation()?.opacity ?? (active ? 0 : 1)
-            anim.toValue   = active ? 1.0 : 0.0
-            anim.duration  = 0.18
-            anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            bgLayer.add(anim, forKey: "opacityAnim")
-        }
-        bgLayer.opacity = active ? 1.0 : 0.0
+        let dur: CFTimeInterval = 0.18
+        let ease = CAMediaTimingFunction(name: .easeOut)
 
-        // Active icon uses yellow so it pops against the green background;
-        // inactive icon uses black.
-        iconView.contentTintColor = active ? NSColor.fromHex(0xFEF33C) : NSColor.black
+        if hasActiveSVG {
+            // Cross-fade between idle icon and the pre-composed active SVG.
+            if animated {
+                let a = CABasicAnimation(keyPath: "opacity")
+                a.duration = dur; a.timingFunction = ease
+                a.fromValue = active ? 0 : 1; a.toValue = active ? 1 : 0
+                activeView.layer?.add(a, forKey: "fade")
+                let b = CABasicAnimation(keyPath: "opacity")
+                b.duration = dur; b.timingFunction = ease
+                b.fromValue = active ? 1 : 0; b.toValue = active ? 0 : 1
+                iconView.layer?.add(b, forKey: "fade")
+            }
+            activeView.alphaValue = active ? 1 : 0
+            iconView.alphaValue   = active ? 0 : 1
+            bgLayer.opacity = 0
+        } else {
+            // Fallback: animate the green circle in/out + tint the icon.
+            if animated {
+                let a = CABasicAnimation(keyPath: "opacity")
+                a.fromValue = bgLayer.presentation()?.opacity ?? (active ? 0 : 1)
+                a.toValue   = active ? 1.0 : 0.0
+                a.duration  = dur; a.timingFunction = ease
+                bgLayer.add(a, forKey: "opacityAnim")
+            }
+            bgLayer.opacity           = active ? 1.0 : 0.0
+            iconView.contentTintColor = active ? NSColor.fromHex(0xFEF33C) : .black
+        }
     }
 
     // MARK: - Interaction
@@ -648,19 +681,24 @@ final class ToolPaletteButton: NSView {
         onTap?()
     }
 
-    // MARK: - Icon mapping
+    // MARK: - Icon loading
 
-    /// Returns a 24 × 24 template image for a tool mode.
-    /// Uses SF Symbols where possible; falls back to a constructed path image.
-    /// Loads a 24×24 template icon (`tool_*.svg`) from the bundle.
+    /// 24×24 template icon for the idle state.
     static func loadIcon(_ name: String) -> NSImage? {
         guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
               let img = NSImage(contentsOf: url) else { return nil }
-        img.isTemplate = true   // the button tints it black (idle) / yellow (active)
+        img.isTemplate = true
         img.size = NSSize(width: 24, height: 24)
         return img
     }
 
+    /// 52×52 pre-composed active-state asset (green circle + yellow icon baked in).
+    private static func loadActiveIcon(_ name: String) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.size = NSSize(width: 52, height: 52)
+        return img
+    }
 }
 
 // MARK: - SwiftUI mounting
@@ -696,14 +734,14 @@ struct _PaletteRepresentable: NSViewRepresentable {
     func makeCoordinator() -> Void { }
 }
 
-// MARK: - NSColor hex helper
+// MARK: - NSColor hex helper (internal — shared with NativeCanvasChrome)
 
-private extension NSColor {
+extension NSColor {
     /// Initialise from a 0xRRGGBB integer literal, sRGB colour space.
     static func fromHex(_ hex: UInt32) -> NSColor {
         let r = CGFloat((hex >> 16) & 0xFF) / 255
         let g = CGFloat((hex >>  8) & 0xFF) / 255
         let b = CGFloat( hex        & 0xFF) / 255
-        return NSColor(calibratedRed: r, green: g, blue: b, alpha: 1)
+        return NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
     }
 }

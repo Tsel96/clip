@@ -366,3 +366,156 @@ struct NativeActiveToolChip: NSViewRepresentable {
     }
 }
 
+// MARK: - Detail bar (Figma node 71-12970)
+
+/// Small 164×62pt floating bar with cursor / palm / download buttons — the same
+/// candy skin as the tool palette. Used in context-specific overlays (detail view,
+/// archive mode). Buttons are 52×52 pre-composed SVGs from the Figma export.
+final class DetailBarView: NSView {
+    var onCursor: () -> Void = {}
+    var onPalm: () -> Void = {}
+    var onDownload: () -> Void = {}
+
+    private let outerLayer = CALayer()
+    private let innerLayer = CAGradientLayer()
+    private let shadows    = makeDetailShadows()
+    private let cursorBtn  = DetailBarButton(svgName: "detailbar_cursor")
+    private let palmBtn    = DetailBarButton(svgName: "detailbar_palm")
+    private let downloadBtn = DetailBarButton(svgName: "detailbar_download")
+
+    static let size = CGSize(width: 164, height: 62)
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        commonInit()
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    private func commonInit() {
+        wantsLayer = true
+        layer?.masksToBounds = false
+        shadows.forEach { $0.zPosition = -1; layer?.addSublayer($0) }
+
+        outerLayer.backgroundColor = NSColor.fromHex(0x3DA726).cgColor
+        outerLayer.masksToBounds   = false
+        layer?.addSublayer(outerLayer)
+
+        innerLayer.colors = [
+            NSColor.fromHex(0xFFFCA9).cgColor,
+            NSColor.fromHex(0xFFFCA9).cgColor,
+            NSColor.fromHex(0xFFF53B).cgColor,
+            NSColor.fromHex(0xF8DE47).cgColor
+        ]
+        innerLayer.locations = [0, 0.0345, 0.0345, 1]
+        innerLayer.startPoint = CGPoint(x: 0.5, y: 0)
+        innerLayer.endPoint   = CGPoint(x: 0.5, y: 1)
+        innerLayer.masksToBounds = true
+        outerLayer.addSublayer(innerLayer)
+
+        cursorBtn.onTap   = { [weak self] in self?.onCursor() }
+        palmBtn.onTap     = { [weak self] in self?.onPalm() }
+        downloadBtn.onTap = { [weak self] in self?.onDownload() }
+        for btn in [cursorBtn, palmBtn, downloadBtn] { addSubview(btn) }
+    }
+
+    override var isFlipped: Bool { true }
+    override var intrinsicContentSize: NSSize { NSSize(width: Self.size.width, height: Self.size.height) }
+
+    override func layout() {
+        super.layout()
+        let w = bounds.width, h = bounds.height
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        let r = h / 2
+        outerLayer.frame = bounds; outerLayer.cornerRadius = r; outerLayer.cornerCurve = .continuous
+        innerLayer.frame = bounds.insetBy(dx: 2, dy: 2)
+        innerLayer.cornerRadius = (h - 4) / 2; innerLayer.cornerCurve = .continuous
+        let capsule = CGRect(origin: .zero, size: bounds.size)
+        let path = CGPath(roundedRect: CGRect(origin: .zero, size: capsule.size),
+                          cornerWidth: r, cornerHeight: r, transform: nil)
+        for (i, sl) in shadows.enumerated() {
+            sl.frame = bounds.offsetBy(dx: 0, dy: CGFloat(i + 1) * 2)
+            sl.shadowPath = path
+        }
+        CATransaction.commit()
+        // 3 buttons: 52×52, centred vertically, evenly spaced with padding
+        let btnSize: CGFloat = 52
+        let totalBtns: CGFloat = 3
+        let spacing = (w - totalBtns * btnSize) / (totalBtns + 1)
+        let y = (h - btnSize) / 2
+        for (i, btn) in [cursorBtn, palmBtn, downloadBtn].enumerated() {
+            btn.frame = NSRect(x: spacing + CGFloat(i) * (btnSize + spacing), y: y,
+                               width: btnSize, height: btnSize)
+        }
+    }
+
+    /// Highlight the cursor or palm button as "active" (e.g. current canvas tool).
+    func setActiveTool(_ tool: ToolMode) {
+        cursorBtn.setActive(tool == .select)
+        palmBtn.setActive(tool == .hand)
+        downloadBtn.setActive(false)
+    }
+}
+
+private func makeDetailShadows() -> [CALayer] {
+    [(y: 2, blur: 3, alpha: Float(0.10)),
+     (y: 6, blur: 6, alpha: Float(0.08))].map { s in
+        let l = CALayer()
+        l.backgroundColor  = NSColor.clear.cgColor
+        l.shadowColor      = NSColor(srgbRed: 0, green: 0.361, blue: 0.008, alpha: 1).cgColor
+        l.shadowOpacity    = s.alpha
+        l.shadowRadius     = s.blur
+        l.shadowOffset     = .zero
+        l.masksToBounds    = false
+        return l
+    }
+}
+
+/// One button inside `DetailBarView`. Shows a 52×52 pre-composed SVG at rest;
+/// when active, swaps to the same SVG at full opacity (visual parity with toolbar).
+private final class DetailBarButton: NSView {
+    var onTap: (() -> Void)?
+    private let imageView = NSImageView()
+
+    init(svgName: String) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        imageView.imageScaling = .scaleAxesIndependently
+        imageView.alphaValue   = 0.7
+        if let url = Bundle.module.url(forResource: svgName, withExtension: "svg"),
+           let img = NSImage(contentsOf: url) {
+            img.size = NSSize(width: 52, height: 52)
+            imageView.image = img
+        }
+        addSubview(imageView)
+        let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick))
+        addGestureRecognizer(click)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+    override func layout() { super.layout(); imageView.frame = bounds }
+
+    func setActive(_ active: Bool) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.14; ctx.allowsImplicitAnimation = true
+            imageView.alphaValue = active ? 1.0 : 0.7
+        }
+    }
+
+    @objc private func handleClick(_ gr: NSClickGestureRecognizer) {
+        guard gr.state == .ended else { return }
+        onTap?()
+    }
+}
+
+struct NativeDetailBar: NSViewRepresentable {
+    @EnvironmentObject var state: CanvasState
+    func makeNSView(context: Context) -> DetailBarView { DetailBarView() }
+    func updateNSView(_ v: DetailBarView, context: Context) {
+        v.onCursor   = { state.toolMode = .select }
+        v.onPalm     = { state.toolMode = .hand }
+        v.onDownload = { /* export / download action — wire when available */ }
+        v.setActiveTool(state.toolMode)
+    }
+}
+

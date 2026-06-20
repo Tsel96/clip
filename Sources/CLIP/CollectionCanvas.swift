@@ -603,7 +603,7 @@ struct CollectionCanvas: NSViewRepresentable {
                     CATransform3DMakeTranslation(c.x + dx, c.y + dy, 0))
                 // Spatial: transform spring stiffness=400 (staggered +400 per card, cap 800),
                 // opacity spring stiffness=40/mass=0.1 so it fades faster than it moves.
-                let transformStiffness = min(CGFloat(flyCount + 1) * 400 + 400, 800)
+                let transformStiffness = min(CGFloat(flyCount) * 400 + 400, 800)
                 CATransaction.begin()
                 CATransaction.setCompletionBlock { ghost.removeFromSuperlayer() }
                 let s = CASpringAnimation(keyPath: "transform")
@@ -907,8 +907,9 @@ final class CardItemView: NSView {
 
     // MARK: - Appear animation (Spatial zoom-in)
 
-    /// Scale-in + fade for a freshly-added card (Spatial's CanvasItemsAnimator
-    /// pop). Center-anchored so it grows in place; spring settle.
+    /// Scale-in + fade for a freshly-added card (Spatial's CanvasItemsAnimator pop).
+    /// Center-anchored, stiffness=100/damping=18/mass=1 for transform (Spatial exact);
+    /// stiffness=40/damping=6 for opacity so it fades in faster than it scales.
     func playAppear() {
         guard let layer = layer, bounds.width > 1, bounds.height > 1 else { return }
         let c = CGPoint(x: bounds.midX, y: bounds.midY)
@@ -919,8 +920,16 @@ final class CardItemView: NSView {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.transform = small; layer.opacity = 0
         CATransaction.commit()
-        CLIPSpring.scale(self, to: 1.0, preset: .settle)
-        CLIPSpring.run(duration: 0.22) { layer.opacity = 1 }
+        let s = CASpringAnimation(keyPath: "transform")
+        s.fromValue = small; s.toValue = CATransform3DIdentity
+        s.stiffness = 100; s.damping = 18; s.mass = 1
+        s.duration = s.settlingDuration; s.fillMode = .forwards
+        layer.add(s, forKey: "appear"); layer.transform = CATransform3DIdentity
+        let o = CASpringAnimation(keyPath: "opacity")
+        o.fromValue = 0; o.toValue = 1
+        o.stiffness = 40; o.damping = 6; o.mass = 1
+        o.duration = o.settlingDuration; o.fillMode = .forwards
+        layer.add(o, forKey: "appearFade"); layer.opacity = 1
     }
 
     // MARK: - Float shadow (Spatial-style)
