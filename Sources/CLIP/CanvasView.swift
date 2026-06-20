@@ -882,9 +882,9 @@ struct DotGrid: View {
                 x += spacing
             }
 
-            // Persistent faint background grid — always visible, even with the
-            // cursor off the canvas.
-            context.fill(path, with: .color(Color.primary.opacity(0.13)))
+            // Persistent background grid — always visible, even with the cursor
+            // off the canvas.
+            context.fill(path, with: .color(Color.primary.opacity(0.22)))
 
             // Cursor spotlight — brightens the dots near the pointer (the nice
             // Spatial-style reveal), layered ON TOP of the base grid.
