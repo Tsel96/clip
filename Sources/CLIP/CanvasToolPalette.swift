@@ -436,7 +436,11 @@ private final class MainPillView: NSView {
         }
 
         // --- Decorative props (clickable: Marker = Draw, Stickers = Sticky) ---
-        markerView.setImage(NSImage(named: "Marker") ?? loadBundleImage(named: "Marker"))
+        // Marker button crossfades rest↔hover artwork on hover (Figma 72:36900),
+        // same treatment as the sticky button; no active state.
+        markerView.setStateImages(
+            rest:  loadBundleImage(named: "marker-btn-rest"),
+            hover: loadBundleImage(named: "marker-btn-hovered"))
         markerView.onTap = { [weak self] in self?.onToolTap?(.draw) }
         addSubview(markerView)
 
