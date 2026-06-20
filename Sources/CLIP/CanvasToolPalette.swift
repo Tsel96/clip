@@ -227,33 +227,56 @@ private func layoutCandyShadows(_ layers: [CALayer], capsule: CGRect,
 /// mouse-up, making the prop a reliable tool button.
 private final class PropButton: NSView {
     var onTap: (() -> Void)?
-    private let imageView = NSImageView()
+    private let imageView = NSImageView()        // rest / base art
+    private let hoverImageView = NSImageView()   // hover art, crossfaded over base
     private var isActive  = false
     private var isHovered = false
     private var isPressed = false
+    /// When true the prop has distinct rest/hover ARTWORK that crossfades
+    /// (the sticky button) — and it has NO active state and no hover-grow; the
+    /// art itself carries the state. When false it's the scale-based prop (Marker).
+    private var usesStateImages = false
 
     init(image: NSImage?) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false        // art overflows; never clip the pop
         imageView.image = image
-        imageView.imageScaling = .scaleAxesIndependently
-        addSubview(imageView)
+        for iv in [imageView, hoverImageView] {
+            iv.imageScaling = .scaleAxesIndependently
+            iv.wantsLayer = true
+            addSubview(iv)
+        }
+        hoverImageView.alphaValue = 0       // hidden until hover
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func setImage(_ image: NSImage?) { imageView.image = image }
 
-    /// Reflects whether this prop's tool (Draw / Sticky) is the active mode —
-    /// the 3D art pops up a touch, mirroring the Figma selected variant.
+    /// Sticky button: crossfade between two distinct artworks on hover (Figma
+    /// sticky-btn-rest / -hover). No active state, no scale-grow — just a smooth
+    /// fade between the rest and hover renders.
+    func setStateImages(rest: NSImage?, hover: NSImage?) {
+        usesStateImages = true
+        imageView.image = rest
+        hoverImageView.image = hover
+        hoverImageView.alphaValue = 0
+    }
+
+    /// Reflects whether this prop's tool (Draw) is the active mode — the 3D art
+    /// pops up a touch. No-op for crossfade props (sticky has no active state).
     func setActive(_ active: Bool) {
-        guard active != isActive else { return }
+        guard !usesStateImages, active != isActive else { return }
         isActive = active
         refreshScale()
     }
 
     override var isFlipped: Bool { true }
-    override func layout() { super.layout(); imageView.frame = bounds }
+    override func layout() {
+        super.layout()
+        imageView.frame = bounds
+        hoverImageView.frame = bounds
+    }
 
     // MARK: Hover tracking
     override func updateTrackingAreas() {
@@ -264,24 +287,43 @@ private final class PropButton: NSView {
             options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
             owner: self))
     }
-    override func mouseEntered(with event: NSEvent) { isHovered = true; refreshScale() }
-    override func mouseExited(with event: NSEvent)  { isHovered = false; isPressed = false; refreshScale() }
+    override func mouseEntered(with event: NSEvent) { isHovered = true; refresh() }
+    override func mouseExited(with event: NSEvent)  { isHovered = false; isPressed = false; refresh() }
 
     /// Claim every in-bounds click so the image subview never swallows it.
     override func hitTest(_ point: NSPoint) -> NSView? {
         super.hitTest(point) != nil ? self : nil
     }
-    override func mouseDown(with event: NSEvent) { isPressed = true; refreshScale() }
+    override func mouseDown(with event: NSEvent) { isPressed = true; refresh() }
     override func mouseUp(with event: NSEvent) {
         let inside = bounds.contains(convert(event.locationInWindow, from: nil))
         isPressed = false
-        refreshScale()
+        refresh()
         if inside { onTap?() }
+    }
+
+    private func refresh() {
+        if usesStateImages {
+            crossfadeHover(isHovered)                              // rest ↔ hover artwork
+            CLIPSpring.scale(self, to: isPressed ? 0.94 : 1.0, key: "xform")  // subtle press only
+        } else {
+            refreshScale()
+        }
+    }
+
+    /// Smooth rest↔hover artwork crossfade (sticky button).
+    private func crossfadeHover(_ on: Bool) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CLIPSpring.easeOutSoft
+            ctx.allowsImplicitAnimation = true
+            hoverImageView.animator().alphaValue = on ? 1 : 0
+        }
     }
 
     /// One transform = press / active / hover composed, sprung through the
     /// unified `CLIPSpring` with a single coalescing key so re-triggers retarget
-    /// instead of stacking.
+    /// instead of stacking. (Marker prop.)
     private func refreshScale() {
         let s: CGFloat = isPressed ? 0.94 : (isActive ? 1.08 : (isHovered ? 1.05 : 1.0))
         CLIPSpring.scale(self, to: s, key: "xform")
@@ -398,7 +440,11 @@ private final class MainPillView: NSView {
         markerView.onTap = { [weak self] in self?.onToolTap?(.draw) }
         addSubview(markerView)
 
-        stickersView.setImage(NSImage(named: "Stickers") ?? loadBundleImage(named: "Stickers"))
+        // Sticky button crossfades between two artworks on hover (Figma
+        // sticky-btn-rest / -hover); no active state (per spec).
+        stickersView.setStateImages(
+            rest:  loadBundleImage(named: "sticky-btn-rest"),
+            hover: loadBundleImage(named: "sticky-btn-hover"))
         stickersView.onTap = { [weak self] in self?.onToolTap?(.stickyNote) }
         addSubview(stickersView)
     }
