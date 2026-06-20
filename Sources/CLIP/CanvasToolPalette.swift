@@ -223,10 +223,14 @@ private func layoutCandyShadows(_ layers: [CALayer], capsule: CGRect,
 private final class PropButton: NSView {
     var onTap: (() -> Void)?
     private let imageView = NSImageView()
+    private var isActive  = false
+    private var isHovered = false
+    private var isPressed = false
 
     init(image: NSImage?) {
         super.init(frame: .zero)
         wantsLayer = true
+        layer?.masksToBounds = false        // art overflows; never clip the pop
         imageView.image = image
         imageView.imageScaling = .scaleAxesIndependently
         addSubview(imageView)
@@ -235,17 +239,47 @@ private final class PropButton: NSView {
 
     func setImage(_ image: NSImage?) { imageView.image = image }
 
+    /// Reflects whether this prop's tool (Draw / Sticky) is the active mode —
+    /// the 3D art pops up a touch, mirroring the Figma selected variant.
+    func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        refreshScale()
+    }
+
     override var isFlipped: Bool { true }
     override func layout() { super.layout(); imageView.frame = bounds }
+
+    // MARK: Hover tracking
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self))
+    }
+    override func mouseEntered(with event: NSEvent) { isHovered = true; refreshScale() }
+    override func mouseExited(with event: NSEvent)  { isHovered = false; isPressed = false; refreshScale() }
 
     /// Claim every in-bounds click so the image subview never swallows it.
     override func hitTest(_ point: NSPoint) -> NSView? {
         super.hitTest(point) != nil ? self : nil
     }
-    override func mouseDown(with event: NSEvent) { /* accept; fire on mouse-up */ }
+    override func mouseDown(with event: NSEvent) { isPressed = true; refreshScale() }
     override func mouseUp(with event: NSEvent) {
-        let pt = convert(event.locationInWindow, from: nil)
-        if bounds.contains(pt) { onTap?() }
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        refreshScale()
+        if inside { onTap?() }
+    }
+
+    /// One transform = press / active / hover composed, sprung through the
+    /// unified `CLIPSpring` with a single coalescing key so re-triggers retarget
+    /// instead of stacking.
+    private func refreshScale() {
+        let s: CGFloat = isPressed ? 0.94 : (isActive ? 1.08 : (isHovered ? 1.05 : 1.0))
+        CLIPSpring.scale(self, to: s, key: "xform")
     }
 }
 
@@ -344,7 +378,7 @@ private final class MainPillView: NSView {
         // --- Tool buttons ---
         for (i, icon) in Self.buttonIcons.enumerated() {
             let btn = ToolPaletteButton(iconName: icon)
-            btn.layer?.opacity = Float(Self.buttonOpacities[i])
+            btn.iconRestOpacity = Self.buttonOpacities[i]
             let mode = Self.buttonModes[i]
             btn.onTap = { [weak self] in
                 if let mode { self?.onToolTap?(mode) }   // enter a tool mode
@@ -449,11 +483,12 @@ private final class MainPillView: NSView {
 
     func configure(active: ToolMode) {
         for (i, btn) in buttonViews.enumerated() {
-            let isActive = (Self.buttonModes[i] == active)
-            btn.setActive(isActive, animated: true)
-            // Inactive buttons at designed opacity; active one is fully opaque
-            btn.layer?.opacity = isActive ? 1.0 : Float(Self.buttonOpacities[i])
+            btn.setActive(Self.buttonModes[i] == active, animated: true)
         }
+        // The Marker / Stickers props are the Draw / Sticky tools — pop them up
+        // when their mode is active (Figma selected variant lifts the 3D art).
+        markerView.setActive(active == .draw)
+        stickersView.setActive(active == .stickyNote)
     }
 }
 
@@ -468,6 +503,8 @@ private final class AddPillView: NSView {
     private let outerLayer = CALayer()
     private let innerLayer = CAGradientLayer()
     private let iconView   = NSImageView()
+    private var isHovered  = false
+    private var isPressed  = false
 
     // MARK: - Init
 
@@ -483,6 +520,7 @@ private final class AddPillView: NSView {
 
     private func commonInit() {
         wantsLayer = true
+        layer?.masksToBounds = false      // never clip the hover-grow
 
         outerLayer.backgroundColor = NSColor.fromHex(0x3DA726).cgColor
         outerLayer.masksToBounds   = false
@@ -509,10 +547,6 @@ private final class AddPillView: NSView {
         iconView.alphaValue    = 0.7
         iconView.wantsLayer    = true
         addSubview(iconView)
-
-        // Click tracking
-        let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick))
-        addGestureRecognizer(click)
     }
 
     // MARK: - Layout
@@ -549,25 +583,62 @@ private final class AddPillView: NSView {
         )
     }
 
-    // MARK: - Interaction
+    // MARK: - Interaction (unified hover-grow / press-shrink)
 
-    @objc private func handleClick(_ gr: NSClickGestureRecognizer) {
-        guard gr.state == .ended else { return }
-        onTap?()
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self))
+    }
+    override func mouseEntered(with event: NSEvent) { isHovered = true; refreshScale() }
+    override func mouseExited(with event: NSEvent)  { isHovered = false; isPressed = false; refreshScale() }
+
+    /// Claim every in-bounds click so the icon subview never swallows it.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) != nil ? self : nil
+    }
+    override func mouseDown(with event: NSEvent) { isPressed = true; refreshScale() }
+    override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        refreshScale()
+        if inside { onTap?() }
+    }
+
+    private func refreshScale() {
+        let s: CGFloat = isPressed ? 0.94 : (isHovered ? 1.04 : 1.0)
+        CLIPSpring.scale(self, to: s, key: "xform")
     }
 }
 
 // MARK: - ToolPaletteButton
 
-/// A single 52 × 52 tool button.  Active state = green (#3DA726) filled
-/// capsule behind the icon; inactive = no background, icon at designed opacity.
+/// A single 52 × 52 tool button. Three states (Figma node 72:36300):
+///   • `.default`  — no background, icon black at its designed rest opacity.
+///   • `.hovered`  — translucent white (40%) circle behind the icon.
+///   • `.selected` — green (#3DA726) circle, icon brand-yellow (#FEF33C) + glow.
+/// Hover/press/selection are all driven by the unified `CLIPSpring` motion
+/// system (CASpringAnimation, `.control` preset) — no ad-hoc curves.
 final class ToolPaletteButton: NSView {
 
     var onTap: (() -> Void)?
 
-    private let bgLayer   = CALayer()
+    /// Designed rest opacity for the icon when this tool is NOT selected (Figma:
+    /// leading tools 1.0, trailing tools 0.70). It applies to the icon ONLY —
+    /// the hover/selected circle always renders at full strength, matching the
+    /// Figma layer model where the 0.70 lives on `icon-circle`, not the button.
+    var iconRestOpacity: CGFloat = 1.0 {
+        didSet { if !isActive { iconView.alphaValue = iconRestOpacity } }
+    }
+
+    private let bgLayer   = CALayer()    // hover (white 40%) / selected (green) circle
     private let iconView  = NSImageView()
     private var isActive  = false
+    private var isHovered = false
+    private var isPressed = false
     private let iconName: String
 
     // MARK: - Init
@@ -582,22 +653,20 @@ final class ToolPaletteButton: NSView {
 
     private func commonInit() {
         wantsLayer = true
+        layer?.masksToBounds = false      // let the selected-icon glow bleed past bounds
 
-        // Green active-state background (hidden until active)
-        bgLayer.backgroundColor = NSColor.fromHex(0x3DA726).cgColor
-        bgLayer.cornerCurve     = .continuous
-        bgLayer.opacity         = 0
+        // Background circle — hidden at rest; springs in on hover / selection.
+        bgLayer.cornerCurve = .continuous
+        bgLayer.opacity     = 0
         layer?.addSublayer(bgLayer)
 
-        // Icon
+        // Icon (template image; tinted black at rest, brand-yellow when selected).
         iconView.image            = Self.loadIcon(iconName)
         iconView.imageScaling     = .scaleProportionallyUpOrDown
-        iconView.contentTintColor = nil  // SVG icons carry their own colour
+        iconView.contentTintColor = .black
         iconView.wantsLayer       = true
+        iconView.layer?.masksToBounds = false
         addSubview(iconView)
-
-        let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick))
-        addGestureRecognizer(click)
     }
 
     // MARK: - Layout
@@ -621,31 +690,86 @@ final class ToolPaletteButton: NSView {
         iconView.frame = NSRect(x: pad, y: pad, width: iconSize, height: iconSize)
     }
 
-    // MARK: - Active state
+    // MARK: - Hover tracking
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        refreshBackground()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        if isPressed { isPressed = false; CLIPSpring.scale(self, to: 1.0, key: "press") }
+        refreshBackground()
+    }
+
+    // MARK: - Press (mouse-tracked so the press-shrink can spring)
+
+    /// Claim every in-bounds click so the icon subview never swallows it.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) != nil ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isPressed = true
+        CLIPSpring.scale(self, to: 0.94, key: "press")     // unified press-shrink
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        CLIPSpring.scale(self, to: 1.0, key: "press")
+        if inside { onTap?() }
+    }
+
+    // MARK: - Selected state
 
     func setActive(_ active: Bool, animated: Bool) {
         guard active != isActive else { return }
         isActive = active
-        if animated {
-            let anim = CABasicAnimation(keyPath: "opacity")
-            anim.fromValue = bgLayer.presentation()?.opacity ?? (active ? 0 : 1)
-            anim.toValue   = active ? 1.0 : 0.0
-            anim.duration  = 0.18
-            anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            bgLayer.add(anim, forKey: "opacityAnim")
-        }
-        bgLayer.opacity = active ? 1.0 : 0.0
-
-        // Active icon uses yellow so it pops against the green background;
-        // inactive icon uses black.
-        iconView.contentTintColor = active ? NSColor.fromHex(0xFEF33C) : NSColor.black
+        iconView.alphaValue       = active ? 1.0 : iconRestOpacity
+        iconView.contentTintColor = active ? NSColor.fromHex(0xFEF33C) : .black
+        applyGlow(active)
+        refreshBackground(animated: animated)
     }
 
-    // MARK: - Interaction
+    // MARK: - Background circle (selected beats hover beats hidden)
 
-    @objc private func handleClick(_ gr: NSClickGestureRecognizer) {
-        guard gr.state == .ended else { return }
-        onTap?()
+    private func refreshBackground(animated: Bool = true) {
+        let opacity: CGFloat
+        if isActive {
+            bgLayer.backgroundColor = NSColor.fromHex(0x3DA726).cgColor
+            opacity = 1
+        } else if isHovered {
+            bgLayer.backgroundColor = NSColor.white.withAlphaComponent(0.40).cgColor
+            opacity = 1
+        } else {
+            opacity = 0                 // keep the last colour so the fade-out is visible
+        }
+        if animated {
+            CLIPSpring.animate(bgLayer, "opacity", to: opacity, preset: .control, key: "bg")
+        } else {
+            bgLayer.removeAnimation(forKey: "bg")
+            bgLayer.opacity = Float(opacity)
+        }
+    }
+
+    /// Selected icon gets a soft white halo (Figma: white@70%, blur ~10pt).
+    private func applyGlow(_ on: Bool) {
+        guard let l = iconView.layer else { return }
+        l.shadowColor   = NSColor.white.cgColor
+        l.shadowOffset  = .zero
+        l.shadowRadius  = on ? 5 : 0
+        l.shadowOpacity = on ? 0.7 : 0
     }
 
     // MARK: - Icon mapping
