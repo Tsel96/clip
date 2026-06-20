@@ -703,6 +703,18 @@ struct CanvasView: View {
                     .padding(.bottom, 0)
             }
         }
+        // Inline "Insert link here" field (Figma 72:36784) — floats above the
+        // toolbar, centered on the round "+" (240 pt right of the toolbar's
+        // center: 542/2 − 31). Its own overlay so the palette's fixed frame
+        // can't clip it.
+        .overlay(alignment: .bottom) {
+            if state.canvasMode == .canvas, state.isLinkInputPresented {
+                LinkInputBar()
+                    .offset(x: 240, y: -92)
+                    .transition(.scale(scale: 0.85, anchor: .bottomTrailing)
+                        .combined(with: .opacity))
+            }
+        }
         // Acute tool-mode visibility — while a non-Select tool is active,
         // a chip at the top of the canvas says WHY clicks now draw/place/
         // connect, and offers the way back (click or V).
