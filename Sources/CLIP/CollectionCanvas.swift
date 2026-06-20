@@ -570,6 +570,7 @@ struct CollectionCanvas: NSViewRepresentable {
             let folderCenter = container.convert(
                 CGPoint(x: folderCard.bounds.midX, y: folderCard.bounds.midY), from: folderCard)
             var flew = false
+            var flyCount = 0
             for item in cv.visibleItems() {
                 guard let card = (item as? HostingCollectionItem)?.cardView,
                       let id = card.nodeID, filed.contains(id),
@@ -592,24 +593,32 @@ struct CollectionCanvas: NSViewRepresentable {
 
                 let c = CGPoint(x: ghost.bounds.midX, y: ghost.bounds.midY)
                 let dx = folderCenter.x - frame.midX, dy = folderCenter.y - frame.midY
+                // Compose: translate to folder center · scale ~0.12 · random ±8° rotate
+                let angle = CGFloat.random(in: -8...8) * .pi / 180
                 let target = CATransform3DConcat(
-                    CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
-                                        CATransform3DMakeScale(0.12, 0.12, 1)),
+                    CATransform3DConcat(
+                        CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
+                                            CATransform3DMakeScale(0.12, 0.12, 1)),
+                        CATransform3DMakeRotation(angle, 0, 0, 1)),
                     CATransform3DMakeTranslation(c.x + dx, c.y + dy, 0))
+                // Spatial: transform spring stiffness=400 (staggered +400 per card, cap 800),
+                // opacity spring stiffness=40/mass=0.1 so it fades faster than it moves.
+                let transformStiffness = min(CGFloat(flyCount + 1) * 400 + 400, 800)
                 CATransaction.begin()
                 CATransaction.setCompletionBlock { ghost.removeFromSuperlayer() }
                 let s = CASpringAnimation(keyPath: "transform")
                 s.fromValue = CATransform3DIdentity; s.toValue = target
-                s.stiffness = CLIPSpring.Preset.settle.stiffness
-                s.damping = CLIPSpring.Preset.settle.caDamping
+                s.stiffness = transformStiffness; s.damping = 0; s.mass = 1
                 s.duration = s.settlingDuration
-                let o = CABasicAnimation(keyPath: "opacity")
-                o.fromValue = 1; o.toValue = 0; o.duration = 0.38
-                o.timingFunction = CLIPSpring.easeOutSoft
+                let o = CASpringAnimation(keyPath: "opacity")
+                o.fromValue = 1; o.toValue = 0
+                o.stiffness = 40; o.damping = 0; o.mass = 0.1
+                o.duration = o.settlingDuration
                 ghost.transform = target; ghost.opacity = 0
                 ghost.add(s, forKey: "dropFly"); ghost.add(o, forKey: "dropFade")
                 CATransaction.commit()
                 flew = true
+                flyCount += 1
             }
             if flew { MainActor.assumeIsolated { Haptics.generic() } }
         }
@@ -822,11 +831,10 @@ final class CardItemView: NSView {
     }
 
     private var lastSelectedForScale = false
-    /// Subtle "pop" on selection for every card (Spatial). Scales the content
-    /// subviews (they fill the card) around the card centre — NOT the item's own
-    /// layer, which carries the live-drag transform, so the two compose cleanly.
-    /// No-op when selection state hasn't changed — avoids per-call layer writes
-    /// during zoom ticks and resize ticks where selection is stable.
+    /// Subtle "pop" on selection for every card (Spatial). Scales content subviews
+    /// around the card centre — NOT the item's own layer, which carries the live-drag
+    /// transform, so the two compose cleanly. Spring stiffness=100/damping=6.4 matches
+    /// Spatial's underdamped selection settle (damping ratio ≈ 0.32, slight bounce).
     private func applySelectionScale(_ selected: Bool) {
         guard bounds.width > 1, bounds.height > 1 else { return }
         guard selected != lastSelectedForScale else { return }
@@ -839,26 +847,35 @@ final class CardItemView: NSView {
             CATransform3DMakeTranslation(cx, cy, 0))
         for sv in subviews {
             guard let layer = sv.layer else { continue }
-            let a = CABasicAnimation(keyPath: "transform")
+            let a = CASpringAnimation(keyPath: "transform")
             a.fromValue = layer.presentation()?.transform ?? layer.transform
             a.toValue = t
-            a.duration = 0.18
-            a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            a.stiffness = 100; a.damping = 6.4; a.mass = 1
+            a.duration = a.settlingDuration
             layer.add(a, forKey: "selectScale")
             layer.transform = t
         }
     }
 
-    /// Animate a chrome layer's opacity toward `target` (Spatial-style selection
-    /// fade). No-op when already there, so resize/zoom ticks don't re-trigger it.
+    /// Animate a chrome layer's opacity toward `target`. Uses a spring for the
+    /// selection ring (matches Spatial's underdamped fade-in) and a basic animation
+    /// for handles (no bounce needed). No-op when already at target.
     private func fade(_ layer: CALayer, to target: Float) {
         guard layer.opacity != target else { return }
-        let anim = CABasicAnimation(keyPath: "opacity")
-        anim.fromValue = layer.presentation()?.opacity ?? layer.opacity
-        anim.toValue = target
-        anim.duration = 0.14
-        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        layer.add(anim, forKey: "fade")
+        if layer === selectionLayer {
+            let a = CASpringAnimation(keyPath: "opacity")
+            a.fromValue = layer.presentation()?.opacity ?? layer.opacity
+            a.toValue = target
+            a.stiffness = 100; a.damping = 6.4; a.mass = 1
+            a.duration = a.settlingDuration
+            layer.add(a, forKey: "fade")
+        } else {
+            let a = CABasicAnimation(keyPath: "opacity")
+            a.fromValue = layer.presentation()?.opacity ?? layer.opacity
+            a.toValue = target; a.duration = 0.14
+            a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(a, forKey: "fade")
+        }
         layer.opacity = target
     }
 

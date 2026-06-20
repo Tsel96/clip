@@ -305,39 +305,69 @@ enum SectionColor: String, Codable, CaseIterable, Hashable {
     }
 }
 
-/// FigJam-style sticky-note palette.
+/// Spatial-style sticky-note palette: 12 muted pastels (5 existing + 7 new).
+/// Raw values are stable strings — adding cases is backward-compatible.
 enum StickyColor: String, Codable, CaseIterable, Hashable {
+    // Original 5 — raw values preserved for persisted data.
     case yellow, pink, mint, sky, lavender
+    // Richer (deeper bg) variants of the 5 hues.
+    case yellowRich, pinkRich, greenRich, blueRich, lavenderRich
+    // Neutral grays (same bg, lighter vs darker text).
+    case neutral, neutralHiCon
 
     var swiftUIColor: Color {
         switch self {
-        case .yellow:   return Color(red: 1.00, green: 0.91, blue: 0.55)
-        case .pink:     return Color(red: 1.00, green: 0.78, blue: 0.83)
-        case .mint:     return Color(red: 0.74, green: 0.95, blue: 0.83)
-        case .sky:      return Color(red: 0.76, green: 0.90, blue: 1.00)
-        case .lavender: return Color(red: 0.85, green: 0.80, blue: 1.00)
+        // Light variants — Spatial's exact muted pastels.
+        case .yellow:       return Color(red: 0.980, green: 0.973, blue: 0.902)  // #FAF8E6
+        case .pink:         return Color(red: 0.980, green: 0.902, blue: 0.945)  // #FAE6F1
+        case .mint:         return Color(red: 0.902, green: 0.980, blue: 0.922)  // #E6FAEB
+        case .sky:          return Color(red: 0.902, green: 0.961, blue: 0.980)  // #E6F5FA
+        case .lavender:     return Color(red: 0.910, green: 0.902, blue: 0.980)  // #E8E6FA
+        // Rich variants.
+        case .yellowRich:   return Color(red: 0.980, green: 0.965, blue: 0.824)  // #FAF6D2
+        case .pinkRich:     return Color(red: 0.980, green: 0.824, blue: 0.906)  // #FAD2E7
+        case .greenRich:    return Color(red: 0.824, green: 0.980, blue: 0.859)  // #D2FADB
+        case .blueRich:     return Color(red: 0.824, green: 0.937, blue: 0.980)  // #D2EFFA
+        case .lavenderRich: return Color(red: 0.839, green: 0.824, blue: 0.980)  // #D6D2FA
+        // Neutrals.
+        case .neutral:      return Color(red: 0.843, green: 0.851, blue: 0.859)  // #D7D9DB
+        case .neutralHiCon: return Color(red: 0.843, green: 0.851, blue: 0.859)  // #D7D9DB
         }
     }
 
-    /// Slightly darker tint for the "shadow lip" along the bottom edge
-    /// — gives the sticky its FigJam-style block feel.
+    /// Slightly darker tint for the legacy SwiftUI bottom "shadow lip" in
+    /// `StickyNodeView` (the native `CardStickyContentView` has no lip).
     var shadowLip: Color {
         switch self {
-        case .yellow:   return Color(red: 0.93, green: 0.81, blue: 0.41)
-        case .pink:     return Color(red: 0.93, green: 0.65, blue: 0.72)
-        case .mint:     return Color(red: 0.62, green: 0.85, blue: 0.72)
-        case .sky:      return Color(red: 0.60, green: 0.80, blue: 0.95)
-        case .lavender: return Color(red: 0.72, green: 0.67, blue: 0.92)
+        case .yellow:       return Color(red: 0.93, green: 0.81, blue: 0.41)
+        case .pink:         return Color(red: 0.93, green: 0.65, blue: 0.72)
+        case .mint:         return Color(red: 0.62, green: 0.85, blue: 0.72)
+        case .sky:          return Color(red: 0.60, green: 0.80, blue: 0.95)
+        case .lavender:     return Color(red: 0.72, green: 0.67, blue: 0.92)
+        case .yellowRich:   return Color(red: 0.90, green: 0.87, blue: 0.68)
+        case .pinkRich:     return Color(red: 0.90, green: 0.65, blue: 0.79)
+        case .greenRich:    return Color(red: 0.65, green: 0.90, blue: 0.72)
+        case .blueRich:     return Color(red: 0.65, green: 0.84, blue: 0.90)
+        case .lavenderRich: return Color(red: 0.70, green: 0.65, blue: 0.90)
+        case .neutral:      return Color(red: 0.72, green: 0.73, blue: 0.74)
+        case .neutralHiCon: return Color(red: 0.72, green: 0.73, blue: 0.74)
         }
     }
 
     var label: String {
         switch self {
-        case .yellow:   return "Yellow"
-        case .pink:     return "Pink"
-        case .mint:     return "Mint"
-        case .sky:      return "Sky"
-        case .lavender: return "Lavender"
+        case .yellow:       return "Yellow"
+        case .pink:         return "Pink"
+        case .mint:         return "Green"
+        case .sky:          return "Blue"
+        case .lavender:     return "Lavender"
+        case .yellowRich:   return "Yellow+"
+        case .pinkRich:     return "Pink+"
+        case .greenRich:    return "Green+"
+        case .blueRich:     return "Blue+"
+        case .lavenderRich: return "Lavender+"
+        case .neutral:      return "Neutral"
+        case .neutralHiCon: return "Neutral Dark"
         }
     }
 }

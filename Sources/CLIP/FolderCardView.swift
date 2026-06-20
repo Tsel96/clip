@@ -124,26 +124,22 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         currentArtHeight = 1044
     }
 
-    /// Selection feedback: ONLY a subtle, animated scale (Spatial's "selected
-    /// folder is a bit scaled") — no ring, no art swap. Called from
-    /// CardItemView.updateChrome.
+    /// Selection feedback: a subtle spring-scale (Spatial stiffness=100/damping=6.4,
+    /// slight underdamped bounce). No ring, no art swap — card scale only.
     func setSelected(_ selected: Bool) {
         guard selected != isSelected else { return }
         isSelected = selected
-        // Scale from the CENTRE. A layer-backed NSView anchors its backing layer at
-        // the corner (anchorPoint 0,0), so `CATransform3DMakeScale` alone grows from
-        // a corner — build an explicit centre-pivot transform instead.
         let cx = bounds.width / 2, cy = bounds.height / 2
         let factor: CGFloat = selected ? 1.04 : 1.0
         let target = CATransform3DConcat(
             CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
                                 CATransform3DMakeScale(factor, factor, 1)),
             CATransform3DMakeTranslation(cx, cy, 0))
-        let anim = CABasicAnimation(keyPath: "transform")
+        let anim = CASpringAnimation(keyPath: "transform")
         anim.fromValue = layer?.presentation()?.transform ?? layer?.transform
         anim.toValue = target
-        anim.duration = 0.18
-        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        anim.stiffness = 100; anim.damping = 6.4; anim.mass = 1
+        anim.duration = anim.settlingDuration
         layer?.transform = target
         layer?.add(anim, forKey: "selectScale")
     }

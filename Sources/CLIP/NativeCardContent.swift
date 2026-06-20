@@ -80,22 +80,33 @@ extension SectionColor {
 }
 
 extension StickyColor {
+    /// Background fill — Spatial's exact muted sRGB pastels.
     var nsColor: NSColor {
         switch self {
-        case .yellow:   return NSColor(srgbRed: 1.00, green: 0.91, blue: 0.55, alpha: 1)
-        case .pink:     return NSColor(srgbRed: 1.00, green: 0.78, blue: 0.83, alpha: 1)
-        case .mint:     return NSColor(srgbRed: 0.74, green: 0.95, blue: 0.83, alpha: 1)
-        case .sky:      return NSColor(srgbRed: 0.76, green: 0.90, blue: 1.00, alpha: 1)
-        case .lavender: return NSColor(srgbRed: 0.85, green: 0.80, blue: 1.00, alpha: 1)
+        case .yellow:       return NSColor(srgbRed: 0.980, green: 0.973, blue: 0.902, alpha: 1)
+        case .pink:         return NSColor(srgbRed: 0.980, green: 0.902, blue: 0.945, alpha: 1)
+        case .mint:         return NSColor(srgbRed: 0.902, green: 0.980, blue: 0.922, alpha: 1)
+        case .sky:          return NSColor(srgbRed: 0.902, green: 0.961, blue: 0.980, alpha: 1)
+        case .lavender:     return NSColor(srgbRed: 0.910, green: 0.902, blue: 0.980, alpha: 1)
+        case .yellowRich:   return NSColor(srgbRed: 0.980, green: 0.965, blue: 0.824, alpha: 1)
+        case .pinkRich:     return NSColor(srgbRed: 0.980, green: 0.824, blue: 0.906, alpha: 1)
+        case .greenRich:    return NSColor(srgbRed: 0.824, green: 0.980, blue: 0.859, alpha: 1)
+        case .blueRich:     return NSColor(srgbRed: 0.824, green: 0.937, blue: 0.980, alpha: 1)
+        case .lavenderRich: return NSColor(srgbRed: 0.839, green: 0.824, blue: 0.980, alpha: 1)
+        case .neutral:      return NSColor(srgbRed: 0.843, green: 0.851, blue: 0.859, alpha: 1)
+        case .neutralHiCon: return NSColor(srgbRed: 0.843, green: 0.851, blue: 0.859, alpha: 1)
         }
     }
-    var shadowLipNS: NSColor {
+    /// Per-swatch dark text color — hue-matched so it reads well on the pastel bg.
+    var nsTextColor: NSColor {
         switch self {
-        case .yellow:   return NSColor(srgbRed: 0.93, green: 0.81, blue: 0.41, alpha: 1)
-        case .pink:     return NSColor(srgbRed: 0.93, green: 0.65, blue: 0.72, alpha: 1)
-        case .mint:     return NSColor(srgbRed: 0.62, green: 0.85, blue: 0.72, alpha: 1)
-        case .sky:      return NSColor(srgbRed: 0.60, green: 0.80, blue: 0.95, alpha: 1)
-        case .lavender: return NSColor(srgbRed: 0.72, green: 0.67, blue: 0.92, alpha: 1)
+        case .yellow, .yellowRich:           return NSColor(srgbRed: 0.322, green: 0.286, blue: 0.000, alpha: 1) // #524900
+        case .pink, .pinkRich:               return NSColor(srgbRed: 0.322, green: 0.000, blue: 0.173, alpha: 1) // #52002C
+        case .mint, .greenRich:              return NSColor(srgbRed: 0.000, green: 0.322, blue: 0.075, alpha: 1) // #005213
+        case .sky, .blueRich:                return NSColor(srgbRed: 0.000, green: 0.235, blue: 0.322, alpha: 1) // #003C52
+        case .lavender, .lavenderRich:       return NSColor(srgbRed: 0.031, green: 0.000, blue: 0.322, alpha: 1) // #080052
+        case .neutral:                       return NSColor(srgbRed: 0.322, green: 0.286, blue: 0.000, alpha: 1) // #524900
+        case .neutralHiCon:                  return NSColor(srgbRed: 0.012, green: 0.063, blue: 0.102, alpha: 1) // #03101A
         }
     }
 }
@@ -178,22 +189,19 @@ final class CardSectionContentView: NSView, NativeCardUpdatable {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// Native FigJam-style sticky: a pastel rounded block with a darker bottom
-/// "shadow lip" band and wrapped text. Mirrors `StickyNodeView` (the float
-/// shadow is owned by `CardItemView`, so it's omitted here; inline editing /
-/// hover colour-picker are canvas-dead). Render-only.
+/// Native Spatial-style sticky: a muted-pastel rounded block, no bottom lip,
+/// with proportional font + insets that scale with the card width. Float shadow
+/// lives on `CardItemView`; inline edit / colour picker are canvas-dead.
 final class CardStickyContentView: NSView, NativeCardUpdatable {
     private var content: String
     private var color: StickyColor
     private let textField = NSTextField(wrappingLabelWithString: "")
     private let radius: CGFloat = 6
-    private let lipHeight: CGFloat = 6
 
     init(content: String, color: StickyColor) {
         self.content = content; self.color = color
         super.init(frame: .zero)
         wantsLayer = true
-        textField.font = roundedSystemFont(ofSize: 16, weight: .medium)
         textField.isEditable = false
         textField.isSelectable = false
         textField.drawsBackground = false
@@ -213,28 +221,30 @@ final class CardStickyContentView: NSView, NativeCardUpdatable {
 
     private func apply() {
         textField.stringValue = content
-        textField.textColor = NSColor.black.withAlphaComponent(0.85)
+        textField.textColor = color.nsTextColor
         needsDisplay = true
+        needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        // Matches the SwiftUI insets: h14, top16, bottom = lip + a little.
-        let x: CGFloat = 14, top: CGFloat = 16, bottom = lipHeight + 6
-        textField.frame = NSRect(x: x, y: bottom,
-                                 width: max(0, bounds.width - x * 2),
-                                 height: max(0, bounds.height - top - bottom))
+        let w = bounds.width, h = bounds.height
+        guard w > 1, h > 1 else { return }
+        // Proportional sizing — at 200pt width: font 12, h-inset 12, v-inset 24.
+        // Grows linearly with width so large stickies stay readable.
+        let fontSize = max(12, 12 + (w - 200) * 0.06).rounded()
+        let hPad = max(12, 12 + (w - 200) * 0.06)
+        let vPad = max(24, 24 + (w - 200) * 0.06)
+        textField.font = roundedSystemFont(ofSize: fontSize, weight: .medium)
+        textField.frame = NSRect(x: hPad, y: vPad,
+                                 width: max(0, w - hPad * 2),
+                                 height: max(0, h - vPad * 2))
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        // Plain pastel fill — no bottom lip (Spatial has none).
         let body = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
         color.nsColor.setFill(); body.fill()
-        // Darker bottom "block" lip, clipped to the body so its bottom corners round.
-        NSGraphicsContext.saveGraphicsState()
-        body.addClip()
-        color.shadowLipNS.setFill()
-        NSBezierPath(rect: NSRect(x: 0, y: 0, width: bounds.width, height: lipHeight)).fill()
-        NSGraphicsContext.restoreGraphicsState()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
