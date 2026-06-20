@@ -16,9 +16,12 @@ func makeNativeCardContent(for node: CanvasNode) -> NSView? {
     case .image(let data, _):
         return CardImageContentView(data: data)
     case .video(let fileURL, _):
-        return CardVideoContentView(fileURL: fileURL,
-                                    trimStart: node.trimStart, trimEnd: node.trimEnd,
-                                    nodeID: node.id)
+        let make = { CardVideoContentView(fileURL: fileURL,
+                                          trimStart: node.trimStart, trimEnd: node.trimEnd,
+                                          nodeID: node.id) }
+        return FeatureFlags.useWebViewCache
+            ? NativeVideoCache.shared.view(for: node.id, make: make)
+            : make()
     case .drawing(let stroke):
         return CardDrawingContentView(stroke: stroke)
     case .section(let title, let color):
@@ -426,29 +429,21 @@ final class CardVideoContentView: NSView {
             host.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        // Reclaim a player parked by this node's previous instance — it survives
-        // the select/move `reloadData` so the video doesn't reload + blink; else
-        // build a fresh looping player.
-        if FeatureFlags.useWebViewCache, let nodeID,
-           let reused = PlayerCache.shared.take(nodeID, url: fileURL, timeRange: timeRange) {
-            player = reused.player
-            looper = reused.looper
+        // A fresh looping player. The whole VIEW is reused across the select/move
+        // `reloadData` (NativeVideoCache, keyed by node id), so this init runs only
+        // once per node — the player persists, so the video never reloads or blinks.
+        let item = AVPlayerItem(url: fileURL)
+        let p = AVQueuePlayer()
+        if let range = timeRange {
+            looper = AVPlayerLooper(player: p, templateItem: item, timeRange: range)
+            p.seek(to: range.start, toleranceBefore: .zero, toleranceAfter: .zero)
         } else {
-            let item = AVPlayerItem(url: fileURL)
-            let p = AVQueuePlayer()
-            if let range = timeRange {
-                looper = AVPlayerLooper(player: p, templateItem: item, timeRange: range)
-                p.seek(to: range.start, toleranceBefore: .zero, toleranceAfter: .zero)
-            } else {
-                looper = AVPlayerLooper(player: p, templateItem: item)
-            }
-            p.isMuted = true
-            player = p
+            looper = AVPlayerLooper(player: p, templateItem: item)
         }
-        if let player {
-            host.attach(player: player)
-            player.play()
-        }
+        p.isMuted = true
+        player = p
+        host.attach(player: p)
+        p.play()
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
@@ -463,18 +458,61 @@ final class CardVideoContentView: NSView {
     // CardItemView owns select/move/resize.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// Hand our player to the cache so the same node's NEXT instance (built right
-    /// after the select/move `reloadData`) reclaims it instead of reloading. Nils
-    /// our refs so `deinit` won't re-park a player the new instance now owns.
-    func parkForReuse() {
-        guard FeatureFlags.useWebViewCache, let nodeID, let player else { return }
-        PlayerCache.shared.park(nodeID, player: player, looper: looper,
-                                url: fileURL, timeRange: timeRange)
-        self.player = nil
-        self.looper = nil
+    /// Node id this view is cached under (for NativeVideoCache.park on detach).
+    var cacheNodeID: UUID? { nodeID }
+
+    /// Stop + release the player. Called by NativeVideoCache when its deferred
+    /// teardown fires — i.e. the node really went away, not just a reload.
+    func teardown() {
+        player?.pause()
+        player = nil
+        looper = nil
     }
 
     deinit { player?.pause() }
+}
+
+/// Caches the native file-video VIEW (and thus its live AVPlayer) by node id so it
+/// SURVIVES the select/move `reloadData` — re-parented to the new item instead of
+/// rebuilt, so the video never reloads or blinks. Unlike a player cache this is
+/// order-independent: the view stays in the cache across park↔reclaim, so a card
+/// that lands at a lower index on reload still finds it. Mirrors WebViewCache's
+/// ~1.2 s deferred teardown so off-screen videos still release.
+final class NativeVideoCache {
+    static let shared = NativeVideoCache()
+    private init() {}
+    private var views: [UUID: CardVideoContentView] = [:]
+    private var teardowns: [UUID: Timer] = [:]
+
+    /// Reclaim the node's existing video view (cancelling any pending teardown), or
+    /// build one. The view is NOT removed from the cache, so repeated reclaims in
+    /// any order all return the same instance.
+    func view(for id: UUID, make: () -> CardVideoContentView) -> CardVideoContentView {
+        teardowns[id]?.invalidate(); teardowns[id] = nil
+        if let v = views[id] { return v }
+        let v = make()
+        views[id] = v
+        return v
+    }
+
+    /// The view detached from its item — hold it briefly for reuse, then tear it
+    /// down if nothing reclaims it (the node scrolled off / was filtered out).
+    func park(_ id: UUID) {
+        guard views[id] != nil, teardowns[id] == nil else { return }
+        teardowns[id] = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.views[id]?.teardown()
+            self.views[id] = nil
+            self.teardowns[id] = nil
+        }
+    }
+
+    /// Force-evict on node deletion — tear down immediately.
+    func evict(_ id: UUID) {
+        teardowns[id]?.invalidate(); teardowns[id] = nil
+        views[id]?.teardown()
+        views[id] = nil
+    }
 }
 
 /// Shared card-chrome constants so native content + the item chrome agree.
