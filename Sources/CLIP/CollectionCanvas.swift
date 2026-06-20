@@ -469,12 +469,24 @@ struct CollectionCanvas: NSViewRepresentable {
                 cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = t
             }
             CATransaction.commit()
-            // Native connectors track the dragged cards live (no per-tick model
-            // write — the model commits on mouse-up; this feeds the offset directly).
-            if connectorController != nil {
-                var offs: [UUID: CGPoint] = [:]
-                for id in startPos.keys { offs[id] = CGPoint(x: dx, y: dy) }
-                refreshConnectors(offsets: offs)
+            // Native connectors: rebuild paths with the live visual positions.
+            // Use startPos (captured at drag-start) for dragged endpoints so
+            // config.nodes staleness can never cause a position mismatch.
+            if let cc = connectorController {
+                let minX = config.worldBounds.minX, minY = config.worldBounds.minY
+                var frames: [UUID: CGRect] = [:]
+                for n in config.nodes {
+                    if let sp = startPos[n.id] {
+                        frames[n.id] = CGRect(x: sp.x - minX + dx, y: sp.y - minY + dy,
+                                              width: max(1, n.width), height: max(1, n.height ?? 120))
+                    } else {
+                        frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
+                                              width: max(1, n.width), height: max(1, n.height ?? 120))
+                    }
+                }
+                cc.update(connectors: config.connectors, nodeFrames: frames,
+                          selected: config.selectedConnectorIDs,
+                          magnification: scroll?.magnification ?? 1)
             }
         }
 
@@ -813,26 +825,26 @@ final class CardItemView: NSView {
     /// Subtle "pop" on selection for every card (Spatial). Scales the content
     /// subviews (they fill the card) around the card centre — NOT the item's own
     /// layer, which carries the live-drag transform, so the two compose cleanly.
+    /// No-op when selection state hasn't changed — avoids per-call layer writes
+    /// during zoom ticks and resize ticks where selection is stable.
     private func applySelectionScale(_ selected: Bool) {
         guard bounds.width > 1, bounds.height > 1 else { return }
+        guard selected != lastSelectedForScale else { return }
+        lastSelectedForScale = selected
         let factor: CGFloat = selected ? 1.04 : 1.0
         let cx = bounds.width / 2, cy = bounds.height / 2
         let t = CATransform3DConcat(
             CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
                                 CATransform3DMakeScale(factor, factor, 1)),
             CATransform3DMakeTranslation(cx, cy, 0))
-        let animate = selected != lastSelectedForScale
-        lastSelectedForScale = selected
         for sv in subviews {
             guard let layer = sv.layer else { continue }
-            if animate {
-                let a = CABasicAnimation(keyPath: "transform")
-                a.fromValue = layer.presentation()?.transform ?? layer.transform
-                a.toValue = t
-                a.duration = 0.18
-                a.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                layer.add(a, forKey: "selectScale")
-            }
+            let a = CABasicAnimation(keyPath: "transform")
+            a.fromValue = layer.presentation()?.transform ?? layer.transform
+            a.toValue = t
+            a.duration = 0.18
+            a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(a, forKey: "selectScale")
             layer.transform = t
         }
     }
