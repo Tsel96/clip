@@ -523,9 +523,6 @@ private final class AddPillView: NSView {
         NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x2B751B).cgColor,
         NSColor.fromHex(0x2B751B).cgColor, NSColor.fromHex(0x358923).cgColor
     ]
-    /// Outer ring colour in selected state: 30% black over #3DA726 = #2B751B.
-    private static let selectedOuterColor = NSColor.fromHex(0x2B751B).cgColor
-    private static let defaultOuterColor  = NSColor.fromHex(0x3DA726).cgColor
 
     // MARK: - Init
 
@@ -644,8 +641,7 @@ private final class AddPillView: NSView {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.16)
         CATransaction.setAnimationTimingFunction(CLIPSpring.easeOutSoft)
-        innerLayer.colors = on ? Self.greenSkin : Self.yellowSkin
-        outerLayer.backgroundColor = on ? Self.selectedOuterColor : Self.defaultOuterColor
+        innerLayer.colors = on ? Self.greenSkin : Self.yellowSkin   // outer ring stays #3DA726
         CATransaction.commit()
         iconView.alphaValue = on ? 0.85 : 0.7
     }

@@ -26,31 +26,44 @@ struct LinkInputBar: View {
         return img
     }()
 
+    /// Monospace font shared by the placeholder and the field (Figma: SF Mono Semibold 17).
+    private static let inputFont = Font.system(size: 17, weight: .semibold, design: .monospaced)
+
     var body: some View {
         HStack(spacing: 10) {
-            TextField("", text: $text, prompt: placeholder)
-                .textFieldStyle(.plain)
-                .font(.system(size: 17, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.black)
-                .tint(Color(rgb: 0x3DA726))         // brand-green caret (Figma cursor spec)
-                .focused($focused)
-                .onSubmit(submit)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Trailing submit affordance — Enter.svg (Figma 72:36787), 24×24 at 40% opacity.
-            Button(action: submit) {
-                if let icon = Self.enterIcon {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .renderingMode(.original)
-                        .frame(width: 24, height: 24)
-                        .opacity(0.4)
-                } else {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.black.opacity(0.4))
-                        .frame(width: 24, height: 24)
+            // The field + an explicit placeholder overlay. SwiftUI's `prompt:` did
+            // not render here, so the placeholder is drawn manually and shown
+            // whenever the field is empty (Figma 72:36786 — black @ 20%).
+            ZStack(alignment: .leading) {
+                if text.isEmpty {
+                    Text(verbatim: "INSERT LINK HERE")
+                        .font(Self.inputFont)
+                        .foregroundStyle(.black.opacity(0.2))
+                        .allowsHitTesting(false)
                 }
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(Self.inputFont)
+                    .foregroundStyle(.black)
+                    .tint(Color(rgb: 0x3DA726))     // brand-green caret (Figma 72:36791)
+                    .focused($focused)
+                    .onSubmit(submit)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Trailing submit affordance — Enter.svg (Figma 72:36787), 24×24 @ 40 %.
+            Button(action: submit) {
+                Group {
+                    if let icon = Self.enterIcon {
+                        Image(nsImage: icon).resizable().renderingMode(.original)
+                    } else {
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.black)
+                    }
+                }
+                .frame(width: 24, height: 24)
+                .opacity(0.4)
             }
             .buttonStyle(.plain)
             .help("Add link to canvas")
@@ -91,11 +104,6 @@ struct LinkInputBar: View {
             .shadow(color: Color(rgb: 0x005C02).opacity(0.12), radius: 1.5, y: 2)
             .shadow(color: Color(rgb: 0x005C02).opacity(0.10), radius: 3,   y: 6)
             .shadow(color: Color(rgb: 0x005C02).opacity(0.06), radius: 4,   y: 14)
-    }
-
-    private var placeholder: Text {
-        Text(verbatim: "INSERT LINK HERE")
-            .foregroundColor(.black.opacity(0.2))
     }
 
     // MARK: Actions
