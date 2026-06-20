@@ -413,7 +413,10 @@ struct CanvasView: View {
                             liveSelection: { state.selectedNodeIDs },
                             onInteractionBegan: { primary in
                                 state.activeResizeUndoSnapshot = state.snapshotForUndo()
-                                if let primary { state.beginDrag(of: primary) }   // connector tug
+                                // Skip beginDrag on the native canvas — connectorTug in
+                                // DraggableNode uses `positioned=true` (old SwiftUI path);
+                                // native cards ignore it. Skipping avoids @Published churn
+                                // that triggers DraggableNode re-renders in web-card items.
                             },
                             onInteractionEnded: {
                                 state.endDrag()

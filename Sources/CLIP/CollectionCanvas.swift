@@ -989,6 +989,8 @@ final class HostingCollectionItem: NSCollectionViewItem {
         // The outgoing video VIEW is cached by node id (NativeVideoCache) so it's
         // re-parented to its next item instead of rebuilt — no reload/blink. Tell
         // the cache it detached so off-screen videos still tear down ~1.2s later.
+        // (Park BEFORE calling makeNativeCardContent so the cache has the view ready
+        // to return; the teardown timer is cancelled if the same view is reclaimed.)
         if FeatureFlags.useWebViewCache,
            let vid = nativeContent as? CardVideoContentView, let id = vid.cacheNodeID {
             NativeVideoCache.shared.park(id)
@@ -997,15 +999,20 @@ final class HostingCollectionItem: NSCollectionViewItem {
         // (auto-sizing field + focus); every other case prefers native content.
         if let native = isEditing ? nil : makeNativeCardContent(for: node) {
             hosting?.removeFromSuperview(); hosting = nil
-            nativeContent?.removeFromSuperview()
-            native.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(native, positioned: .below, relativeTo: nil)
-            NSLayoutConstraint.activate([
-                native.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                native.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                native.topAnchor.constraint(equalTo: view.topAnchor),
-                native.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            ])
+            // If NativeVideoCache returned the SAME view we already have installed,
+            // skip remove+add — re-parenting the same view causes a 1-frame blank
+            // that shows as a video blink on reloadData() (e.g. after a drag commit).
+            if native !== nativeContent {
+                nativeContent?.removeFromSuperview()
+                native.translatesAutoresizingMaskIntoConstraints = false
+                view.addSubview(native, positioned: .below, relativeTo: nil)
+                NSLayoutConstraint.activate([
+                    native.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                    native.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                    native.topAnchor.constraint(equalTo: view.topAnchor),
+                    native.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                ])
+            }
             nativeContent = native
             cardView.usesNativeContent = true
         } else {
