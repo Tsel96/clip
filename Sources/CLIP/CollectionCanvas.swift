@@ -385,7 +385,8 @@ struct CollectionCanvas: NSViewRepresentable {
                     // Native text ⇄ SwiftUI editor swap when this node enters or
                     // leaves edit mode (editingTextNodeID isn't in nativeContentKey,
                     // so the content-only branch below would miss the transition).
-                    if case .text = newNode.kind {
+                    // Gated with the renderer so flag-off text is plain SwiftUI.
+                    if case .text = newNode.kind, FeatureFlags.useNativeText {
                         let shouldEdit = (p.editingTextNodeID == newNode.id)
                         if shouldEdit == it.usesNativeContent {
                             // Mismatch: editing → SwiftUI field, resting → native.

@@ -29,7 +29,10 @@ func makeNativeCardContent(for node: CanvasNode) -> NSView? {
     case .text(let content, let fontSize):
         // Native at-rest render. `HostingCollectionItem.setContent(isEditing:)`
         // swaps to the SwiftUI inline editor while this node is being edited.
-        return CardTextContentView(content: content, fontSize: fontSize)
+        // Gated so the whole text card can fall back to SwiftUI in one flip.
+        return FeatureFlags.useNativeText
+            ? CardTextContentView(content: content, fontSize: fontSize)
+            : nil
     default:
         // tweet / instagram / youtube / webclip — still SwiftUI (web cards keep
         // their semantic-zoom live↔poster lifecycle). See task #17.
