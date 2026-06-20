@@ -26,13 +26,7 @@ import AppKit
 /// at the gesture location keeps the point under your fingers fixed — the
 /// expected canvas-zoom feel.
 final class CenterZoomScrollView: NSScrollView {
-    /// Reports the live pinch phase. Our magnify is programmatic, so the system
-    /// `…LiveMagnify…` notifications don't fire — the coordinator uses this to
-    /// freeze the camera sync (and thus SwiftUI card re-renders) mid-gesture.
-    var onMagnifyPhase: ((NSEvent.Phase) -> Void)?
-
     override func magnify(with event: NSEvent) {
-        onMagnifyPhase?(event.phase)
         let target = max(minMagnification,
                          min(maxMagnification, magnification * (1 + event.magnification)))
         let point = documentView?.convert(event.locationInWindow, from: nil)
@@ -54,62 +48,15 @@ final class WideCollectionView: NSCollectionView {
             }
         }
     }
-    /// Called when an empty-canvas point is clicked (no drag) → deselect.
-    var onEmptyClick: (() -> Void)?
-    /// Live marquee: selection rect in this view's (content) coordinates.
-    var onMarquee: ((CGRect) -> Void)?
-
-    private var marqueeStart: NSPoint?
-    private var marqueeDidDrag = false
-    private lazy var marqueeLayer: CAShapeLayer = {
-        let l = CAShapeLayer()
-        // Spatial's marquee is a subtle neutral outline with a barely-there
-        // fill — not a saturated accent box.
-        l.fillColor = NSColor.labelColor.withAlphaComponent(0.04).cgColor
-        l.strokeColor = NSColor.labelColor.withAlphaComponent(0.35).cgColor
-        l.zPosition = 10_000
-        l.isHidden = true
-        return l
-    }()
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(NSSize(width: max(newSize.width, contentWidth),
                                   height: newSize.height))
     }
 
-    override func mouseDown(with event: NSEvent) {
-        // A card's hosting view consumes clicks that land on it, so this only
-        // fires on empty canvas. Begin a *potential* marquee; the deselect (a
-        // plain click) is deferred to mouseUp so a drag becomes a box-select.
-        let pt = convert(event.locationInWindow, from: nil)
-        if indexPathForItem(at: pt) == nil {
-            marqueeStart = pt
-            marqueeDidDrag = false
-            if marqueeLayer.superlayer == nil { wantsLayer = true; layer?.addSublayer(marqueeLayer) }
-        } else {
-            super.mouseDown(with: event)
-        }
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let start = marqueeStart else { super.mouseDragged(with: event); return }
-        let pt = convert(event.locationInWindow, from: nil)
-        let rect = CGRect(x: min(start.x, pt.x), y: min(start.y, pt.y),
-                          width: abs(pt.x - start.x), height: abs(pt.y - start.y))
-        if rect.width > 2 || rect.height > 2 { marqueeDidDrag = true }
-        // Keep the marquee a constant width on screen regardless of zoom.
-        marqueeLayer.lineWidth = 1 / max(enclosingScrollView?.magnification ?? 1, 0.0001)
-        marqueeLayer.path = CGPath(rect: rect, transform: nil)
-        marqueeLayer.isHidden = false
-        onMarquee?(rect)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        marqueeStart = nil; marqueeLayer.isHidden = true; marqueeLayer.path = nil
-        // Deselect is handled by the canvas-level NSEvent monitor (Spatial's
-        // CanvasMouseMonitor approach) — not here, since this override is
-        // unreliable inside the scroll view.
-    }
+    // Purely visual: all pointer interaction is owned by CanvasInputView, which
+    // sits above this collection — so the collection never sees mouse events.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// Flipped (top-left origin) document container so its subviews — the
@@ -128,7 +75,41 @@ final class PassthroughHostingView: NSHostingView<AnyView> {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-struct CollectionCanvas: NSViewRepresentable {
+/// Hosts the screen-space tool overlays (tool-input / selection / guides) ABOVE
+/// the scroll. In **select** mode it is click-transparent (returns `nil`) so
+/// clicks fall straight through to `CanvasInputView`; in a **tool** mode it
+/// hit-tests normally so draw/text/connect route through `ToolInputLayer`.
+/// Scroll/magnify always forward to the scroll view so pan/zoom works in any
+/// mode (its `CLIPCanvasView` host also forwards bubbled scroll events).
+final class ToolOverlayHostingView: NSHostingView<AnyView> {
+    /// Reads the LIVE select-mode flag (from the coordinator's current config).
+    var isSelectMode: () -> Bool = { true }
+    weak var scrollRef: NSScrollView?
+    required init(rootView: AnyView) { super.init(rootView: rootView) }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isSelectMode() ? nil : super.hitTest(point)
+    }
+    override func scrollWheel(with event: NSEvent) { scrollRef?.scrollWheel(with: event) }
+    override func magnify(with event: NSEvent) { scrollRef?.magnify(with: event) }
+}
+
+/// Live cursor position (screen-space, SwiftUI top-left coords) for the native
+/// shell's dot-grid spotlight. Updated by the canvas event monitor and observed
+/// ONLY by the behind-island — so pointer moves re-render the grid in isolation,
+/// never the whole `CanvasView` body.
+final class CanvasPointerStore: ObservableObject {
+    @Published var location: CGPoint?
+}
+
+
+/// Pure-data inputs to the native canvas engine, shared by the SwiftUI bridge
+/// (`CollectionCanvas`) and the `Coordinator`. Carrying these as a value
+/// (instead of the representable `self`) decouples the engine
+/// (`Coordinator` / `CanvasInputView`) from SwiftUI — so a plain `NSView` can
+/// host the same engine later (Phase A `CLIPCanvasView`/`CanvasHost`) — and
+/// makes the inputs testable.
+struct CanvasConfig {
     /// Scrollable world extent (all content + generous margin).
     let worldBounds: CGRect
     /// Ordered nodes → one collection-view item each.
@@ -146,6 +127,35 @@ struct CollectionCanvas: NSViewRepresentable {
     /// with `state` injected but NOT a camera — this view supplies a
     /// content-coordinate `CameraStore` so the overlay maps world → content.
     let overlay: AnyView
+    /// SCREEN-space island drawn BEHIND the cards (dot-grid spotlight,
+    /// empty-state). Non-interactive. `nil` in the legacy ZStack shell, where
+    /// these render as SwiftUI siblings instead.
+    let behindOverlay: AnyView?
+    /// SCREEN-space island drawn ABOVE the cards (tool-input, smart-selection,
+    /// alignment/spacing guides). Interactive only in a tool mode — its host
+    /// passes clicks through to `CanvasInputView` in select mode. `nil` in the
+    /// legacy ZStack shell.
+    let aboveOverlay: AnyView?
+    /// True when the canvas is in select mode — drives the above-island's
+    /// click-passthrough so cards stay directly clickable.
+    let isSelectMode: () -> Bool
+    /// True in draw (marker) mode — the above-island ALSO passes clicks through
+    /// then, so `CanvasInputView` draws the stroke natively (no SwiftUI gesture).
+    let isDrawMode: () -> Bool
+    /// Live marker colour + width for the native draw preview.
+    let drawColor: () -> NSColor
+    let drawWidth: () -> CGFloat
+    /// Commit a finished stroke (points in WORLD coords).
+    let onCommitStroke: ([CGPoint]) -> Void
+    /// Phase B native connectors (flag-gated). When `useNativeConnectors` is
+    /// true, `ConnectorOverlayController` draws these as CAShapeLayers in the
+    /// scrolled container and the SwiftUI ConnectorsLayer overlay is left empty.
+    let connectors: [Connector]
+    let useNativeConnectors: Bool
+    /// Select (or clear) a connector — native connector click-select.
+    let onSelectConnector: (UUID?) -> Void
+    /// Selected connector ids — drives the native connector highlight colour.
+    let selectedConnectorIDs: Set<UUID>
     /// Empty-canvas click → deselect (cards handle their own selection taps).
     let onBackgroundClick: () -> Void
     /// The lone selected node (drives native corner-resize hit-testing in the
@@ -154,157 +164,68 @@ struct CollectionCanvas: NSViewRepresentable {
     /// Full selection set (drives the native selection ring on every selected
     /// card, including multi-select).
     let selectedNodeIDs: Set<UUID>
-    /// Native resize callbacks (the item runs the drag in AppKit coords).
-    let onResizeBegan: () -> Void
+    /// Text node currently in inline edit. CanvasInputView passes clicks INSIDE
+    /// this node's frame through to its TextField (so editing works) and owns
+    /// everything else.
+    let editingTextNodeID: UUID?
+    /// Reads the LIVE selection (state.selectedNodeIDs) — used by the native
+    /// chrome so it reflects selection changes immediately, instead of the stale
+    /// `selectedNodeIDs` snapshot baked into this struct (which only refreshes on
+    /// the next SwiftUI re-render, lagging the ring by one event).
+    let liveSelection: () -> Set<UUID>
+    /// Interaction lifecycle (CanvasInputView): snapshot undo on begin (and, for
+    /// a move, `beginDrag` of the primary id for the connector tug); commit on end.
+    let onInteractionBegan: (UUID?) -> Void
+    let onInteractionEnded: () -> Void
+    /// A finished move (real drag) committed these node ids — used to detect a
+    /// drop ONTO a folder (→ tuck them in). A no-op for ordinary moves.
+    let onMoveCommitted: (Set<UUID>) -> Void
+    /// Move a node to a new WORLD position (per drag tick). Uses the move API
+    /// (`updatePosition`) so connectors stay attached — NOT `resize`.
+    let onMove: (UUID, CGPoint) -> Void
+    /// Resize a node to a new WORLD frame (per drag tick).
     let onResize: (UUID, CGRect) -> Void
-    let onResizeEnded: () -> Void
-    /// Marquee box-select: rect in CONTENT coordinates (world − worldBounds.origin).
-    let onMarquee: (CGRect) -> Void
-    /// Native click-select: (node id, shift held). SwiftUI taps don't fire here.
+    /// Double-click a node → activate (text edit / stack focus / lightbox).
+    let onActivate: (UUID) -> Void
+    /// Marquee box-select: rect in CONTENT coords; Bool = additive (Shift held).
+    let onMarquee: (CGRect, Bool) -> Void
+    /// Native click-select: (node id, shift held).
     let onSelect: (UUID, Bool) -> Void
+    /// Recolor a node from the radial picker (CanvasView maps the NSColor to the
+    /// node's color model, e.g. nearest SectionColor).
+    let onRecolorNode: (UUID, NSColor) -> Void
+}
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+/// The SwiftUI bridge: mounts the native canvas engine and feeds it a
+/// `CanvasConfig` each update. (Phase A introduces a sibling `CanvasHost` /
+/// `CLIPCanvasView` that hosts the same engine from a plain `NSView`; both
+/// share `CanvasConfig` and the `Coordinator`.)
+struct CollectionCanvas: NSViewRepresentable {
+    let config: CanvasConfig
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let layout = CanvasWorldLayout()
+    func makeCoordinator() -> Coordinator { Coordinator(config) }
 
-        let collection = WideCollectionView()
-        collection.contentWidth = worldBounds.size.width
-        collection.collectionViewLayout = layout
-        collection.isSelectable = false
-        collection.allowsMultipleSelection = false
-        collection.backgroundColors = [.clear]
-        collection.register(HostingCollectionItem.self,
-                            forItemWithIdentifier: Coordinator.itemID)
-        collection.dataSource = context.coordinator
-        // Selection (incl. ⇧-multi-select) is handled by each card's own tap.
-        // We only need empty-canvas clicks to deselect — handled in the
-        // collection view's mouseDown (fires only when no item is hit), so it
-        // never intercepts the cards' drag/resize/tap gestures.
-        let bgClick = onBackgroundClick
-        collection.onEmptyClick = { bgClick() }
-        let marquee = onMarquee
-        collection.onMarquee = { marquee($0) }
-
-        let scroll = CenterZoomScrollView()
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = false
-        scroll.hasHorizontalScroller = false
-        scroll.autohidesScrollers = true
-        scroll.allowsMagnification = true
-        scroll.minMagnification = minZoom
-        scroll.maxMagnification = maxZoom
-        scroll.usesPredominantAxisScrolling = false
-        scroll.verticalScrollElasticity = .allowed
-        scroll.horizontalScrollElasticity = .allowed
-
-        // The document is a flipped container holding the collection (cards)
-        // plus a world-space overlay (connectors/selection) on top. Both live in
-        // content coordinates, so the scroll view's magnification scales them
-        // together — connectors pan/zoom with the cards.
-        let container = FlippedContainer()
-        container.frame = CGRect(origin: .zero, size: worldBounds.size)
-        collection.frame = container.bounds
-        collection.autoresizingMask = [.width, .height]
-        container.addSubview(collection)
-
-        let coord = context.coordinator
-        // The overlay already carries its content-coordinate camera (injected by
-        // the caller, which knows worldBounds on the main actor).
-        let overlayHost = PassthroughHostingView(
-            rootView: AnyView(overlay.allowsHitTesting(false)))
-        overlayHost.frame = container.bounds
-        overlayHost.autoresizingMask = [.width, .height]
-        container.addSubview(overlayHost, positioned: .above, relativeTo: collection)
-
-        scroll.documentView = container
-        coord.container = container
-        coord.overlayHost = overlayHost
-        coord.scroll = scroll
-        coord.collection = collection
-        coord.layout = layout
-        coord.apply(self)
-
-        scroll.contentView.postsBoundsChangedNotifications = true
-        coord.boundsObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: scroll.contentView, queue: .main
-        ) { [weak coord] _ in
-            // Sync the camera in real time so the minimap / zoom readout track
-            // live. The native cards are decoupled from the camera (frozen card
-            // camera + suppressZoomEpoch), so this never re-renders them — the
-            // reason it's safe to sync mid-gesture now without the blink.
-            coord?.pushCameraFromScroll()
-        }
-
-        // Deselect, the Spatial way: `CanvasMouseMonitor` + `CanvasDeselector`.
-        // Spatial doesn't override NSView.mouseDown (unreliable inside an
-        // NSScrollView/NSCollectionView — our override fired 0 times); it watches
-        // events with an NSEvent monitor and deselects when a click lands on no
-        // item. We do the same: a local left-mouse-down monitor that, for clicks
-        // inside the canvas hitting empty space (no item under the point), clears
-        // the selection. The event is NOT consumed, so pan/marquee still work.
-        coord.mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak coord] event in
-            guard let coord, let scroll = coord.scroll,
-                  event.window === scroll.window,
-                  let root = scroll.window?.contentView else { return event }
-            // Use real hit-testing (respects rendered geometry + magnification —
-            // manual coordinate math got the magnification wrong). If the view
-            // under the cursor is NOT inside a CardItemView, it's empty canvas
-            // (or chrome) → deselect. CardItemView.hitTest claims card areas.
-            let ptInScroll = scroll.convert(event.locationInWindow, from: nil)
-            guard scroll.bounds.contains(ptInScroll) else { return event }   // sidebar/toolbar
-            // Find the CardItemView under the cursor (real hit-test: respects
-            // rendered geometry + magnification).
-            var v = root.hitTest(event.locationInWindow)
-            var hitCard: CardItemView?
-            while let cur = v {
-                if let c = cur as? CardItemView { hitCard = c; break }
-                v = cur.superview
-            }
-            // Deselect when the click lands on empty canvas OR on a SECTION —
-            // sections are background containers that blanket large areas, so a
-            // body-click on one reads as "clicking the canvas", not selecting a
-            // foreground card. Foreground cards keep the selection (their own
-            // click recognizer selects them).
-            let isBackground: Bool
-            if let id = hitCard?.nodeID, let node = coord.parent.nodes.first(where: { $0.id == id }) {
-                if case .section = node.kind { isBackground = true } else { isBackground = false }
-            } else {
-                isBackground = true
-            }
-            if isBackground { coord.parent.onBackgroundClick() }
-            return event
-        }
-        // Escape also deselects (keyboard path, always available).
-        coord.escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coord] event in
-            if event.keyCode == 53 {            // Escape
-                coord?.parent.onBackgroundClick()
-                return nil
-            }
-            return event
-        }
-
-        // Start centered on the actual content (not the empty world margin) so
-        // pinch-zoom has the cards under the cursor.
-        DispatchQueue.main.async { [weak coord] in coord?.fitContent() }
-        return scroll
+    // The engine subtree + observers/monitors now live in `CLIPCanvasView.init`;
+    // this bridge just mounts it and drives state→view sync each update.
+    func makeNSView(context: Context) -> CLIPCanvasView {
+        CLIPCanvasView(config: config, coordinator: context.coordinator)
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    func updateNSView(_ view: CLIPCanvasView, context: Context) {
         let coord = context.coordinator
-        coord.parent = self
-        scroll.minMagnification = minZoom
-        scroll.maxMagnification = maxZoom
-        coord.apply(self)
-        // DIAGNOSTIC: scroll view fully autonomous — do NOT push the camera
-        // back in. If native pinch now anchors correctly, the round-trip was
-        // the culprit; programmatic moves will route through the scroll view's
-        // own API instead. (Zoom buttons won't work during this test.)
-        // coord.applyCameraIfChanged(camera)
+        coord.config = config
+        coord.scroll?.minMagnification = config.minZoom
+        coord.scroll?.maxMagnification = config.maxZoom
+        coord.apply(config)
+        // Re-enabled programmatic camera: the zoom pill / ⌘± / fit / zoom-to-
+        // selection / minimap jumps move the canvas. `applyCameraIfChanged`
+        // compares against the scroll view's LIVE state and no-ops echoes of our
+        // own pinch/scroll, so the round-trip can't fight the cursor-anchored
+        // `magnify`.
+        coord.applyCameraIfChanged(config.camera)
     }
 
-    static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+    static func dismantleNSView(_ view: CLIPCanvasView, coordinator: Coordinator) {
         coordinator.detach()
     }
 
@@ -312,48 +233,78 @@ struct CollectionCanvas: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSCollectionViewDataSource {
         static let itemID = NSUserInterfaceItemIdentifier("CanvasItem")
-        var parent: CollectionCanvas
+        var config: CanvasConfig
         weak var scroll: NSScrollView?
         weak var collection: NSCollectionView?
         weak var container: FlippedContainer?
         weak var overlayHost: NSHostingView<AnyView>?
         weak var layout: CanvasWorldLayout?
         private(set) var nodes: [CanvasNode] = []
+        weak var inputView: CanvasInputView?
         var boundsObserver: NSObjectProtocol?
-        var magnifyObserver: NSObjectProtocol?
-        var liveScrollStart: NSObjectProtocol?
-        var liveScrollEnd: NSObjectProtocol?
         var escMonitor: Any?
-        var mouseMonitor: Any?
-        /// While true (a live pan/pinch is in flight), the scroll→camera sync is
-        /// frozen so the SwiftUI cards don't re-render every frame. The scroll
-        /// view still scales the content natively; we sync the camera once the
-        /// gesture (incl. momentum) ends.
-        var suppressPush = false
-        private var lastCamera: Camera?
-        private var applyingProgrammatic = false
+        var colorKeyMonitor: Any?
+        var colorPicker: RadialColorPicker?
+        var connectorController: ConnectorOverlayController?
+        var guideController: GuideOverlayController?
+        // internal (not private) so the camera-sync seam in
+        // CanvasCameraController.swift can read/write the echo-suppression state.
+        var lastCamera: Camera?
+        var applyingProgrammatic = false
+        // Card appear animation: track which node IDs we've already shown so a
+        // genuinely-new card (added after the first load) scales in, while the
+        // initial board doesn't animate every card on open.
+        private var seenNodeIDs: Set<UUID> = []
+        private var didInitialApply = false
+        var pendingAppearIDs: Set<UUID> = []
 
-        init(_ parent: CollectionCanvas) { self.parent = parent }
+        init(_ config: CanvasConfig) { self.config = config }
 
         func detach() {
-            for o in [boundsObserver, magnifyObserver, liveScrollStart, liveScrollEnd] {
-                if let o { NotificationCenter.default.removeObserver(o) }
-            }
+            if let o = boundsObserver { NotificationCenter.default.removeObserver(o) }
             if let m = escMonitor { NSEvent.removeMonitor(m) }
-            if let m = mouseMonitor { NSEvent.removeMonitor(m) }
+            if let m = colorKeyMonitor { NSEvent.removeMonitor(m) }
+        }
+
+        /// Show the radial color picker at the cursor and recolor `id` on pick.
+        func presentColorPicker(for id: UUID) {
+            guard let window = scroll?.window, let host = window.contentView else { return }
+            // Cursor: screen → window → host coords.
+            let winPt = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+            let hostPt = host.convert(winPt, from: nil)
+            let picker = RadialColorPicker()
+            picker.onPick = { [weak self] color in self?.config.onRecolorNode(id, color) }
+            picker.onDismiss = { [weak self] in self?.colorPicker = nil }
+            colorPicker = picker
+            picker.present(in: host, at: hostPt)
         }
 
         /// Recompute item frames (content coords) + content size from the nodes,
         /// then refresh. Cheap structural compare avoids needless reloads.
-        func apply(_ p: CollectionCanvas) {
+        func apply(_ p: CanvasConfig) {
             let minX = p.worldBounds.minX, minY = p.worldBounds.minY
             let frames = p.nodes.map { n in
                 CGRect(x: n.position.x - minX, y: n.position.y - minY,
                        width: max(1, n.width), height: max(1, n.height ?? 120))
             }
+            // Snapshot the OLD nodes by id so we can detect content-only edits
+            // (text/colour) on native cards, which don't change count or frame.
+            let oldByID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            let oldOrderedIDs = nodes.map(\.id)   // OLD order, before `nodes` is replaced below
             let countChanged = nodes.count != p.nodes.count
             let oldFrames = layout?.itemFrames ?? []
             let framesChanged = oldFrames != frames
+            // Flag genuinely-new cards (added after the first load) to scale in,
+            // and snapshot just-removed cards so they can scale OUT (the item is
+            // gone after reloadData, so we animate a snapshot in its place).
+            let currentIDs = Set(p.nodes.map(\.id))
+            let removedIDs = didInitialApply ? seenNodeIDs.subtracting(currentIDs) : []
+            if didInitialApply {
+                pendingAppearIDs.formUnion(currentIDs.subtracting(seenNodeIDs))
+            }
+            seenNodeIDs = currentIDs
+            didInitialApply = true
+            if !removedIDs.isEmpty { spawnExitSnapshots(removedIDs) }
             nodes = p.nodes
             layout?.itemFrames = frames
             layout?.contentSize = p.worldBounds.size
@@ -366,23 +317,37 @@ struct CollectionCanvas: NSViewRepresentable {
                 overlayHost?.setFrameSize(p.worldBounds.size)
             }
             if countChanged {
-                // Items added/removed: full reload.
+                // Items added / removed / filtered (e.g. a card filed into a folder
+                // disappears from `canvasDisplayNodes`). `reloadData` is the only
+                // update that can't desync the data-source count from the batch ops:
+                // the incremental `performBatchUpdates` diff raised an
+                // NSInternalInconsistencyException on the folder count-change (the
+                // data-source count and the delete op got out of sync inside a
+                // re-entrant layout pass). Web / video cards reuse their cached
+                // views across the reload (WebViewCache / PlayerCache), so this
+                // does NOT reintroduce the add/delete blink.
+                _ = (oldOrderedIDs, currentIDs)   // (kept for the diff comment above)
                 layout?.invalidateLayout()
                 collection?.reloadData()
             } else if framesChanged {
-                // Position/size change (drag, resize): re-position the EXISTING
-                // items via layout invalidation — no reload, so cards don't
-                // re-render/blink and the move stays smooth.
+                // Position/size change (drag, resize). Refresh the layout cache…
                 layout?.invalidateLayout()
-                // `invalidateLayout` only moves/resizes the item FRAMES; the
-                // hosted card still renders at the node size captured when it
-                // was last hosted. A pure move (drag) is fine — the item frame
-                // carries the card. But a SIZE change (resize) needs the card
-                // itself to re-render to the new dimensions, so re-host any
-                // visible item whose size changed. `host()` reuses the hosting
-                // view (updates `rootView`), so this is a cheap SwiftUI diff —
-                // not a re-mount — and media cards don't blink.
                 if let cv = collection {
+                    // …but ALSO reposition the visible items DIRECTLY this turn.
+                    // A bare `invalidateLayout()` defers repositioning to the next
+                    // layout pass, which during a fast multi-item drag doesn't keep
+                    // up (NSCollectionView under-updates cached attributes) — so a
+                    // group move "didn't move". Setting the frames here, with
+                    // implicit animation off, makes every selected item track the
+                    // drag instantly.
+                    CATransaction.begin(); CATransaction.setDisableActions(true)
+                    for ip in cv.indexPathsForVisibleItems() where ip.item < frames.count {
+                        cv.item(at: ip)?.view.frame = frames[ip.item]
+                    }
+                    CATransaction.commit()
+                    // A SIZE change (resize) also needs the hosted card to re-render
+                    // to the new dimensions (native content auto-resizes via
+                    // constraints, so only the SwiftUI fallback needs a re-host).
                     for ip in cv.indexPathsForVisibleItems() where ip.item < p.nodes.count {
                         let i = ip.item
                         if i < oldFrames.count, oldFrames[i].size != frames[i].size,
@@ -398,12 +363,165 @@ struct CollectionCanvas: NSViewRepresentable {
                     }
                 }
             }
-            // Selection can change with no frame change, so refresh native chrome
-            // (white ring/handles) on every visible item each apply — cheap.
-            if let cv = collection {
-                for ip in cv.indexPathsForVisibleItems() {
-                    (cv.item(at: ip) as? HostingCollectionItem)?.cardView.updateChrome()
+            // Content-only refresh: a native card (section/sticky/text) whose
+            // payload changed — e.g. a section recolour via the `c` picker —
+            // doesn't change count or frame, so neither branch above touches it.
+            // Push the new node into the existing native view (no re-host).
+            if !countChanged, let cv = collection {
+                for ip in cv.indexPathsForVisibleItems() where ip.item < p.nodes.count {
+                    let newNode = p.nodes[ip.item]
+                    guard let it = cv.item(at: ip) as? HostingCollectionItem else { continue }
+                    // Native text ⇄ SwiftUI editor swap when this node enters or
+                    // leaves edit mode (editingTextNodeID isn't in nativeContentKey,
+                    // so the content-only branch below would miss the transition).
+                    // Gated with the renderer so flag-off text is plain SwiftUI.
+                    if case .text = newNode.kind, FeatureFlags.useNativeText {
+                        let shouldEdit = (p.editingTextNodeID == newNode.id)
+                        if shouldEdit == it.usesNativeContent {
+                            // Mismatch: editing → SwiftUI field, resting → native.
+                            it.setContent(node: newNode, swiftUI: p.content(newNode),
+                                          isEditing: shouldEdit)
+                        } else if let u = it.nativeContentView as? NativeCardUpdatable,
+                                  let old = oldByID[newNode.id],
+                                  nativeContentKey(for: old) != nativeContentKey(for: newNode) {
+                            u.update(for: newNode)
+                        }
+                        continue
+                    }
+                    guard let updatable = it.nativeContentView as? NativeCardUpdatable,
+                          let old = oldByID[newNode.id],
+                          nativeContentKey(for: old) != nativeContentKey(for: newNode) else { continue }
+                    updatable.update(for: newNode)
                 }
+            }
+            refreshChrome()
+        }
+
+        /// Refresh the native selection chrome (white ring/handles) on every
+        /// visible item. Driven by `liveSelection`, so calling this right after a
+        /// selection change updates the ring SYNCHRONOUSLY — no waiting for the
+        /// next SwiftUI re-render (which lagged the ring by one event).
+        func refreshChrome() {
+            guard let cv = collection else { return }
+            for ip in cv.indexPathsForVisibleItems() {
+                if let card = (cv.item(at: ip) as? HostingCollectionItem)?.cardView {
+                    card.updateChrome()
+                    card.updateShadow()      // fade the float shadow with zoom
+                }
+            }
+            refreshConnectors()
+        }
+
+        /// Phase B native connectors: rebuild content-space node frames and push
+        /// them into the CAShapeLayer controller. Driven from `refreshChrome`, so
+        /// it tracks node changes (apply → refreshChrome) AND zoom (bounds
+        /// observer → refreshChrome). No-op unless `useNativeConnectors`.
+        func refreshConnectors(offsets: [UUID: CGPoint] = [:]) {
+            guard let cc = connectorController else { return }
+            let minX = config.worldBounds.minX, minY = config.worldBounds.minY
+            var frames: [UUID: CGRect] = [:]
+            for n in config.nodes {
+                let o = offsets[n.id] ?? .zero
+                frames[n.id] = CGRect(x: n.position.x - minX + o.x, y: n.position.y - minY + o.y,
+                                      width: max(1, n.width), height: max(1, n.height ?? 120))
+            }
+            cc.update(connectors: config.connectors, nodeFrames: frames,
+                      selected: config.selectedConnectorIDs,
+                      magnification: scroll?.magnification ?? 1)
+        }
+
+        /// Move the dragged items' VIEWS directly during a drag — bypassing the
+        /// SwiftUI→model→`apply` round-trip, which is too slow/deferred to drive a
+        /// many-item move in real time (a 20+ item group move "didn't move" because
+        /// `apply` never repositioned them mid-gesture). The model is still updated
+        /// per tick (connectors + undo/commit); this just makes the visuals track
+        /// the cursor instantly. `startPos` is each node's pre-drag world position.
+        /// Visually translate the dragged items during the gesture by applying a
+        /// TRANSFORM to each item's layer. NSCollectionView owns the item FRAMES
+        /// (it re-applies its cached layout every pass, which is why direct frame
+        /// sets "did nothing"), but it does NOT touch the layer transform — so a
+        /// translate rides on top of the layout and actually moves the card.
+        func liveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
+            guard let cv = collection else { return }
+            let t = CATransform3DMakeTranslation(dx, dy, 0)
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            for id in startPos.keys {
+                guard let idx = nodes.firstIndex(where: { $0.id == id }) else { continue }
+                cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = t
+            }
+            CATransaction.commit()
+            // Native connectors track the dragged cards live (no per-tick model
+            // write — the model commits on mouse-up; this feeds the offset directly).
+            if connectorController != nil {
+                var offs: [UUID: CGPoint] = [:]
+                for id in startPos.keys { offs[id] = CGPoint(x: dx, y: dy) }
+                refreshConnectors(offsets: offs)
+            }
+        }
+
+        /// End of a move: write each dragged item's final frame into the layout
+        /// cache, then `reloadData` to rebuild + REPAINT every item at its new
+        /// position. A bare `invalidateLayout()` (or a per-item layer transform)
+        /// does NOT repaint the rasterized zoomed-out canvas — which is why a
+        /// low-zoom group move "didn't move" no matter what we set. `reloadData`
+        /// forces a full repaint, so the commit lands at ANY magnification.
+        func endLiveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
+            guard let cv = collection, let layout = layout else { return }
+            let minX = config.worldBounds.minX, minY = config.worldBounds.minY
+            for (id, sp) in startPos {
+                guard let idx = nodes.firstIndex(where: { $0.id == id }), idx < layout.itemFrames.count
+                else { continue }
+                let n = nodes[idx]
+                layout.itemFrames[idx] = CGRect(x: sp.x + dx - minX, y: sp.y + dy - minY,
+                                                width: max(1, n.width), height: max(1, n.height ?? 120))
+                // Clear the live drag transform explicitly (don't rely on reloadData
+                // to discard it — required if item recycling is ever enabled).
+                cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = CATransform3DIdentity
+            }
+            layout.invalidateLayout()
+            cv.reloadData()
+        }
+
+        /// Spatial-style zoom-OUT on delete: the collection removes the item
+        /// instantly on reload, so we drop a bitmap snapshot of each removed card
+        /// into the container at its frame and spring it down + fade out. Purely
+        /// cosmetic + fully guarded — never blocks the actual removal.
+        private func spawnExitSnapshots(_ removed: Set<UUID>) {
+            guard let cv = collection, let container = container else { return }
+            for item in cv.visibleItems() {
+                guard let card = (item as? HostingCollectionItem)?.cardView,
+                      let id = card.nodeID, removed.contains(id),
+                      card.bounds.width > 1, card.bounds.height > 1,
+                      let rep = card.bitmapImageRepForCachingDisplay(in: card.bounds)
+                else { continue }
+                card.cacheDisplay(in: card.bounds, to: rep)
+                guard let cg = rep.cgImage else { continue }
+                let frame = container.convert(card.bounds, from: card)
+                let ghost = CALayer()
+                ghost.contents = cg
+                ghost.frame = frame
+                ghost.contentsGravity = .resizeAspect
+                ghost.zPosition = 50
+                container.layer?.addSublayer(ghost)
+
+                let c = CGPoint(x: ghost.bounds.midX, y: ghost.bounds.midY)
+                let small = CATransform3DConcat(
+                    CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
+                                        CATransform3DMakeScale(0.82, 0.82, 1)),
+                    CATransform3DMakeTranslation(c.x, c.y, 0))
+                CATransaction.begin()
+                CATransaction.setCompletionBlock { ghost.removeFromSuperlayer() }
+                let s = CASpringAnimation(keyPath: "transform")
+                s.fromValue = CATransform3DIdentity; s.toValue = small
+                s.stiffness = CLIPSpring.Preset.settle.stiffness
+                s.damping = CLIPSpring.Preset.settle.caDamping
+                s.duration = s.settlingDuration
+                let o = CABasicAnimation(keyPath: "opacity")
+                o.fromValue = 1; o.toValue = 0; o.duration = 0.22
+                o.timingFunction = CLIPSpring.easeOutSoft
+                ghost.transform = small; ghost.opacity = 0
+                ghost.add(s, forKey: "exitScale"); ghost.add(o, forKey: "exitFade")
+                CATransaction.commit()
             }
         }
 
@@ -413,7 +531,7 @@ struct CollectionCanvas: NSViewRepresentable {
         /// empty margin.
         func fitContent() {
             guard let scroll else { return }
-            let p = parent
+            let p = config
             guard !p.nodes.isEmpty else { return }
             var minX = CGFloat.greatestFiniteMagnitude, minY = CGFloat.greatestFiniteMagnitude
             var maxX = -CGFloat.greatestFiniteMagnitude, maxY = -CGFloat.greatestFiniteMagnitude
@@ -436,75 +554,6 @@ struct CollectionCanvas: NSViewRepresentable {
             scroll.reflectScrolledClipView(scroll.contentView)
             applyingProgrammatic = false
             pushCameraFromScroll()
-        }
-
-        // MARK: Data source
-
-        func collectionView(_ cv: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
-            nodes.count
-        }
-
-        func collectionView(_ cv: NSCollectionView,
-                            itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
-            let item = cv.makeItem(withIdentifier: Coordinator.itemID, for: indexPath)
-            if let hosting = item as? HostingCollectionItem, indexPath.item < nodes.count {
-                let node = nodes[indexPath.item]
-                hosting.cardView.nodeID = node.id
-                hosting.cardView.coordinator = self
-                hosting.setContent(node: node, swiftUI: parent.content(node))
-                hosting.cardView.updateShadow()
-                hosting.cardView.updateChrome()
-            }
-            return item
-        }
-
-        // MARK: Camera sync
-
-        /// Derive a `Camera` from the scroll view's magnification + scroll
-        /// position and push it out (skipped mid programmatic apply).
-        func pushCameraFromScroll() {
-            guard !applyingProgrammatic, let scroll else { return }
-            let zoom = scroll.magnification
-            let visible = scroll.documentVisibleRect
-            let worldOriginX = visible.origin.x + parent.worldBounds.minX
-            let worldOriginY = visible.origin.y + parent.worldBounds.minY
-            let cam = Camera(x: -worldOriginX * zoom, y: -worldOriginY * zoom, zoom: zoom)
-            lastCamera = cam
-            parent.onCameraChange(cam)
-        }
-
-        /// Apply an external camera ONLY if it genuinely differs from the scroll
-        /// view's *current* state. Live scrolling pushes a camera out and SwiftUI
-        /// feeds it straight back here; comparing against the scroll's live state
-        /// (not a stored `lastCamera`, which races across render cycles) makes
-        /// those echoes no-ops while real programmatic moves (zoom buttons, fit,
-        /// glide) still apply. This is what stops the drift/zoom-anchor fight.
-        func applyCameraIfChanged(_ cam: Camera) {
-            guard let scroll else { return }
-            let zoom = scroll.magnification
-            let visible = scroll.documentVisibleRect
-            let curX = -(visible.origin.x + parent.worldBounds.minX) * zoom
-            let curY = -(visible.origin.y + parent.worldBounds.minY) * zoom
-            // Echo of our own live scroll → skip. (Generous epsilons: anything
-            // this close is the round-trip, not a deliberate camera move.)
-            if abs(cam.zoom - zoom) < 0.0005,
-               abs(cam.x - curX) < 0.5,
-               abs(cam.y - curY) < 0.5 {
-                return
-            }
-            applyCamera(cam)
-        }
-
-        func applyCamera(_ cam: Camera) {
-            guard let scroll, cam.zoom > 0 else { return }
-            applyingProgrammatic = true
-            defer { applyingProgrammatic = false; lastCamera = cam }
-            scroll.magnification = cam.zoom
-            let worldOriginX = -cam.x / cam.zoom
-            let worldOriginY = -cam.y / cam.zoom
-            scroll.contentView.scroll(to: CGPoint(x: worldOriginX - parent.worldBounds.minX,
-                                                  y: worldOriginY - parent.worldBounds.minY))
-            scroll.reflectScrolledClipView(scroll.contentView)
         }
     }
 }
@@ -552,247 +601,182 @@ final class CanvasWorldLayout: NSCollectionViewLayout {
 
 // MARK: - Item: hosts a SwiftUI view, fills the item's frame
 
-/// The card item's container view. It owns resize hit-testing + the resize
-/// drag **natively** (AppKit mouse coordinates are correct; SwiftUI's inside a
-/// collection item are frozen at ~(6,4)). Anything that isn't a resize corner
-/// falls through to the hosted SwiftUI card — tap-to-select, body-drag-to-move,
-/// and in-card controls all keep working.
+/// Purely VISUAL container for one card. It hosts the card content (native
+/// image/video, or a SwiftUI `NSHostingView` for the rest) and draws all chrome
+/// natively on its own layer — float shadow, the section outline, and the
+/// selection ring + corner handles. It owns NO pointer interaction: every click
+/// is handled by `CanvasInputView` (the sole pointer owner), so `hitTest`
+/// returns nil. Chrome is driven by the LIVE selection via `updateChrome`, kept
+/// magnification-correct so strokes stay a constant width on screen.
 final class CardItemView: NSView {
     override var isFlipped: Bool { true }
 
-    /// Identity + a back-reference so we read the *live* node, selection and
-    /// callbacks (the coordinator's `parent` is refreshed every update).
+    /// Identity + a back-reference so we read the *live* node + selection (the
+    /// coordinator's `config` is refreshed every update).
     var nodeID: UUID?
     weak var coordinator: CollectionCanvas.Coordinator?
-    /// True when this item renders native content (not the SwiftUI fallback) —
-    /// then the chrome (selection ring + handles) is drawn natively here too,
-    /// since there's no SwiftUI DraggableNode to draw it.
+    /// True when this item renders native content (image/video) vs the SwiftUI
+    /// fallback — used only to decide re-host on resize, not chrome.
     var usesNativeContent = false
 
+    private let sectionLayer = CAShapeLayer()
     private let selectionLayer = CAShapeLayer()
-    private let handleLayers: [CAShapeLayer] = (0..<4).map { _ in CAShapeLayer() }
+    /// 8 resize handles: 0–3 corners (tl, tr, bl, br), 4–7 edges (top, bottom,
+    /// left, right) — matching Spatial's corner + edge resize handles.
+    private let handleLayers: [CAShapeLayer] = (0..<8).map { _ in CAShapeLayer() }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        // SwiftUI's `onTapGesture` never fires inside a collection item (the
-        // same event-routing bug that froze the resize gesture), so selection
-        // is done natively: a click recognizer that doesn't delay/consume the
-        // event, so the SwiftUI body-drag (move) + in-card buttons still work —
-        // a click selects, a drag moves.
-        let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick(_:)))
-        click.delaysPrimaryMouseButtonEvents = false
-        addGestureRecognizer(click)
         setupChrome()
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    // MARK: - Native selection chrome (Spatial CanvasCornerResizeHandle / border)
+    // MARK: - Native chrome (section outline + selection ring + handles)
 
     private func setupChrome() {
+        // Section outline — a crisp neutral border so empty section frames read
+        // clearly at any zoom (the SwiftUI 1pt border vanished when zoomed out).
+        sectionLayer.fillColor = nil
+        sectionLayer.strokeColor = NSColor.tertiaryLabelColor.cgColor
+        sectionLayer.zPosition = 99
+        sectionLayer.isHidden = true
+        layer?.addSublayer(sectionLayer)
+
+        // Selection ring + handles use `opacity` (not isHidden) so they can FADE
+        // in/out; they start fully transparent.
         selectionLayer.fillColor = nil
         selectionLayer.strokeColor = NSColor.white.cgColor
         selectionLayer.shadowColor = NSColor.white.cgColor
         selectionLayer.shadowOpacity = 0.9
         selectionLayer.shadowOffset = .zero
         selectionLayer.zPosition = 100
-        selectionLayer.isHidden = true
+        selectionLayer.opacity = 0
         layer?.addSublayer(selectionLayer)
         for h in handleLayers {
             h.fillColor = NSColor.white.cgColor
             h.strokeColor = NSColor.black.withAlphaComponent(0.18).cgColor
             h.zPosition = 101
-            h.isHidden = true
+            h.opacity = 0
             layer?.addSublayer(h)
         }
     }
 
-    /// Draw / hide the white selection ring + corner handles. Called on layout
-    /// and whenever selection changes (the coordinator's `apply`).
+    /// Draw the section outline, selection ring + 8 resize handles. Geometry is
+    /// magnification-correct (constant on-screen widths) and applied WITHOUT
+    /// animation so it tracks live during resize/zoom; visibility fades via
+    /// `opacity` so selection glides in/out like Spatial
+    /// (`highlightForSelectionWithIntensity:animated:`). Called on layout and
+    /// whenever selection or zoom changes.
     func updateChrome() {
         let mag = magnification
-        guard usesNativeContent, let id = nodeID,
-              coordinator?.parent.selectedNodeIDs.contains(id) == true,
-              bounds.width > 1, bounds.height > 1 else {
-            selectionLayer.isHidden = true
-            handleLayers.forEach { $0.isHidden = true }
-            return
-        }
+        let node = liveNode
+        let valid = bounds.width > 1 && bounds.height > 1
+
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        let inset = 1.25 / mag
-        selectionLayer.path = CGPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
-                                     cornerWidth: CardChrome.cornerRadius,
-                                     cornerHeight: CardChrome.cornerRadius, transform: nil)
-        selectionLayer.lineWidth = 2.5 / mag
-        selectionLayer.shadowRadius = 4 / mag
-        selectionLayer.isHidden = false
-        let hs = 9 / mag
-        let show = resizeEnabled
-        let corners = [CGPoint(x: bounds.minX, y: bounds.minY),
-                       CGPoint(x: bounds.maxX, y: bounds.minY),
-                       CGPoint(x: bounds.minX, y: bounds.maxY),
-                       CGPoint(x: bounds.maxX, y: bounds.maxY)]
-        for (i, h) in handleLayers.enumerated() {
-            guard show else { h.isHidden = true; continue }
-            let c = corners[i]
-            h.frame = CGRect(x: (i % 2 == 0) ? c.x : c.x - hs,
-                             y: (i < 2) ? c.y : c.y - hs, width: hs, height: hs)
-            h.cornerRadius = hs * 0.18
-            h.lineWidth = 1 / mag
-            h.isHidden = false
+
+        // Section outline — always visible (not gated on selection) so empty
+        // section frames read clearly at any zoom, like Spatial.
+        if let node, node.isSection, valid {
+            sectionLayer.path = CGPath(roundedRect: bounds.insetBy(dx: 0.75 / mag, dy: 0.75 / mag),
+                                       cornerWidth: SectionNodeView.cornerRadius,
+                                       cornerHeight: SectionNodeView.cornerRadius, transform: nil)
+            sectionLayer.lineWidth = 1.5 / mag
+            sectionLayer.isHidden = false
+        } else {
+            sectionLayer.isHidden = true
+        }
+
+        // Selection ring geometry (always sized so it's correct the instant it
+        // fades in). One native ring per card; hosted cards' SwiftUI ring is off.
+        let selected = valid && nodeID.map { coordinator?.config.liveSelection().contains($0) == true } ?? false
+        if valid {
+            let inset = 1.25 / mag
+            selectionLayer.path = CGPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
+                                         cornerWidth: CardChrome.cornerRadius,
+                                         cornerHeight: CardChrome.cornerRadius, transform: nil)
+            selectionLayer.lineWidth = 2 / mag
+            selectionLayer.shadowRadius = 3 / mag
+
+            // 8 handles: corners + edge midpoints, each centered on its point.
+            let hs = 9 / mag
+            let pts = [CGPoint(x: bounds.minX, y: bounds.minY),   // tl
+                       CGPoint(x: bounds.maxX, y: bounds.minY),   // tr
+                       CGPoint(x: bounds.minX, y: bounds.maxY),   // bl
+                       CGPoint(x: bounds.maxX, y: bounds.maxY),   // br
+                       CGPoint(x: bounds.midX, y: bounds.minY),   // top
+                       CGPoint(x: bounds.midX, y: bounds.maxY),   // bottom
+                       CGPoint(x: bounds.minX, y: bounds.midY),   // left
+                       CGPoint(x: bounds.maxX, y: bounds.midY)]   // right
+            for (i, h) in handleLayers.enumerated() {
+                h.frame = CGRect(x: pts[i].x - hs / 2, y: pts[i].y - hs / 2, width: hs, height: hs)
+                h.cornerRadius = hs * 0.22
+                h.lineWidth = 1 / mag
+            }
         }
         CATransaction.commit()
+
+        // Animated visibility (fade) — OUTSIDE the no-animation transaction.
+        fade(selectionLayer, to: selected ? 1 : 0)
+        let showHandles = selected && resizeEnabled
+        for h in handleLayers { fade(h, to: showHandles ? 1 : 0) }
     }
 
-    @objc private func handleClick(_ gr: NSClickGestureRecognizer) {
-        guard let id = nodeID else { return }
-        coordinator?.parent.onSelect(id, NSEvent.modifierFlags.contains(.shift))
+    /// Animate a chrome layer's opacity toward `target` (Spatial-style selection
+    /// fade). No-op when already there, so resize/zoom ticks don't re-trigger it.
+    private func fade(_ layer: CALayer, to target: Float) {
+        guard layer.opacity != target else { return }
+        let anim = CABasicAnimation(keyPath: "opacity")
+        anim.fromValue = layer.presentation()?.opacity ?? layer.opacity
+        anim.toValue = target
+        anim.duration = 0.14
+        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(anim, forKey: "fade")
+        layer.opacity = target
     }
 
-    private enum Corner {
-        case tl, tr, bl, br
-        var movesLeft: Bool { self == .tl || self == .bl }
-        var movesTop:  Bool { self == .tl || self == .tr }
-        var cursor: NSCursor {
-            let sel: Selector = (self == .tl || self == .br)
-                ? Selector("_windowResizeNorthWestSouthEastCursor")
-                : Selector("_windowResizeNorthEastSouthWestCursor")
-            if NSCursor.responds(to: sel),
-               let c = NSCursor.perform(sel)?.takeUnretainedValue() as? NSCursor { return c }
-            return .crosshair
-        }
-    }
-
-    private var dragCorner: Corner?
-    private var movingNative = false
-    private var didBeginInteraction = false
-    private var startFrame: CGRect = .zero
-    private var startMouse: NSPoint = .zero
+    // Purely visual: CanvasInputView (above the collection) owns ALL pointer
+    // interaction. The item never sees mouse events.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     private var magnification: CGFloat { max(enclosingScrollView?.magnification ?? 1, 0.0001) }
-    /// Corner grab radius in this view's (world) units → ~26 pt on screen, but
-    /// capped to a quarter of the smaller side so the four corners never cover
-    /// the whole card (which would make every click a resize + leave no margin).
-    private var cornerHit: CGFloat {
-        min(26 / magnification, min(bounds.width, bounds.height) * 0.25)
-    }
+
+    /// Set when this item represents a freshly-added node; the scale-in fires
+    /// from `layout()` once the collection view has given the item real bounds
+    /// (the async path raced the collection-view layout and could no-op).
+    var wantsAppear = false
 
     private var liveNode: CanvasNode? {
         guard let id = nodeID else { return nil }
-        return coordinator?.parent.nodes.first { $0.id == id }
+        return coordinator?.config.nodes.first { $0.id == id }
     }
+    /// Whether this item is the lone selected resizable node — drives whether
+    /// the corner handles are drawn (display only; the resize gesture lives in
+    /// CanvasInputView). Reads the LIVE selection so it's never one event stale.
     private var resizeEnabled: Bool {
-        guard let n = liveNode, n.id == coordinator?.parent.selectedNodeID else { return false }
-        // Everything except auto-sizing text is resizable (matches isResizableKind).
+        guard let n = liveNode, let id = nodeID,
+              let sel = coordinator?.config.liveSelection(),
+              sel.count == 1, sel.contains(id) else { return false }
         if case .text = n.kind { return false }
         return true
     }
 
-    private func corner(at p: NSPoint) -> Corner? {
-        guard resizeEnabled else { return nil }
-        let r = cornerHit, w = bounds.width, h = bounds.height
-        let left = p.x <= r, right = p.x >= w - r
-        let top = p.y <= r, bottom = p.y >= h - r
-        if left && top { return .tl }
-        if right && top { return .tr }
-        if left && bottom { return .bl }
-        if right && bottom { return .br }
-        return nil
-    }
+    // MARK: - Appear animation (Spatial zoom-in)
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let local = convert(point, from: superview)
-        if resizeEnabled, corner(at: local) != nil { return self }   // corner resize
-        // Native cards have no SwiftUI DraggableNode, so WE own the body too
-        // (click-select via the recognizer, drag-to-move via mouseDragged).
-        if usesNativeContent { return self }
-        return super.hitTest(point)                        // SwiftUI fallback: it handles it
-    }
-
-    override func resetCursorRects() {
-        guard resizeEnabled else { return }
-        let r = cornerHit, w = bounds.width, h = bounds.height
-        addCursorRect(CGRect(x: 0,     y: 0,     width: r, height: r), cursor: Corner.tl.cursor)
-        addCursorRect(CGRect(x: w - r, y: 0,     width: r, height: r), cursor: Corner.tr.cursor)
-        addCursorRect(CGRect(x: 0,     y: h - r, width: r, height: r), cursor: Corner.bl.cursor)
-        addCursorRect(CGRect(x: w - r, y: h - r, width: r, height: r), cursor: Corner.br.cursor)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        let local = convert(event.locationInWindow, from: nil)
-        guard let n = liveNode else { super.mouseDown(with: event); return }
-        if let c = corner(at: local) {
-            dragCorner = c
-        } else if usesNativeContent {
-            movingNative = true   // body drag → move (native cards only)
-        } else {
-            super.mouseDown(with: event); return
-        }
-        startFrame = CGRect(x: n.position.x, y: n.position.y,
-                            width: n.width, height: n.height ?? 120)
-        startMouse = event.locationInWindow
-        // onResizeBegan (undo snapshot) is deferred to the first drag so a plain
-        // click (select) doesn't create a no-op undo entry.
-    }
-
-    private func beginInteractionIfNeeded() {
-        guard !didBeginInteraction else { return }
-        didBeginInteraction = true
-        coordinator?.parent.onResizeBegan()
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        let mag = magnification
-        // Native body move: reposition (same size) following the cursor.
-        if movingNative, let n = liveNode {
-            beginInteractionIfNeeded()
-            let dx = (event.locationInWindow.x - startMouse.x) / mag
-            let dy = -(event.locationInWindow.y - startMouse.y) / mag
-            coordinator?.parent.onResize(n.id, CGRect(x: startFrame.minX + dx,
-                                                      y: startFrame.minY + dy,
-                                                      width: startFrame.width,
-                                                      height: startFrame.height))
-            return
-        }
-        guard let c = dragCorner, let n = liveNode else {
-            super.mouseDragged(with: event); return
-        }
-        beginInteractionIfNeeded()
-        let dx = (event.locationInWindow.x - startMouse.x) / mag
-        // Window Y is bottom-up; our flipped / world Y is top-down.
-        let dy = -(event.locationInWindow.y - startMouse.y) / mag
-
-        var w = startFrame.width  + (c.movesLeft ? -dx : dx)
-        var h = startFrame.height + (c.movesTop  ? -dy : dy)
-
-        // Media keeps aspect by default; hold Shift OR ⌘ to free-resize the
-        // frame to any dimensions (Figma-style).
-        let freeAspect = event.modifierFlags.contains(.shift)
-            || event.modifierFlags.contains(.command)
-        let locks = locksAspect(n) != freeAspect
-        if locks, startFrame.height > 0 {
-            let aspect = startFrame.width / startFrame.height
-            if abs(dx) > abs(dy) { h = w / aspect } else { w = h * aspect }
-        }
-        let minS = n.kind.minSize
-        w = max(minS.width, w); h = max(minS.height, h)
-        let originX = c.movesLeft ? (startFrame.maxX - w) : startFrame.minX
-        let originY = c.movesTop  ? (startFrame.maxY - h) : startFrame.minY
-        coordinator?.parent.onResize(n.id, CGRect(x: originX, y: originY, width: w, height: h))
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        if didBeginInteraction { coordinator?.parent.onResizeEnded() }
-        dragCorner = nil
-        movingNative = false
-        didBeginInteraction = false
-    }
-
-    private func locksAspect(_ n: CanvasNode) -> Bool {
-        switch n.kind {
-        case .image, .video, .tweet, .instagram, .youtube, .webclip: return true
-        default: return false
-        }
+    /// Scale-in + fade for a freshly-added card (Spatial's CanvasItemsAnimator
+    /// pop). Center-anchored so it grows in place; spring settle.
+    func playAppear() {
+        guard let layer = layer, bounds.width > 1, bounds.height > 1 else { return }
+        let c = CGPoint(x: bounds.midX, y: bounds.midY)
+        let small = CATransform3DConcat(
+            CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
+                                CATransform3DMakeScale(0.86, 0.86, 1)),
+            CATransform3DMakeTranslation(c.x, c.y, 0))
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        layer.transform = small; layer.opacity = 0
+        CATransaction.commit()
+        CLIPSpring.scale(self, to: 1.0, preset: .settle)
+        CLIPSpring.run(duration: 0.22) { layer.opacity = 1 }
     }
 
     // MARK: - Float shadow (Spatial-style)
@@ -806,6 +790,10 @@ final class CardItemView: NSView {
         super.layout()
         updateShadow()
         updateChrome()
+        if wantsAppear, bounds.width > 1, bounds.height > 1 {
+            wantsAppear = false
+            playAppear()
+        }
     }
 
     /// Only solid card tiles cast a float shadow. Drawings, text frames and
@@ -815,7 +803,7 @@ final class CardItemView: NSView {
         switch kind {
         case .image, .video, .tweet, .instagram, .youtube, .webclip, .stickyNote:
             return true
-        case .text, .drawing, .section:
+        case .text, .drawing, .section, .folder:
             return false
         }
     }
@@ -831,10 +819,16 @@ final class CardItemView: NSView {
             layer.shadowOpacity = 0
             return
         }
+        // Fade the float shadow out when zoomed far out (Spatial's
+        // minMagnificationForShadow) — dozens of soft shadows on a zoomed-out
+        // board read as mud and cost fill-rate; near 1× they lift cleanly.
+        let mag = magnification
+        let minMag: CGFloat = 0.30, fullMag: CGFloat = 0.55
+        let fade = max(0, min(1, (mag - minMag) / (fullMag - minMag)))
         // Spatial's float shadow is soft + wide + low-opacity (a gentle ambient
         // lift), not a tight dark drop shadow.
         layer.shadowColor = NSColor.black.cgColor
-        layer.shadowOpacity = 0.12
+        layer.shadowOpacity = Float(0.12 * fade)
         layer.shadowRadius = 17
         layer.shadowOffset = CGSize(width: 0, height: 6)
         layer.shadowPath = CGPath(roundedRect: bounds,
@@ -850,19 +844,24 @@ final class HostingCollectionItem: NSCollectionViewItem {
     /// True while showing native content — the re-host (size) loop skips us
     /// (native content auto-resizes via constraints).
     var usesNativeContent: Bool { nativeContent != nil }
-    var cardView: CardItemView { view as! CardItemView }
+    /// The installed native content view (for in-place content refresh).
+    var nativeContentView: NSView? { nativeContent }
+    /// Typed item view, set in `loadView` — avoids a force-cast on a hot accessor.
+    private(set) var cardView = CardItemView()
 
     override func loadView() {
-        let v = CardItemView()
-        v.wantsLayer = true
-        view = v
+        cardView.wantsLayer = true
+        view = cardView
     }
 
     /// Install native content for the node if a native renderer exists; else
     /// host the SwiftUI fallback. `swiftUI` is an autoclosure so we don't build
     /// the SwiftUI card for natively-rendered kinds.
-    func setContent(node: CanvasNode, swiftUI: @autoclosure () -> AnyView) {
-        if let native = makeNativeCardContent(for: node) {
+    func setContent(node: CanvasNode, swiftUI: @autoclosure () -> AnyView,
+                    isEditing: Bool = false) {
+        // A text node in edit mode falls back to the SwiftUI inline editor
+        // (auto-sizing field + focus); every other case prefers native content.
+        if let native = isEditing ? nil : makeNativeCardContent(for: node) {
             hosting?.removeFromSuperview(); hosting = nil
             nativeContent?.removeFromSuperview()
             native.translatesAutoresizingMaskIntoConstraints = false

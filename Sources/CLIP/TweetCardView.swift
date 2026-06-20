@@ -17,6 +17,9 @@ import ImageIO
 /// (hosted here, since this view owns the resolved URL) edits that range.
 struct TweetCardView: View {
     let url: String
+    /// Canvas node id — forwarded to `TweetVideoPlayer` for the player reuse
+    /// cache (the tweet-video blink fix). nil in non-canvas contexts.
+    var nodeID: UUID? = nil
     /// Computed by `CanvasState.isLive` upstream — true when the card is
     /// in the viewport AND projected at a meaningful screen size. Photo
     /// / text tweets ignore this; only video tweets gate the AVPlayer.
@@ -35,6 +38,9 @@ struct TweetCardView: View {
     var onSaveTrim: ((Double, Double) -> Void)? = nil
     var onResetTrim: (() -> Void)? = nil
     var onCancelTrim: (() -> Void)? = nil
+    /// Called once the media aspect is known (loaded from the poster) so the
+    /// node can size to it — kills the gray gap around the aspect-fit card.
+    var onMediaAspect: ((CGFloat) -> Void)? = nil
 
     @State private var tweet: TweetData? = nil
     @State private var isLoading = false
@@ -87,7 +93,7 @@ struct TweetCardView: View {
                   w > 0, h > 0 else { return nil }
             return w / h
         }.value
-        if let aspect { mediaAspect = aspect }
+        if let aspect { mediaAspect = aspect; onMediaAspect?(aspect) }
     }
 
     // MARK: - Card body
@@ -100,6 +106,7 @@ struct TweetCardView: View {
             if isLive {
                 TweetVideoPlayer(
                     url: videoURL,
+                    nodeID: nodeID,
                     isMuted: $isMuted,
                     isPlaying: .constant(effectivePlaying),
                     cornerRadius: 19.375,

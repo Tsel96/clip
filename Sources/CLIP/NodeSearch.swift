@@ -20,6 +20,8 @@ extension CanvasNode {
             return title.isEmpty ? "(untitled section)" : title
         case .stickyNote(let content, _):
             return content.isEmpty ? "(empty sticky)" : content
+        case .folder(let title, _, _):
+            return title.isEmpty ? "Untitled folder" : title
         }
     }
 
@@ -35,6 +37,7 @@ extension CanvasNode {
         case .video:      return "film"
         case .section:    return "rectangle.dashed"
         case .stickyNote: return "note.text"
+        case .folder:     return "folder"
         }
     }
 

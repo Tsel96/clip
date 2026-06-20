@@ -7,12 +7,16 @@ import SwiftUI
 /// right-angle bends. Drawing is done in **screen** coordinates so the line
 /// thickness, corner radius and arrowhead size stay constant at any zoom.
 struct ConnectorsLayer: View {
+    /// When true (native-connector mode), committed lines are drawn by the native
+    /// `ConnectorOverlayController`; this SwiftUI layer then renders ONLY the live
+    /// connect-drag preview.
+    var committedHidden = false
     @EnvironmentObject var state: CanvasState
     @EnvironmentObject var cameraStore: CameraStore
 
     var body: some View {
         ZStack {
-            committedConnectors
+            if !committedHidden { committedConnectors }
             // The live preview is always non-interactive; we keep its
             // dashed line above everything but it shouldn't catch clicks.
             livePreview

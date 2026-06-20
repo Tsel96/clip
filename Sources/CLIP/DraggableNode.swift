@@ -415,6 +415,7 @@ struct DraggableNode: View {
         case .tweet(let url):
             TweetCardView(
                 url: url,
+                nodeID: node.id,
                 isLive: liveGate,
                 trimStart: node.trimStart,
                 trimEnd: node.trimEnd,
@@ -432,7 +433,8 @@ struct DraggableNode: View {
                     state.clearTrim(node.id)
                     state.trimmingCardID = nil
                 },
-                onCancelTrim: { state.trimmingCardID = nil }
+                onCancelTrim: { state.trimmingCardID = nil },
+                onMediaAspect: { state.snapMediaAspect(node.id, aspect: $0) }
             )
             .revealOnAdd(state: state, node: node)
 
@@ -442,14 +444,14 @@ struct DraggableNode: View {
             // for AVPlayer cards: when not "live," `InstagramCardView`
             // unmounts the web view entirely and shows a static poster,
             // freeing the WebKit content process.
-            InstagramCardView(url: url, isLive: liveGate,
+            InstagramCardView(url: url, nodeID: node.id, isLive: liveGate,
                               suppressLive: state.isCameraInteracting)
                 .revealOnAdd(state: state, node: node)
 
         case .youtube(let url):
             // Same WKWebView lifecycle as Instagram: live = embedded muted
             // autoplay; not-live = static thumbnail poster, web view torn down.
-            YouTubeNodeView(url: url, isLive: liveGate,
+            YouTubeNodeView(url: url, nodeID: node.id, isLive: liveGate,
                             suppressLive: state.isCameraInteracting)
                 .revealOnAdd(state: state, node: node)
 
@@ -508,6 +510,9 @@ struct DraggableNode: View {
                 title: title,
                 color: color
             )
+
+        case .folder:
+            Color.clear   // folders render natively via makeNativeCardContent
 
         case .stickyNote(let content, let color):
             StickyNodeView(
@@ -622,7 +627,10 @@ struct DraggableNode: View {
 
     @ViewBuilder
     private var selectionRing: some View {
-        if state.selectedNodeIDs.contains(node.id) {
+        // On the native canvas (positioned == false) the selection ring + handles
+        // are drawn natively by CardItemView (one synchronous ring per card). Only
+        // the legacy SwiftUI canvas draws its own ring here.
+        if positioned, state.selectedNodeIDs.contains(node.id) {
             ZStack {
                 // Spatial-style selection: a crisp WHITE ring with a soft white
                 // glow (not a flat accent-blue stroke).
@@ -661,7 +669,7 @@ struct DraggableNode: View {
         case .text:       return 2
         case .stickyNote: return StickyNodeView.cornerRadius
         case .section:    return SectionNodeView.cornerRadius
-        case .tweet, .instagram, .youtube, .webclip, .image, .video, .drawing:
+        case .tweet, .instagram, .youtube, .webclip, .image, .video, .drawing, .folder:
             return 19.375
         }
     }
@@ -689,7 +697,7 @@ struct DraggableNode: View {
         case .text:                        return false
         case .tweet, .instagram, .youtube, .webclip,
              .image, .video, .drawing,
-             .section, .stickyNote:        return true
+             .section, .stickyNote, .folder: return true
         }
     }
 

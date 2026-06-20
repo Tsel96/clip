@@ -265,7 +265,7 @@ enum ArchiveEngine {
                 let scale = min(maxW / natW, maxH / natH)
                 return CGSize(width: natW * scale, height: natH * scale)
 
-            case .section:
+            case .section, .folder:
                 // Sections shouldn't appear in Lightbox (they're hidden
                 // upstream in archive `daysWithContent`) — fall back
                 // safely.

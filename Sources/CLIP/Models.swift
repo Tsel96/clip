@@ -29,6 +29,12 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     /// snapshots saved before this field existed.
     var groupID: UUID? = nil
 
+    /// If this node lives *inside* a folder, the id of that folder's node.
+    /// Folder membership; the folder node itself carries the ordered
+    /// `childIDs`. `decodeIfPresent` so older snapshots default to `nil`
+    /// (not in any folder). Folders can't be nested inside folders.
+    var folderID: UUID? = nil
+
     /// Where this node came from. `.phone` marks cards ingested from the
     /// iPhone share pipe (the iCloud Drive inbox) so the UI can badge
     /// them. `decodeIfPresent` defaults older snapshots to `.local`.
@@ -62,6 +68,11 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         case video(fileURL: URL, filename: String)
         case section(title: String, color: SectionColor)
         case stickyNote(content: String, color: StickyColor)
+        /// A folder card holding other nodes. `title` is the user name
+        /// ("Untitled" default), `icon` an SF Symbol identity glyph (or ""),
+        /// `childIDs` the ordered ids of contained nodes (which also point
+        /// back via `CanvasNode.folderID`).
+        case folder(title: String, icon: String, childIDs: [UUID])
 
         /// Floor enforced by both creation (`addSection`, `addStickyNote`)
         /// and resize so a node never collapses below a usable footprint.
@@ -71,6 +82,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
             switch self {
             case .section:    return CGSize(width: 160, height: 120)
             case .stickyNote: return CGSize(width: 120, height: 120)
+            case .folder:     return CGSize(width: 200, height: 172)
             default:          return CGSize(width: 80, height: 60)
             }
         }
@@ -83,6 +95,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
          kind: Kind,
          addedAt: Date = Date(),
          groupID: UUID? = nil,
+         folderID: UUID? = nil,
          origin: Origin = .local,
          name: String? = nil,
          note: String? = nil,
@@ -98,6 +111,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.kind = kind
         self.addedAt = addedAt
         self.groupID = groupID
+        self.folderID = folderID
         self.origin = origin
         self.name = name
         self.note = note
@@ -111,7 +125,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     // MARK: - Codable (manual to migrate older snapshots)
 
     private enum CodingKeys: String, CodingKey {
-        case id, position, width, height, kind, addedAt, groupID, origin
+        case id, position, width, height, kind, addedAt, groupID, folderID, origin
         case name, note, linkURL, tags, imagePrompt
         case trimStart, trimEnd
     }
@@ -129,6 +143,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         // so older saves don't all collapse to the same date.
         self.addedAt = try c.decodeIfPresent(Date.self, forKey: .addedAt) ?? .distantPast
         self.groupID = try c.decodeIfPresent(UUID.self, forKey: .groupID)
+        self.folderID = try c.decodeIfPresent(UUID.self, forKey: .folderID)
         self.origin  = try c.decodeIfPresent(Origin.self, forKey: .origin) ?? .local
         self.name    = try c.decodeIfPresent(String.self, forKey: .name)
         self.note    = try c.decodeIfPresent(String.self, forKey: .note)
@@ -148,6 +163,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         try c.encode(kind,     forKey: .kind)
         try c.encode(addedAt,  forKey: .addedAt)
         try c.encodeIfPresent(groupID, forKey: .groupID)
+        try c.encodeIfPresent(folderID, forKey: .folderID)
         try c.encode(origin, forKey: .origin)
         try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(note, forKey: .note)
@@ -180,6 +196,16 @@ struct CanvasNode: Identifiable, Equatable, Codable {
                         height: CGFloat = 320) -> CanvasNode {
         CanvasNode(position: position, width: width, height: height,
                    kind: .webclip(url: url))
+    }
+
+    /// Folder aspect from the Figma redline (953×818 ≈ 1.165 w:h).
+    static func folder(title: String = "Untitled",
+                       icon: String = "",
+                       childIDs: [UUID] = [],
+                       position: CGPoint,
+                       width: CGFloat = 260) -> CanvasNode {
+        CanvasNode(position: position, width: width, height: (width / 1.165).rounded(),
+                   kind: .folder(title: title, icon: icon, childIDs: childIDs))
     }
 
     static func image(data: Data,
@@ -399,12 +425,13 @@ enum ArchiveLevel: Equatable {
 }
 
 enum ToolMode: String, CaseIterable, Identifiable, Codable {
-    case select, section, text, stickyNote, draw, connect
+    case select, hand, section, text, stickyNote, draw, connect
 
     var id: String { rawValue }
     var label: String {
         switch self {
         case .select:     return "Select"
+        case .hand:       return "Hand"
         case .section:    return "Section"
         case .text:       return "Text"
         case .stickyNote: return "Sticky"
@@ -415,6 +442,7 @@ enum ToolMode: String, CaseIterable, Identifiable, Codable {
     var systemImage: String {
         switch self {
         case .select:     return "cursorarrow"
+        case .hand:       return "hand.raised"
         case .section:    return "rectangle.dashed"
         case .text:       return "textformat"
         case .stickyNote: return "note.text"
@@ -425,6 +453,7 @@ enum ToolMode: String, CaseIterable, Identifiable, Codable {
     var keyboardKey: Character {
         switch self {
         case .select:     return "v"
+        case .hand:       return "h"
         case .section:    return "s"
         case .text:       return "t"
         case .stickyNote: return "n"
@@ -579,7 +608,7 @@ struct TweetData: Decodable, Equatable {
 extension CanvasNode.Kind: Codable {
     private enum CodingKeys: String, CodingKey {
         case type, url, content, fontSize, stroke, data, filename, fileURL
-        case title, color
+        case title, color, icon, childIDs
     }
 
     init(from decoder: Decoder) throws {
@@ -620,6 +649,12 @@ extension CanvasNode.Kind: Codable {
             self = .stickyNote(
                 content: try c.decode(String.self, forKey: .content),
                 color: try c.decode(StickyColor.self, forKey: .color)
+            )
+        case "folder":
+            self = .folder(
+                title: try c.decode(String.self, forKey: .title),
+                icon: try c.decodeIfPresent(String.self, forKey: .icon) ?? "",
+                childIDs: try c.decodeIfPresent([UUID].self, forKey: .childIDs) ?? []
             )
         default:
             throw DecodingError.dataCorruptedError(
@@ -667,6 +702,11 @@ extension CanvasNode.Kind: Codable {
             try c.encode("stickyNote", forKey: .type)
             try c.encode(content, forKey: .content)
             try c.encode(color, forKey: .color)
+        case .folder(let title, let icon, let childIDs):
+            try c.encode("folder", forKey: .type)
+            try c.encode(title, forKey: .title)
+            try c.encode(icon, forKey: .icon)
+            try c.encode(childIDs, forKey: .childIDs)
         }
     }
 }

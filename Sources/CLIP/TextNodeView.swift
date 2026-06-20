@@ -117,6 +117,8 @@ struct TextNodeView: View {
         editingText = content
         isEditing = true
         focused = true
+        // Let the canvas input layer step aside so the TextField receives keys.
+        state.editingTextNodeID = nodeID
     }
 
     private func commit() {
@@ -132,6 +134,7 @@ struct TextNodeView: View {
             state.updateText(id: nodeID, content: trimmed)
         }
         if state.pendingFocusNodeID == nodeID { state.pendingFocusNodeID = nil }
+        if state.editingTextNodeID == nodeID { state.editingTextNodeID = nil }
         isEditing = false
         // Drop just this node from the selection; multi-select stays intact.
         state.selectedNodeIDs.remove(nodeID)

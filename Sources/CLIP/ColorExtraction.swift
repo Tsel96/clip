@@ -113,6 +113,8 @@ enum ColorExtraction {
         case .stickyNote(_, let color):
             let c = color.swiftUIColor
             return rgb(from: c, seed: node.id.uuidString)
+        case .folder:
+            return fallback(for: node)
         }
     }
 

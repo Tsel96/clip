@@ -25,6 +25,9 @@ struct ContentView: View {
                 // at small sizes, so the split view shoved the sidebar off the
                 // window's left edge (its labels clipped on the leading side).
                 // 480 always leaves room for the sidebar's 180–280.
+                // Fill under the hidden title bar so no blank strip shows at the
+                // top (traffic lights float over the sidebar, not the canvas).
+                .ignoresSafeArea(.container, edges: .top)
                 .frame(minWidth: 480, minHeight: 480)
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $state.isAddSheetPresented) {
@@ -63,12 +66,16 @@ struct ContentView: View {
         // the sidebar); the window toolbar is hidden while it's open, so no
         // top/left panels show through.
         .overlay {
-            // Persistently mounted; the open/close gate lives inside the layer.
-            CardLightboxLayer()
+            // Fully-native detail view (Spatial CanvasTransition*); the open/close
+            // gate lives inside the native CardDetailView, driven by state.
+            NativeDetailHost()
                 .ignoresSafeArea()
+                .allowsHitTesting(state.lightboxCardID != nil)
                 .zIndex(100)
         }
-        .toolbar(state.lightboxCardID == nil ? .automatic : .hidden, for: .windowToolbar)
+        // Top window toolbar removed entirely (user request): no sidebar toggle,
+        // title, add/paste, or appearance bar. Add = ⌘N, paste = ⌘V.
+        .toolbar(.hidden, for: .windowToolbar)
         // Drive the whole app's appearance + inject the matching ClipTheme so
         // every chrome surface reads one source of truth.
         .preferredColorScheme(state.themeMode.colorScheme)
@@ -86,19 +93,8 @@ struct ContentView: View {
         // switcher lives as a floating pill at the top of the canvas
         // (see `CanvasModeSwitcher`) rather than in the toolbar so it
         // reads more like Claude / Linear / Notion's tab strip.
-        ToolbarItem(placement: .navigation) {
-            Picker("Tool", selection: $state.toolMode) {
-                ForEach(ToolMode.allCases) { mode in
-                    Image(systemName: mode.systemImage)
-                        .help("\(mode.label)  (\(String(mode.keyboardKey).uppercased()))")
-                        .tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 240)
-            .disabled(state.canvasMode == .colorform)
-            .accessibilityIdentifier("toolbar.toolPicker")
-        }
+        // Tool picker moved OUT of the window toolbar into the bottom-center
+        // yellow tool palette (Figma 51:12692 / NativeCanvasToolPalette).
 
         // Draw-mode-only color & width controls.
         if state.toolMode == .draw {

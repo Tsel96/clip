@@ -53,67 +53,6 @@ struct CanvasView: View {
         }
     }
 
-    /// `bentoVisibleNodes` viewport-culled. In Canvas — the free-roam
-    /// editing surface where a large moodboard is panned — only nodes
-    /// whose world rect intersects the viewport (inflated by ~½ screen
-    /// each side) are mounted, so the live view tree is O(on-screen) not
-    /// O(document). Selected nodes are always kept so an in-progress drag
-    /// never unmounts its own gesture view. The view modes
-    /// (Colorform / Archive) each re-flow with their own animated
-    /// layout, so they pass through unculled.
-    private var visibleNodes: [CanvasNode] {
-        let base = bentoVisibleNodes
-        guard state.canvasMode == .canvas else { return base }
-        // Stack focus mode: render ONLY the focused stack's members.
-        // Every other node is suppressed so the focus grid stands
-        // alone over the dimmed backdrop — no random off-screen
-        // cards leaking onto the focus surface.
-        if let focused = state.focusedStackID {
-            return base.filter { $0.groupID == focused }
-        }
-        let v = state.visibleWorldRect
-        let cull = v.insetBy(dx: -v.width / 2, dy: -v.height / 2)
-        let kept = state.selectedNodeIDs
-        return base.filter { node in
-            if kept.contains(node.id) { return true }
-            // Use effective (mode-overridden) position + size for the
-            // cull rect so cards relocated by Archive / focus
-            // grids aren't accidentally pruned even though their layout
-            // slot is on-screen.
-            let p = state.effectivePosition(of: node)
-            let s = state.effectiveSize(of: node)
-            let rect = CGRect(x: p.x, y: p.y, width: s.width, height: s.height)
-            return cull.intersects(rect)
-        }
-    }
-
-    /// True when a card projects so small (deep zoom-out) that the full
-    /// interactive card is wasted work — render `DraggableNode`'s cheap LOD
-    /// proxy instead. Selected cards always stay full so they're manipulable;
-    /// only applies on the free canvas (the view modes have their own layout).
-    private func isTinyOnScreen(_ node: CanvasNode) -> Bool {
-        guard state.canvasMode == .canvas,
-              !state.selectedNodeIDs.contains(node.id) else { return false }
-        return state.projectedScreenSide(of: node) < CanvasState.lodMinScreenSide
-    }
-
-    /// The world-space card layer: sections beneath, then the viewport-culled
-    /// nodes (each at full detail or its cheap LOD proxy). Extracted from
-    /// `body` so the big canvas expression stays type-checkable.
-    @ViewBuilder
-    private var nodeLayer: some View {
-        // Sections render BELOW everything else so they never occlude their
-        // contained cards — except in Archive, where they're hidden.
-        if state.canvasMode == .canvas || state.canvasMode == .colorform {
-            ForEach(state.nodes.filter(\.isSection)) { node in
-                DraggableNode(node: node)
-            }
-        }
-        ForEach(visibleNodes) { node in
-            DraggableNode(node: node, isTiny: isTinyOnScreen(node))
-        }
-    }
-
     /// Per-mode background tint. Colorform keeps the warm cream tied to
     /// its bulb constellation; Archive uses a deeper warm cream for the
     /// calendar level and shifts to near-black at the lightbox level;
@@ -175,6 +114,15 @@ struct CanvasView: View {
                 case 124: state.lightboxStep(1);   return nil
                 default:  return event
                 }
+            }
+
+            // Unfolded folder Esc: close it first (re-fold) before any other
+            // Esc semantics — same panic-out priority as stack focus.
+            if event.keyCode == 53,
+               state.canvasMode == .canvas,
+               state.focusedFolderID != nil {
+                state.exitFolderFocus()
+                return nil
             }
 
             // Stack focus mode Esc: exit focus first so the user can
@@ -273,15 +221,36 @@ struct CanvasView: View {
     /// boxes for now — validating pan/zoom smoothness before card hosting.
     private let useNativeCanvas = true
 
+    /// Native shell collapse (A5): host the canvas-core SCREEN-space overlays
+    /// (dot-grid, tool-input, smart-selection, alignment/spacing guides) as two
+    /// passthrough islands INSIDE the native `CLIPCanvasView` instead of as
+    /// SwiftUI ZStack siblings — so the canvas is one native view with one input
+    /// owner. Flip to `false` to fall back to the proven ZStack shell (kept
+    /// intact below as the `!useNativeShell` branches).
+    /// Re-enabled for the debug-together: the palette rework fixes tool-mode
+    /// switching (the cursor button reliably returns to select) and the
+    /// ToolInputLayer coordinate space is declared on the island. Flip to
+    /// `false` for the proven ZStack shell if select/tools misbehave.
+    private let useNativeShell = true
+
+    /// Phase B: draw connectors as native CAShapeLayers in the scrolled
+    /// container (off → the proven SwiftUI ConnectorsLayer renders them). ENABLED
+    /// for the all-phases push: content-space frames match the cards, the layer
+    /// rides the scroll magnification, and drags track live via `liveReposition`.
+    /// The SwiftUI overlay is left empty when this is true (no double-render).
+    private let useNativeConnectors = true
+
+    /// Live cursor for the native-shell dot-grid spotlight. The behind-island
+    /// observes this; `CanvasView.body` does NOT, so pointer moves re-render the
+    /// grid in isolation instead of churning the whole body.
+    @StateObject private var pointerStore = CanvasPointerStore()
+
     /// World extent for the native scroll view: all content plus a generous
     /// margin so you can pan well past the edges.
-    private var worldBounds: CGRect {
-        let margin: CGFloat = 6000
-        if let r = state.boundingRect(of: Set(state.nodes.map(\.id))), r.width > 0, r.height > 0 {
-            return r.insetBy(dx: -margin, dy: -margin)
-        }
-        return CGRect(x: -margin, y: -margin, width: 2 * margin, height: 2 * margin)
-    }
+    // Grows-only canvas extent (see CanvasState.stableWorldBounds) — a
+    // content-following box shifted with a select-all drag, making the move
+    // invisible; this stays put so the cards actually move on screen.
+    private var worldBounds: CGRect { state.stableWorldBounds() }
 
     /// Content-coordinate camera for the native canvas's world-space overlay
     /// (connectors): maps world → (world − worldBounds.origin) so the overlay
@@ -304,17 +273,18 @@ struct CanvasView: View {
                 // Background dot grid (toggleable). Hidden in Archive
                 // because its calendar / bento layers paint their own
                 // surface.
-                if state.showGrid && state.canvasMode != .archive {
+                if !useNativeShell, state.showGrid, state.canvasMode != .archive {
                     // No `.ignoresSafeArea()` — the grid must share the
                     // exact coordinate space the pointer is reported in
                     // (the canvas view's safe-area-respecting bounds), or
                     // the spotlight draws offset from the real cursor.
+                    // (Native shell: moved into CLIPCanvasView's behind-island.)
                     DotGrid(camera: cameraStore.camera, pointer: pointerLocation)
                         .allowsHitTesting(false)
                 }
 
-                // Empty-state hint.
-                if state.nodes.isEmpty {
+                // Empty-state hint. (Native shell: in the behind-island.)
+                if !useNativeShell, state.nodes.isEmpty {
                     EmptyStateView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .allowsHitTesting(false)
@@ -325,7 +295,7 @@ struct CanvasView: View {
                 // Only rendered in Canvas mode — Colorform and Archive
                 // are all read-only views. Suppressed in stack focus
                 // mode so the focus backdrop receives clicks cleanly.
-                if state.canvasMode == .canvas, state.focusedStackID == nil {
+                if !useNativeShell, state.canvasMode == .canvas, state.focusedStackID == nil {
                     ToolInputLayer()
                 }
 
@@ -370,16 +340,20 @@ struct CanvasView: View {
                         // pan = scrolling). Only the node layer moves in; the
                         // overlays below stay screen-space and track the camera
                         // we sync back out.
-                        CollectionCanvas(
+                        CollectionCanvas(config: CanvasConfig(
                             worldBounds: worldBounds,
-                            nodes: state.nodes,
+                            nodes: state.canvasDisplayNodes,
                             camera: cameraStore.camera,
                             minZoom: 0.05, maxZoom: 8,
                             onCameraChange: { cameraStore.camera = $0 },
                             content: { node in
                                 // Each collection item hosts a real card. It's a
                                 // separate NSHostingView, so re-inject the env
-                                // objects the card tree needs.
+                                // objects the card tree needs. CanvasInputView sits
+                                // ABOVE the cards and owns every click, so hosted
+                                // content stays renderable but never gets events —
+                                // except a text node being edited, which the input
+                                // view passes through to (see `editingTextNodeID`).
                                 AnyView(
                                     DraggableNode(node: node, positioned: false)
                                         .environmentObject(state)
@@ -391,7 +365,9 @@ struct CanvasView: View {
                             // content so they pan/zoom with the cards. No camera
                             // here — CollectionCanvas supplies the content-coord one.
                             overlay: AnyView(
-                                ConnectorsLayer()
+                                // Native mode: committed lines drawn natively; this
+                                // overlay keeps ONLY the live connect-drag preview.
+                                ConnectorsLayer(committedHidden: useNativeConnectors)
                                     .frame(width: worldBounds.width,
                                            height: worldBounds.height,
                                            alignment: .topLeading)
@@ -399,40 +375,105 @@ struct CanvasView: View {
                                     .environmentObject(state.smartSelection)
                                     .environmentObject(overlayCamera)
                             ),
+                            // Screen-space islands (native shell): dot-grid +
+                            // empty-state BEHIND the cards; tool-input + smart-
+                            // selection + alignment/spacing guides ABOVE.
+                            behindOverlay: useNativeShell ? AnyView(
+                                CanvasBehindOverlays()
+                                    .environmentObject(state)
+                                    .environmentObject(cameraStore)
+                                    .environmentObject(pointerStore)
+                            ) : nil,
+                            aboveOverlay: useNativeShell ? AnyView(
+                                CanvasAboveOverlays()
+                                    .environmentObject(state)
+                                    .environmentObject(cameraStore)
+                                    .environmentObject(state.smartSelection)
+                            ) : nil,
+                            isSelectMode: { state.toolMode == .select },
+                            isDrawMode: { state.toolMode == .draw },
+                            drawColor: {
+                                let c = state.drawColor
+                                return NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green),
+                                               blue: CGFloat(c.blue), alpha: 1)
+                            },
+                            drawWidth: { state.drawWidth },
+                            onCommitStroke: { world in state.commitStroke(worldPoints: world) },
+                            connectors: state.connectors,
+                            useNativeConnectors: useNativeConnectors,
+                            onSelectConnector: { state.selectConnector($0) },
+                            selectedConnectorIDs: state.selectedConnectorIDs,
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }
                             },
                             selectedNodeID: state.selectedNodeIDs.count == 1
                                 ? state.selectedNodeIDs.first : nil,
                             selectedNodeIDs: state.selectedNodeIDs,
-                            onResizeBegan: {
+                            editingTextNodeID: state.editingTextNodeID,
+                            liveSelection: { state.selectedNodeIDs },
+                            onInteractionBegan: { primary in
                                 state.activeResizeUndoSnapshot = state.snapshotForUndo()
+                                if let primary { state.beginDrag(of: primary) }   // connector tug
                             },
-                            onResize: { id, frame in
-                                state.resize(id: id, frame: frame)
-                            },
-                            onResizeEnded: {
+                            onInteractionEnded: {
+                                state.endDrag()
                                 if let snap = state.activeResizeUndoSnapshot {
                                     state.commitUndoable(from: snap)
                                 }
                                 state.activeResizeUndoSnapshot = nil
                             },
-                            onMarquee: { contentRect in
+                            onMoveCommitted: { state.handleDropOntoFolder(draggedIDs: $0) },
+                            onMove: { id, position in
+                                // Move (not resize) so connectors stay attached.
+                                state.updatePosition(of: id, to: position)
+                            },
+                            onResize: { id, frame in
+                                state.resize(id: id, frame: frame)
+                            },
+                            onActivate: { id in
+                                guard state.toolMode == .select else { return }
+                                if let node = state.nodes.first(where: { $0.id == id }) {
+                                    if case .text = node.kind {
+                                        // Native text card: setting editingTextNodeID
+                                        // swaps the item to the SwiftUI inline editor
+                                        // (HostingCollectionItem.setContent); pendingFocus
+                                        // makes that editor grab focus on appear.
+                                        state.select(id)
+                                        state.editingTextNodeID = id
+                                        state.pendingFocusNodeID = id
+                                    } else if state.isStackHead(id), state.focusedStackID == nil {
+                                        state.enterStackFocus(headID: id)
+                                    } else if case .folder = node.kind {
+                                        state.enterFolderFocus(folderID: id)
+                                    } else if state.canvasMode == .canvas, !node.isSection {
+                                        state.openLightbox(id)
+                                    }
+                                }
+                            },
+                            onMarquee: { contentRect, additive in
                                 // Content → world, then select every node the box touches.
                                 let world = contentRect.offsetBy(dx: worldBounds.minX,
                                                                  dy: worldBounds.minY)
-                                let hits = state.nodes.filter { n in
+                                let hits = Set(state.nodes.filter { n in
                                     world.intersects(CGRect(x: n.position.x, y: n.position.y,
                                                             width: n.width, height: n.height ?? 120))
-                                }.map(\.id)
-                                state.selectNodes(Set(hits))
+                                }.map(\.id))
+                                state.selectNodes(additive ? state.selectedNodeIDs.union(hits) : hits)
                             },
                             onSelect: { id, shift in
                                 guard state.toolMode == .select else { return }
                                 if shift { state.toggleNodeSelection(id) }
                                 else { state.select(id) }
+                            },
+                            onRecolorNode: { id, nsColor in
+                                // Radial picker → nearest section preset (model
+                                // stores presets, not arbitrary RGB).
+                                if let node = state.nodes.first(where: { $0.id == id }), node.isSection {
+                                    state.setSectionColor(id: id,
+                                        to: RadialColorPicker.nearestSectionColor(to: nsColor))
+                                }
                             }
-                        )
+                        ))
                         .onAppear {
                             syncOverlayCamera()
                             // Native cards are always-live + layout-positioned, so
@@ -444,23 +485,7 @@ struct CanvasView: View {
                         .opacity(cardsOpacity)
                         .blur(radius: cardsBlur)
                         .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
-                    } else {
-                        Group { nodeLayer }
-                        .scaleEffect(cameraStore.camera.zoom, anchor: .topLeading)
-                        .offset(x: cameraStore.camera.x, y: cameraStore.camera.y)
-                        .opacity(cardsOpacity)
-                        .blur(radius: cardsBlur)
-                        .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
                     }
-                }
-
-                // Connectors (arrows) — drawn above nodes so the live preview
-                // and arrowheads stay visible during a drag-to-connect.
-                // Hidden in Colorform because the re-laid-out cards make
-                // their endpoints meaningless.
-                if state.showConnectors && state.canvasMode == .canvas && !useNativeCanvas {
-                    ConnectorsLayer()
-                        .allowsHitTesting(state.toolMode == .select)
                 }
 
                 // Figma-style Smart Selection chrome — pink center rings +
@@ -470,8 +495,14 @@ struct CanvasView: View {
                 // grids in the current selection.
                 // Suppressed in stack focus mode — the focus chrome owns
                 // the screen and Smart Selection wouldn't apply anyway.
-                if state.canvasMode == .canvas, state.focusedStackID == nil {
+                if !useNativeShell, state.canvasMode == .canvas, state.focusedStackID == nil {
+                    // On the native canvas, gate Smart Selection's ring/gutter
+                    // gestures OFF — they're competing pointer handlers that would
+                    // re-enter the very race CanvasInputView exists to remove.
+                    // Re-introduce via the native controller later (task #15).
+                    // (Native shell: in the above-island, non-interactive.)
                     SmartSelectionLayer()
+                        .allowsHitTesting(!useNativeCanvas)
                 }
 
                 // Stack focus chrome — count pill + exit chip — sits
@@ -484,7 +515,8 @@ struct CanvasView: View {
 
                 // Live alignment guides (red lines while dragging). Only
                 // relevant during a drag, which only happens in canvas mode.
-                if state.canvasMode == .canvas {
+                // (Native shell: in the above-island, non-interactive.)
+                if !useNativeShell, state.canvasMode == .canvas {
                     AlignmentGuidesOverlay()
                         .allowsHitTesting(false)
                     SpacingIndicatorsOverlay()
@@ -521,7 +553,12 @@ struct CanvasView: View {
                         onBackgroundClick: {
                             if state.toolMode == .select { state.deselectAll() }
                         },
-                        onPointerMove: { pointerLocation = $0 },
+                        onPointerMove: { p in
+                            // Native shell feeds the behind-island's spotlight via
+                            // the store (no body churn); legacy uses @State.
+                            if useNativeShell { pointerStore.location = p }
+                            else { pointerLocation = p }
+                        },
                         // Native canvas owns pan/zoom — don't consume scroll/magnify.
                         capturesScrollMagnify: !useNativeCanvas
                     )
@@ -604,11 +641,33 @@ struct CanvasView: View {
         // against the actual window bounds — not the inner ZStack's
         // potentially-extended frame. This is what makes them stay
         // visible when the user resizes the window (in any direction).
+        // Bottom-LEFT: connectors / grid / play toggles (Figma 51:12692).
         .overlay(alignment: .bottomLeading) {
             if state.canvasMode != .archive {
-                ZoomControlsPill()
-                    .padding(.leading, 16)
-                    .padding(.bottom, 16)
+                NativeCanvasTogglesPill()
+                    .fixedSize()
+                    .padding(.leading, 18)
+                    .padding(.bottom, 18)
+            }
+        }
+        // Unfolded-folder back chip (top-centre): re-fold to the main canvas.
+        // Esc does the same; this is the discoverable affordance.
+        .overlay(alignment: .top) {
+            if state.canvasMode == .canvas, let fid = state.focusedFolderID,
+               case .folder(let title, _, _)? = state.nodeByID[fid]?.kind {
+                Button { state.exitFolderFocus() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                        Text(title.isEmpty ? "Untitled" : title).lineLimit(1)
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 14)
             }
         }
         // Liquid-glass minimap dome — anchored to the bottom-right corner
@@ -623,11 +682,25 @@ struct CanvasView: View {
                     .ignoresSafeArea()
             }
         }
+        // Bottom-RIGHT: zoom −/NN%/+ pill (Figma 51:12692).
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive {
-                CanvasTogglesPill()
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 16)
+                NativeZoomControlsPill()
+                    .fixedSize()
+                    .padding(.trailing, 18)
+                    .padding(.bottom, 18)
+            }
+        }
+        // Bottom-CENTER: the Spatial-style yellow tool palette + "+" (Figma 51:12692).
+        .overlay(alignment: .bottom) {
+            if state.canvasMode == .canvas {
+                NativeCanvasToolPalette(state: state)
+                    .frame(width: CanvasToolPaletteView.totalW,
+                           height: CanvasToolPaletteView.totalH)
+                    // Pill sits exactly 18 pt off the viewport bottom (user spec):
+                    // frame bottom flush with the viewport + the 18 pt shadow-bleed
+                    // IS that gap.
+                    .padding(.bottom, 0)
             }
         }
         // Acute tool-mode visibility — while a non-Select tool is active,
@@ -636,7 +709,8 @@ struct CanvasView: View {
         .overlay(alignment: .top) {
             Group {
                 if state.canvasMode == .canvas, state.toolMode != .select {
-                    ActiveToolChip()
+                    NativeActiveToolChip()
+                        .fixedSize()
                         .padding(.top, 14)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -682,6 +756,65 @@ struct EmptyStateView: View {
     }
 }
 
+// MARK: - Native-shell screen-space islands
+
+/// The BEHIND-the-cards island (native shell): dot-grid spotlight + empty-state.
+/// Hosted once inside `CLIPCanvasView` (below the scroll) and click-transparent.
+/// Observes the stores directly, so a camera/pointer change re-renders only this
+/// island — never `CanvasView.body`.
+struct CanvasBehindOverlays: View {
+    @EnvironmentObject var state: CanvasState
+    @EnvironmentObject var cameraStore: CameraStore
+    @EnvironmentObject var pointerStore: CanvasPointerStore
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if state.showGrid, state.canvasMode != .archive {
+                DotGrid(camera: cameraStore.camera, pointer: pointerStore.location)
+                    .allowsHitTesting(false)
+            }
+            if state.nodes.isEmpty {
+                EmptyStateView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// The ABOVE-the-cards island (native shell): tool-input + smart-selection +
+/// alignment/spacing guides. `ToolInputLayer` is interactive in a tool mode;
+/// the rest are non-interactive. Hosted in a `ToolOverlayHostingView` (above the
+/// scroll) that passes clicks through to `CanvasInputView` in select mode.
+struct CanvasAboveOverlays: View {
+    @EnvironmentObject var state: CanvasState
+    @EnvironmentObject var cameraStore: CameraStore
+    @EnvironmentObject var smartSelection: SmartSelectionController
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if state.canvasMode == .canvas, state.focusedStackID == nil {
+                ToolInputLayer()
+                SmartSelectionLayer()
+                    .allowsHitTesting(false)
+            }
+            if state.canvasMode == .canvas {
+                AlignmentGuidesOverlay()
+                    .allowsHitTesting(false)
+                SpacingIndicatorsOverlay()
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // ToolInputLayer / SmartSelection gestures read locations in the
+        // `CanvasCoords.name` space (which `state.screenToWorld` expects). That
+        // space is declared on CanvasView's GeometryReader, which this island's
+        // separate NSHostingView does NOT inherit — so re-declare it here at the
+        // island's bounds (= the canvas area), or every tool gets bad coords.
+        .coordinateSpace(name: CanvasCoords.name)
+    }
+}
+
 // MARK: - Dot grid
 
 /// Stitch-style spotlight dot grid. The grid is invisible across the
@@ -710,9 +843,9 @@ struct DotGrid: View {
     private static let baseDot: CGFloat = 2.4
     /// Reveal radius around the cursor, in screen points.
     private static let spotlightRadius: CGFloat = 220
-    /// Screen spacing never drops below this (octave-doubled if it
-    /// would) — bounds the dot count at extreme zoom-out.
-    private static let minScreenSpacing: CGFloat = 6
+    /// Screen spacing never drops below this (octave-doubled if it would) —
+    /// bounds the dot count for the now full-screen grid at extreme zoom-out.
+    private static let minScreenSpacing: CGFloat = 12
 
     /// 0…1 reveal, animated up when the pointer enters the canvas and
     /// down when it leaves so the pool fades rather than popping.
@@ -723,10 +856,6 @@ struct DotGrid: View {
 
     var body: some View {
         Canvas { context, size in
-            guard strength > 0.001 else { return }
-            let center = pointer ?? lastPointer
-            let radius = Self.spotlightRadius
-
             // Spacing scales with zoom; octave-double only as a floor.
             var spacing = Self.baseSpacing * camera.zoom
             while spacing < Self.minScreenSpacing { spacing *= 2 }
@@ -739,49 +868,36 @@ struct DotGrid: View {
             var phaseY = camera.y.truncatingRemainder(dividingBy: spacing)
             if phaseY > 0 { phaseY -= spacing }
 
-            // Clip iteration to the spotlight's bounding box.
-            let loMinX = max(phaseX, center.x - radius)
-            let loMaxX = min(size.width, center.x + radius)
-            let loMinY = max(phaseY, center.y - radius)
-            let loMaxY = min(size.height, center.y + radius)
-            guard loMinX <= loMaxX, loMinY <= loMaxY else { return }
-
-            let firstX = phaseX + ((loMinX - phaseX) / spacing).rounded(.down) * spacing
-            let firstY = phaseY + ((loMinY - phaseY) / spacing).rounded(.down) * spacing
-            let r2 = radius * radius
-
+            // Full-screen, world-anchored dot field (whole background, not just
+            // a cursor patch).
             var path = Path()
-            var x = firstX
-            while x <= loMaxX {
-                let dx = x - center.x
-                var y = firstY
-                while y <= loMaxY {
-                    let dy = y - center.y
-                    if dx * dx + dy * dy <= r2 {
-                        path.addEllipse(in: CGRect(
-                            x: x - dotSize / 2, y: y - dotSize / 2,
-                            width: dotSize, height: dotSize))
-                    }
+            var x = phaseX
+            while x <= size.width {
+                var y = phaseY
+                while y <= size.height {
+                    path.addEllipse(in: CGRect(x: x - dotSize / 2, y: y - dotSize / 2,
+                                               width: dotSize, height: dotSize))
                     y += spacing
                 }
                 x += spacing
             }
 
-            // One fill — the radial gradient fades the dots out toward
-            // the spotlight edge.
-            context.fill(
-                path,
-                with: .radialGradient(
+            // Persistent background grid — always visible, even with the cursor
+            // off the canvas.
+            context.fill(path, with: .color(Color.primary.opacity(0.22)))
+
+            // Cursor spotlight — brightens the dots near the pointer (the nice
+            // Spatial-style reveal), layered ON TOP of the base grid.
+            if strength > 0.001 {
+                let center = pointer ?? lastPointer
+                context.fill(path, with: .radialGradient(
                     Gradient(colors: [
-                        Color.primary.opacity(0.55 * strength),
-                        Color.primary.opacity(0.35 * strength),
+                        Color.primary.opacity(0.32 * strength),
+                        Color.primary.opacity(0.14 * strength),
                         .clear
                     ]),
-                    center: center,
-                    startRadius: 0,
-                    endRadius: radius
-                )
-            )
+                    center: center, startRadius: 0, endRadius: Self.spotlightRadius))
+            }
         }
         // Fade the pool in/out only on enter/leave transitions.
         .onChange(of: pointer == nil) { gone in

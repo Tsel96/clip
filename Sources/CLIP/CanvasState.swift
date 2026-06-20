@@ -9,7 +9,7 @@ final class CanvasState: ObservableObject {
     // MARK: - Pages  (per-page state lives inside each Page)
 
     @Published var pages: [Page]
-    @Published var activePageID: UUID
+    @Published var activePageID: UUID { didSet { if activePageID != oldValue { cachedWorldBounds = nil } } }
 
     /// iPhone → canvas share inbox: watches a user-chosen iCloud Drive
     /// folder for links dropped by the "Add to Canvas" Shortcut.
@@ -36,6 +36,10 @@ final class CanvasState: ObservableObject {
     /// instead of being filtered out by `isHiddenByStack`. Esc /
     /// click-out clears this and the cards spring back into the stack.
     @Published var focusedStackID: UUID? = nil
+    /// The unfolded folder, if any. While set, the canvas shows ONLY that
+    /// folder's children (`canvasDisplayNodes`) under its own fitted camera;
+    /// Esc / the back affordance clears it and restores the prior camera.
+    @Published var focusedFolderID: UUID? = nil
     /// Per-member target world position while in focus mode. Empty
     /// outside focus mode; populated by `enterStackFocus`. Read by
     /// `effectivePosition` to override the node's stored position.
@@ -128,7 +132,14 @@ final class CanvasState: ObservableObject {
     init() {
         // Restore from disk, falling back to a single empty "Page 1".
         if let snapshot = CanvasStore.load(), !snapshot.pages.isEmpty {
-            self.pages = snapshot.pages
+            // Sections are being retired in favour of folders — drop any that
+            // were saved so they disappear from the canvas (the cards they
+            // visually contained stay, since containment was spatial).
+            self.pages = snapshot.pages.map { page in
+                var p = page
+                p.nodes = p.nodes.filter { if case .section = $0.kind { return false }; return true }
+                return p
+            }
             self.activePageID =
                 snapshot.pages.contains(where: { $0.id == snapshot.activePageID })
                 ? snapshot.activePageID
@@ -688,6 +699,11 @@ final class CanvasState: ObservableObject {
     /// id of a freshly placed editable node (text or sticky) that should
     /// auto-focus its editor on appear. Cleared once consumed.
     @Published var pendingFocusNodeID: UUID? = nil
+
+    /// id of the text node currently in inline edit. While set, that one card's
+    /// hosted content stays hit-testable so its TextField receives keys/caret
+    /// clicks; the canvas input layer (CanvasInputView) steps aside for it.
+    @Published var editingTextNodeID: UUID? = nil
 
     /// ids of freshly added image nodes that should play the wavefront
     /// reveal once when they appear. Cleared by the node view once consumed.
@@ -1449,6 +1465,7 @@ final class CanvasState: ObservableObject {
         case .stickyNote: derived.append("note")
         case .drawing:    derived.append("drawing")
         case .section:    break
+        case .folder:     derived.append("folder")
         }
         if let host = sourceURL(of: node).flatMap({ URL(string: $0)?.host })?
             .replacingOccurrences(of: "www.", with: ""),
@@ -1514,6 +1531,8 @@ final class CanvasState: ObservableObject {
             return "A loose freehand ink sketch, minimal expressive line art."
         case .section:
             return "A labeled grouping frame."
+        case .folder:
+            return "A folder holding a set of saved items."
         }
     }
 
@@ -1541,6 +1560,9 @@ final class CanvasState: ObservableObject {
         }()
         let node = CanvasNode.text(content: "", position: position)
         withUndoable { nodes.append(node) }
+        // Native text: editingTextNodeID makes the new item mount the SwiftUI
+        // inline editor immediately (pendingFocus then focuses it on appear).
+        editingTextNodeID = node.id
         pendingFocusNodeID = node.id
         select(node.id)
         toolMode = .select
@@ -1596,6 +1618,146 @@ final class CanvasState: ObservableObject {
                 nodes[idx].kind = .stickyNote(content: content, color: color)
             }
         }
+    }
+
+    // MARK: - Folders
+
+    /// Create an empty "Untitled" folder at the given world point (or viewport
+    /// centre when `nil`), selected and ready. Sized to the Figma folder aspect.
+    @discardableResult
+    func addFolder(at worldPoint: CGPoint? = nil) -> UUID {
+        let width: CGFloat = 260
+        let height = (width / 1.165).rounded()
+        let position: CGPoint = {
+            if let p = worldPoint {
+                return CGPoint(x: p.x - width / 2, y: p.y - height / 2)
+            }
+            let c = screenToWorld(point: viewportCentre)
+            return CGPoint(x: c.x - width / 2, y: c.y - height / 2)
+        }()
+        let node = CanvasNode.folder(position: position, width: width)
+        withUndoable { nodes.append(node) }
+        select(node.id)
+        toolMode = .select
+        return node.id
+    }
+
+    /// Rename a folder (inline edit / Edit Folder).
+    func setFolderTitle(id: UUID, to title: String) {
+        withUndoable {
+            guard let idx = nodes.firstIndex(where: { $0.id == id }),
+                  case .folder(_, let icon, let childIDs) = nodes[idx].kind else { return }
+            nodes[idx].kind = .folder(title: title, icon: icon, childIDs: childIDs)
+        }
+    }
+
+    /// Set a folder's identity icon (SF Symbol name, "" for none).
+    func setFolderIcon(id: UUID, to icon: String) {
+        withUndoable {
+            guard let idx = nodes.firstIndex(where: { $0.id == id }),
+                  case .folder(let title, _, let childIDs) = nodes[idx].kind else { return }
+            nodes[idx].kind = .folder(title: title, icon: icon, childIDs: childIDs)
+        }
+    }
+
+    // MARK: - Folder contents & focus
+
+    /// Every node id currently tucked inside some folder — hidden from the main
+    /// canvas, shown only when that folder is unfolded.
+    var allFolderChildIDs: Set<UUID> {
+        var ids = Set<UUID>()
+        for n in nodes {
+            if case .folder(_, _, let childIDs) = n.kind { ids.formUnion(childIDs) }
+        }
+        return ids
+    }
+
+    /// The folder node that contains `nodeID`, if any.
+    func folderContaining(_ nodeID: UUID) -> UUID? {
+        for n in nodes {
+            if case .folder(_, _, let childIDs) = n.kind, childIDs.contains(nodeID) { return n.id }
+        }
+        return nil
+    }
+
+    /// Nodes the canvas should render: a folder's children while it's unfolded,
+    /// otherwise every node NOT tucked inside a folder. Drives the native canvas
+    /// so folder children truly disappear from the main board until opened.
+    var canvasDisplayNodes: [CanvasNode] {
+        if let fid = focusedFolderID,
+           case .folder(_, _, let childIDs)? = nodeByID[fid]?.kind {
+            let set = Set(childIDs)
+            return nodes.filter { set.contains($0.id) }
+        }
+        let hidden = allFolderChildIDs
+        return hidden.isEmpty ? nodes : nodes.filter { !hidden.contains($0.id) }
+    }
+
+    /// Pre-unfold camera, restored on exit.
+    private var folderFocusOriginCamera: Camera?
+
+    /// Unfold a folder → show only its children under a camera fitted to them.
+    func enterFolderFocus(folderID: UUID) {
+        guard case .folder(_, _, let childIDs)? = nodeByID[folderID]?.kind else { return }
+        cancelPanInertia()
+        if focusedFolderID == nil { folderFocusOriginCamera = cameraStore.camera }
+        deselectAll()
+        focusedFolderID = folderID
+        if let rect = boundingRect(of: Set(childIDs)) { frameRect(rect, padding: 120) }
+        Haptics.tap()
+    }
+
+    /// Close the unfolded folder and restore the pre-unfold camera.
+    func exitFolderFocus() {
+        guard focusedFolderID != nil else { return }
+        cancelPanInertia()
+        let restore = folderFocusOriginCamera ?? cameraStore.camera
+        focusedFolderID = nil
+        folderFocusOriginCamera = nil
+        cameraStore.camera = restore
+    }
+
+    /// Drop cards INTO a folder: add them to its `childIDs` so they leave the
+    /// main canvas. Skips the folder itself and cards already inside a folder.
+    func addToFolder(_ folderID: UUID, nodeIDs: Set<UUID>) {
+        guard case .folder(let title, let icon, let existing)? = nodeByID[folderID]?.kind else { return }
+        let toAdd = nodeIDs.filter { $0 != folderID && folderContaining($0) == nil }
+        guard !toAdd.isEmpty else { return }
+        withUndoable {
+            guard let idx = nodes.firstIndex(where: { $0.id == folderID }) else { return }
+            nodes[idx].kind = .folder(title: title, icon: icon, childIDs: existing + Array(toAdd))
+        }
+        selectedNodeIDs.subtract(toAdd)
+        Haptics.tap()
+    }
+
+    /// After a drag, if the dragged cards landed on a folder, tuck them in. Uses
+    /// the primary dragged card's centre to pick the folder; ignores dragged
+    /// folders and drops made while a folder is already unfolded.
+    func handleDropOntoFolder(draggedIDs: Set<UUID>) {
+        guard focusedFolderID == nil, !draggedIDs.isEmpty else { return }
+        let cards = draggedIDs.filter { id in
+            if case .folder = nodeByID[id]?.kind { return false }
+            return true
+        }
+        // The dragged cards' bounding rect (positions already committed by onMove).
+        guard !cards.isEmpty, let dragRect = boundingRect(of: Set(cards)) else { return }
+        // File into the folder the cards overlap MOST. Center-in-frame missed big
+        // cards (taller than the 223 px folder, their center sits off it), so use
+        // overlap area with a meaningful threshold (≥25% of the folder) — covering
+        // the folder files it; merely brushing past it does not.
+        var best: (id: UUID, area: CGFloat)?
+        for f in nodes {
+            guard case .folder = f.kind, !draggedIDs.contains(f.id) else { continue }
+            let fr = CGRect(x: f.position.x, y: f.position.y,
+                            width: f.width, height: renderedHeight(of: f))
+            let inter = fr.intersection(dragRect)
+            guard !inter.isNull else { continue }
+            let area = inter.width * inter.height
+            guard area >= fr.width * fr.height * 0.25 else { continue }
+            if area > (best?.area ?? 0) { best = (f.id, area) }
+        }
+        if let best { addToFolder(best.id, nodeIDs: Set(cards)) }
     }
 
     // MARK: - Sections
@@ -2021,7 +2183,14 @@ final class CanvasState: ObservableObject {
     /// Convert a screen-space stroke into a drawing node (in world coords).
     func commitStroke(screenPoints: [CGPoint]) {
         guard screenPoints.count >= 2 else { return }
-        let world = screenPoints.map { screenToWorld(point: $0) }
+        commitStroke(worldPoints: screenPoints.map { screenToWorld(point: $0) })
+    }
+
+    /// Commit a stroke whose points are ALREADY in world coords (the native
+    /// `CanvasInputView` draw path — its own coordinate system is content space,
+    /// so it converts content→world itself and skips `screenToWorld`).
+    func commitStroke(worldPoints world: [CGPoint]) {
+        guard world.count >= 2 else { return }
         let simplified = PathMath.simplify(world, epsilon: 1.5)
         let pad = drawWidth + 4
         let bounds = PathMath.paddedBounds(of: simplified, pad: pad)
@@ -2201,14 +2370,35 @@ final class CanvasState: ObservableObject {
                 || allIDs.contains(c.targetID)
                 || extraConnectorIDs.contains(c.id)
             }
+            // Prune deleted ids from any folder's contents (no dangling children).
+            for i in nodes.indices {
+                if case .folder(let t, let ic, let kids) = nodes[i].kind,
+                   kids.contains(where: { allIDs.contains($0) }) {
+                    nodes[i].kind = .folder(title: t, icon: ic,
+                                            childIDs: kids.filter { !allIDs.contains($0) })
+                }
+            }
         }
 
         for cid in allIDs {
             measuredHeights.removeValue(forKey: cid)
             selectedNodeIDs.remove(cid)
             if pendingFocusNodeID == cid { pendingFocusNodeID = nil }
+            // Release any cached web view / player for this card now, rather than
+            // letting it idle through the cache's deferred-teardown window (a
+            // deleted card shouldn't keep a WKWebView/AVPlayer alive). No-op when
+            // the cache is off or the node was never cached.
+            if FeatureFlags.useWebViewCache {
+                WebViewCache.shared.evict(cid)
+                PlayerCache.shared.evict(cid)
+            }
         }
         selectedConnectorIDs.subtract(extraConnectorIDs)
+
+        // If the unfolded folder was just deleted, re-fold to the main canvas.
+        if let f = focusedFolderID, !nodes.contains(where: { $0.id == f }) {
+            exitFolderFocus()
+        }
 
         // Deletion leaves no visible trace where the cards were — confirm
         // it happened (and remind that it's reversible).
@@ -2298,6 +2488,7 @@ final class CanvasState: ObservableObject {
         case .webclip:    return 320
         case .section:    return 200
         case .stickyNote: return 200
+        case .folder:     return 224
         }
     }
 
@@ -2904,6 +3095,32 @@ final class CanvasState: ObservableObject {
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
+    /// Cache backing `stableWorldBounds` — reset on page switch.
+    private var cachedWorldBounds: CGRect?
+
+    /// The scrollable canvas extent. Unlike the raw content bounding box this is
+    /// GROWS-ONLY: it never shrinks or shifts while the content still fits inside
+    /// it. That is what makes a *select-all* drag visibly move the cards — a
+    /// content-following box would shift by the same delta as the nodes, leaving
+    /// every node's position RELATIVE to the box unchanged (so nothing appears to
+    /// move, even though the model positions did change). It expands only when a
+    /// node is dragged/created outside the current margin.
+    func stableWorldBounds() -> CGRect {
+        let margin: CGFloat = 6000
+        guard let content = boundingRect(of: Set(nodes.map(\.id))),
+              content.width > 0, content.height > 0 else {
+            return cachedWorldBounds ?? CGRect(x: -margin, y: -margin, width: 2 * margin, height: 2 * margin)
+        }
+        if let cached = cachedWorldBounds, cached.contains(content) { return cached }
+        let next = (cachedWorldBounds ?? .null).union(content.insetBy(dx: -margin, dy: -margin))
+        cachedWorldBounds = next
+        return next
+    }
+
+    /// Drop the cached extent (call on page switch so a new page isn't anchored
+    /// to the previous page's far-flung bounds).
+    func resetWorldBoundsCache() { cachedWorldBounds = nil }
+
     /// Glide the camera to frame the given world rect with `padding`
     /// extra breathing room on each side. Capped to zoom 1.5× max so a
     /// single small card doesn't get magnified into a blur.
@@ -3088,6 +3305,20 @@ final class CanvasState: ObservableObject {
                 node.height = max(minSize.height, frame.height)
             }
         }
+    }
+
+    /// A media card (tweet) resolved its real media aspect asynchronously —
+    /// snap the node's height to it so the aspect-fit card fills its frame
+    /// instead of leaving a gray gap around it. Routed through `resize` so it
+    /// persists + re-lays out (not a separate undoable action). Idempotent:
+    /// no-ops once the height already matches, so it can't fight a user's
+    /// aspect-locked resize.
+    func snapMediaAspect(_ id: UUID, aspect: CGFloat) {
+        guard aspect > 0.01, let n = nodeByID[id] else { return }
+        let target = (n.width / aspect).rounded()
+        guard abs((n.height ?? -1) - target) > 1 else { return }
+        resize(id: id, frame: CGRect(x: n.position.x, y: n.position.y,
+                                     width: n.width, height: target))
     }
 
     /// Insert a copy of `id` at the same position with a fresh UUID.

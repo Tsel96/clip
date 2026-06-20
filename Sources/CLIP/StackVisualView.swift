@@ -228,6 +228,8 @@ private struct MemberCoverView: View {
             color.swiftUIColor
         case .section(_, let color):
             color.swiftUIColor.opacity(0.55)
+        case .folder:
+            Color(white: 0.97)
         case .text(let content, _):
             textBody(content: content)
         case .tweet(let url):

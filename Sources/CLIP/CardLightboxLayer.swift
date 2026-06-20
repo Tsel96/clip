@@ -641,6 +641,7 @@ private struct DetailsInspector: View {
         case .stickyNote: return "NOTE"
         case .drawing:   return "DRAW"
         case .section:   return "SECTION"
+        case .folder:    return "FOLDER"
         }
     }
 }
@@ -689,9 +690,12 @@ struct CardContentView: View {
     var body: some View {
         switch node.kind {
         case .tweet(let url):       TweetCardView(url: url, isLive: isLive)
+        // nodeID omitted ⇒ uncached: the lightbox must not share (and steal) the
+        // canvas card's cached web view while both are mounted (the moved-view
+        // glitch). The detail view loads its own web view fresh.
         case .instagram(let url):   InstagramCardView(url: url, isLive: isLive)
         case .youtube(let url):     YouTubeNodeView(url: url, isLive: isLive)
-        case .webclip(let url):     WebClipCardView(url: url, isLive: isLive, nodeID: node.id)
+        case .webclip(let url):     WebClipCardView(url: url, isLive: isLive)
         case .image(let data, let filename):
             ImageNodeView(data: data, filename: filename, isLive: isLive)
         case .video(let fileURL, let filename):
@@ -707,6 +711,8 @@ struct CardContentView: View {
             SectionNodeView(node: node, title: title, color: color)
         case .stickyNote(let content, let color):
             StickyNodeView(node: node, content: content, color: color)
+        case .folder:
+            Color.clear   // folders render natively via makeNativeCardContent
         }
     }
 }
