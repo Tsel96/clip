@@ -71,8 +71,8 @@ struct ConnectorsLayer: View {
                     ArrowheadShape(
                         tip: route.arrowTip,
                         from: route.arrowFrom,
-                        length: 12,
-                        halfWidth: 7
+                        length: 10,
+                        halfWidth: 4.5
                     )
                     .fill(Self.connectorGreen)
                 )

@@ -24,8 +24,11 @@ struct BezierRoute {
 enum ConnectorPathMath {
 
     static let standoffDistance: CGFloat = 7
-    static let armMin: CGFloat = 70
-    static let armMax: CGFloat = 150
+    static let armMin: CGFloat = 40
+    /// Curvature: control arms = half the standoff distance (classic node-editor
+    /// S-curve), so the bend scales with distance and reads as a smooth Obsidian
+    /// curve at any zoom — NOT a tight 150-cap that goes straight when far apart.
+    static let armFactor: CGFloat = 0.5
 
     static func sideCenter(of r: CGRect, _ side: ConnSide) -> CGPoint {
         switch side {
@@ -79,7 +82,7 @@ enum ConnectorPathMath {
         let so = standoff(s, ss)
         let to = standoff(t, ts)
         let dist = hypot(to.x - so.x, to.y - so.y)
-        let arm = max(armMin, min(dist / 2, armMax))
+        let arm = max(armMin, dist * armFactor)
         let cp1 = control(so, ss, arm)
         let cp2 = control(to, ts, arm)
 

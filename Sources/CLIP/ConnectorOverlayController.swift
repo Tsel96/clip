@@ -26,8 +26,8 @@ final class ConnectorOverlayController {
     // Base on-screen sizes (divided by magnification each refresh).
     private static let screenLineWidth: CGFloat = 2
     private static let selectedLineWidth: CGFloat = 3.5
-    private static let arrowLen: CGFloat = 12
-    private static let arrowHalf: CGFloat = 7
+    private static let arrowLen: CGFloat = 10
+    private static let arrowHalf: CGFloat = 4.5
     private static let labelFontSize: CGFloat = 13
 
     /// Brand green (#3DA726) for the line/arrow; brighter green when selected.

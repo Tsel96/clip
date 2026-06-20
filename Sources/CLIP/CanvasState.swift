@@ -2264,6 +2264,14 @@ final class CanvasState: ObservableObject {
         selectedNodeIDs = []
     }
 
+    /// Set (or clear) a connector's midpoint label. Trimmed; undoable.
+    func setConnectorLabel(_ id: UUID, _ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let idx = connectors.firstIndex(where: { $0.id == id }),
+              connectors[idx].label != trimmed else { return }
+        withUndoable { connectors[idx].label = trimmed }
+    }
+
     func toggleConnectorSelection(_ id: UUID) {
         if selectedConnectorIDs.contains(id) {
             selectedConnectorIDs.remove(id)
