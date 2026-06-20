@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Inline "Insert link here" field that drops in above the toolbar "+"
@@ -17,23 +18,39 @@ struct LinkInputBar: View {
     static let fieldWidth: CGFloat  = 300
     static let fieldHeight: CGFloat = 50
 
+    /// Enter.svg (Figma 72:36787) — 24×24 submit icon from bundle.
+    private static let enterIcon: NSImage? = {
+        guard let url = Bundle.module.url(forResource: "Enter", withExtension: "svg"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.size = NSSize(width: 24, height: 24)
+        return img
+    }()
+
     var body: some View {
         HStack(spacing: 10) {
             TextField("", text: $text, prompt: placeholder)
                 .textFieldStyle(.plain)
                 .font(.system(size: 17, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.black)
-                .tint(.black)                       // caret matches the Figma dark line
+                .tint(Color(rgb: 0x3DA726))         // brand-green caret (Figma cursor spec)
                 .focused($focused)
                 .onSubmit(submit)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Trailing submit affordance (Figma's 24×24 glyph at the right edge).
+            // Trailing submit affordance — Enter.svg (Figma 72:36787), 24×24.
             Button(action: submit) {
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.black.opacity(text.isEmpty ? 0.2 : 0.6))
-                    .frame(width: 24, height: 24)
+                if let icon = Self.enterIcon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .renderingMode(.original)
+                        .frame(width: 24, height: 24)
+                        .opacity(text.isEmpty ? 0.4 : 1.0)
+                } else {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.black.opacity(text.isEmpty ? 0.2 : 0.6))
+                        .frame(width: 24, height: 24)
+                }
             }
             .buttonStyle(.plain)
             .disabled(text.isEmpty)

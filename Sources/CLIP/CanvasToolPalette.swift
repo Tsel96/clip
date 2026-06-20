@@ -827,20 +827,33 @@ final class ToolPaletteButton: NSView {
 /// `NSViewRepresentable` that wires `CanvasToolPaletteView` to `CanvasState`.
 /// CanvasView mounts this in an `.overlay(alignment: .bottom)` with an explicit
 /// `.frame(width: totalW, height: totalH)` so the shadow bleed is honored.
+///
+/// `toolMode` and `isAddSelected` are stored as value-type fields so SwiftUI
+/// can diff them across renders and guarantee `updateNSView` fires on change.
+/// Without this, `state` is a reference type — same pointer each render —
+/// and SwiftUI skips the update, leaving the "+" button stuck yellow.
 struct _PaletteRepresentable: NSViewRepresentable {
     let state: CanvasState
+    let toolMode: ToolMode
+    let isAddSelected: Bool
+
+    init(state: CanvasState) {
+        self.state        = state
+        self.toolMode     = state.toolMode
+        self.isAddSelected = state.isLinkInputPresented
+    }
 
     func makeNSView(context: Context) -> CanvasToolPaletteView {
         let v = CanvasToolPaletteView()
-        v.configure(active: state.toolMode)
-        v.setAddSelected(state.isLinkInputPresented)
+        v.configure(active: toolMode)
+        v.setAddSelected(isAddSelected)
         wireCallbacks(v, state: state)
         return v
     }
 
     func updateNSView(_ nsView: CanvasToolPaletteView, context: Context) {
-        nsView.configure(active: state.toolMode)
-        nsView.setAddSelected(state.isLinkInputPresented)
+        nsView.configure(active: toolMode)
+        nsView.setAddSelected(isAddSelected)
         wireCallbacks(nsView, state: state)
     }
 
