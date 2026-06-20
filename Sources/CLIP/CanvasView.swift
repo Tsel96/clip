@@ -116,6 +116,15 @@ struct CanvasView: View {
                 }
             }
 
+            // Unfolded folder Esc: close it first (re-fold) before any other
+            // Esc semantics — same panic-out priority as stack focus.
+            if event.keyCode == 53,
+               state.canvasMode == .canvas,
+               state.focusedFolderID != nil {
+                state.exitFolderFocus()
+                return nil
+            }
+
             // Stack focus mode Esc: exit focus first so the user can
             // panic out of the deep modal without other Esc semantics
             // interfering. Falls through to the Smart Selection
@@ -413,6 +422,7 @@ struct CanvasView: View {
                                 }
                                 state.activeResizeUndoSnapshot = nil
                             },
+                            onMoveCommitted: { state.handleDropOntoFolder(draggedIDs: $0) },
                             onMove: { id, position in
                                 // Move (not resize) so connectors stay attached.
                                 state.updatePosition(of: id, to: position)
@@ -433,6 +443,8 @@ struct CanvasView: View {
                                         state.pendingFocusNodeID = id
                                     } else if state.isStackHead(id), state.focusedStackID == nil {
                                         state.enterStackFocus(headID: id)
+                                    } else if case .folder = node.kind {
+                                        state.enterFolderFocus(folderID: id)
                                     } else if state.canvasMode == .canvas, !node.isSection {
                                         state.openLightbox(id)
                                     }

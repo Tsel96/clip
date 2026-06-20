@@ -177,6 +177,9 @@ struct CanvasConfig {
     /// a move, `beginDrag` of the primary id for the connector tug); commit on end.
     let onInteractionBegan: (UUID?) -> Void
     let onInteractionEnded: () -> Void
+    /// A finished move (real drag) committed these node ids — used to detect a
+    /// drop ONTO a folder (→ tuck them in). A no-op for ordinary moves.
+    let onMoveCommitted: (Set<UUID>) -> Void
     /// Move a node to a new WORLD position (per drag tick). Uses the move API
     /// (`updatePosition`) so connectors stay attached — NOT `resize`.
     let onMove: (UUID, CGPoint) -> Void

@@ -273,7 +273,10 @@ final class CanvasInputView: NSView {
             for (id, sp) in moveStartPos {
                 p.onMove(id, CGPoint(x: sp.x + moveDelta.x, y: sp.y + moveDelta.y))
             }
-            if didBegin { p.onInteractionEnded() }
+            if didBegin {
+                p.onInteractionEnded()
+                p.onMoveCommitted(Set(moveStartPos.keys))   // drop-onto-folder check
+            }
             coordinator?.endLiveReposition(moveStartPos, dx: moveDelta.x, dy: moveDelta.y)
         case .resize:
             if didBegin { p.onInteractionEnded() }

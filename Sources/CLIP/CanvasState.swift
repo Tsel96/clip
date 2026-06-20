@@ -1693,6 +1693,67 @@ final class CanvasState: ObservableObject {
         return hidden.isEmpty ? nodes : nodes.filter { !hidden.contains($0.id) }
     }
 
+    /// Pre-unfold camera, restored on exit.
+    private var folderFocusOriginCamera: Camera?
+
+    /// Unfold a folder → show only its children under a camera fitted to them.
+    func enterFolderFocus(folderID: UUID) {
+        guard case .folder(_, _, let childIDs)? = nodeByID[folderID]?.kind else { return }
+        cancelPanInertia()
+        if focusedFolderID == nil { folderFocusOriginCamera = cameraStore.camera }
+        deselectAll()
+        focusedFolderID = folderID
+        if let rect = boundingRect(of: Set(childIDs)) { frameRect(rect, padding: 120) }
+        Haptics.tap()
+    }
+
+    /// Close the unfolded folder and restore the pre-unfold camera.
+    func exitFolderFocus() {
+        guard focusedFolderID != nil else { return }
+        cancelPanInertia()
+        let restore = folderFocusOriginCamera ?? cameraStore.camera
+        focusedFolderID = nil
+        folderFocusOriginCamera = nil
+        cameraStore.camera = restore
+    }
+
+    /// Drop cards INTO a folder: add them to its `childIDs` so they leave the
+    /// main canvas. Skips the folder itself and cards already inside a folder.
+    func addToFolder(_ folderID: UUID, nodeIDs: Set<UUID>) {
+        guard case .folder(let title, let icon, let existing)? = nodeByID[folderID]?.kind else { return }
+        let toAdd = nodeIDs.filter { $0 != folderID && folderContaining($0) == nil }
+        guard !toAdd.isEmpty else { return }
+        withUndoable {
+            guard let idx = nodes.firstIndex(where: { $0.id == folderID }) else { return }
+            nodes[idx].kind = .folder(title: title, icon: icon, childIDs: existing + Array(toAdd))
+        }
+        selectedNodeIDs.subtract(toAdd)
+        Haptics.tap()
+    }
+
+    /// After a drag, if the dragged cards landed on a folder, tuck them in. Uses
+    /// the primary dragged card's centre to pick the folder; ignores dragged
+    /// folders and drops made while a folder is already unfolded.
+    func handleDropOntoFolder(draggedIDs: Set<UUID>) {
+        guard focusedFolderID == nil, !draggedIDs.isEmpty else { return }
+        let cards = draggedIDs.filter { id in
+            if case .folder = nodeByID[id]?.kind { return false }
+            return true
+        }
+        guard let primary = cards.first, let n = nodeByID[primary] else { return }
+        let centre = CGPoint(x: n.position.x + n.width / 2,
+                             y: n.position.y + renderedHeight(of: n) / 2)
+        for f in nodes {
+            guard case .folder = f.kind, !draggedIDs.contains(f.id) else { continue }
+            let frame = CGRect(x: f.position.x, y: f.position.y,
+                               width: f.width, height: renderedHeight(of: f))
+            if frame.contains(centre) {
+                addToFolder(f.id, nodeIDs: Set(cards))
+                return
+            }
+        }
+    }
+
     // MARK: - Sections
 
     /// Create a section frame covering the given world rect. Returns its
@@ -2303,6 +2364,14 @@ final class CanvasState: ObservableObject {
                 || allIDs.contains(c.targetID)
                 || extraConnectorIDs.contains(c.id)
             }
+            // Prune deleted ids from any folder's contents (no dangling children).
+            for i in nodes.indices {
+                if case .folder(let t, let ic, let kids) = nodes[i].kind,
+                   kids.contains(where: { allIDs.contains($0) }) {
+                    nodes[i].kind = .folder(title: t, icon: ic,
+                                            childIDs: kids.filter { !allIDs.contains($0) })
+                }
+            }
         }
 
         for cid in allIDs {
@@ -2319,6 +2388,11 @@ final class CanvasState: ObservableObject {
             }
         }
         selectedConnectorIDs.subtract(extraConnectorIDs)
+
+        // If the unfolded folder was just deleted, re-fold to the main canvas.
+        if let f = focusedFolderID, !nodes.contains(where: { $0.id == f }) {
+            exitFolderFocus()
+        }
 
         // Deletion leaves no visible trace where the cards were — confirm
         // it happened (and remind that it's reversible).
