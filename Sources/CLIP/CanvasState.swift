@@ -36,6 +36,10 @@ final class CanvasState: ObservableObject {
     /// instead of being filtered out by `isHiddenByStack`. Esc /
     /// click-out clears this and the cards spring back into the stack.
     @Published var focusedStackID: UUID? = nil
+    /// The unfolded folder, if any. While set, the canvas shows ONLY that
+    /// folder's children (`canvasDisplayNodes`) under its own fitted camera;
+    /// Esc / the back affordance clears it and restores the prior camera.
+    @Published var focusedFolderID: UUID? = nil
     /// Per-member target world position while in focus mode. Empty
     /// outside focus mode; populated by `enterStackFocus`. Read by
     /// `effectivePosition` to override the node's stored position.
@@ -1654,6 +1658,39 @@ final class CanvasState: ObservableObject {
                   case .folder(let title, _, let childIDs) = nodes[idx].kind else { return }
             nodes[idx].kind = .folder(title: title, icon: icon, childIDs: childIDs)
         }
+    }
+
+    // MARK: - Folder contents & focus
+
+    /// Every node id currently tucked inside some folder — hidden from the main
+    /// canvas, shown only when that folder is unfolded.
+    var allFolderChildIDs: Set<UUID> {
+        var ids = Set<UUID>()
+        for n in nodes {
+            if case .folder(_, _, let childIDs) = n.kind { ids.formUnion(childIDs) }
+        }
+        return ids
+    }
+
+    /// The folder node that contains `nodeID`, if any.
+    func folderContaining(_ nodeID: UUID) -> UUID? {
+        for n in nodes {
+            if case .folder(_, _, let childIDs) = n.kind, childIDs.contains(nodeID) { return n.id }
+        }
+        return nil
+    }
+
+    /// Nodes the canvas should render: a folder's children while it's unfolded,
+    /// otherwise every node NOT tucked inside a folder. Drives the native canvas
+    /// so folder children truly disappear from the main board until opened.
+    var canvasDisplayNodes: [CanvasNode] {
+        if let fid = focusedFolderID,
+           case .folder(_, _, let childIDs)? = nodeByID[fid]?.kind {
+            let set = Set(childIDs)
+            return nodes.filter { set.contains($0.id) }
+        }
+        let hidden = allFolderChildIDs
+        return hidden.isEmpty ? nodes : nodes.filter { !hidden.contains($0.id) }
     }
 
     // MARK: - Sections

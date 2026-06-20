@@ -333,7 +333,7 @@ struct CanvasView: View {
                         // we sync back out.
                         CollectionCanvas(config: CanvasConfig(
                             worldBounds: worldBounds,
-                            nodes: state.nodes,
+                            nodes: state.canvasDisplayNodes,
                             camera: cameraStore.camera,
                             minZoom: 0.05, maxZoom: 8,
                             onCameraChange: { cameraStore.camera = $0 },
