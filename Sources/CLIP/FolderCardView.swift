@@ -15,6 +15,11 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     /// White stroke tracing the folder silhouette (Figma node 58:232), overlaid
     /// on the fill so the folder has a crisp outline.
     private let outlineView = NSImageView()
+    private var isSelected = false
+    private var currentCount = 0
+    /// Current art canvas height (1044 rest/per-count, 1099 selected — the
+    /// selected SVG carries extra glow margin) so layout maps the taller art.
+    private var currentArtHeight: CGFloat = 1044
 
     /// The folder occupies this sub-rect of the rest SVG's 1163×1044 canvas
     /// (the rest is shadow margin) — used to bleed the margin outside the node.
