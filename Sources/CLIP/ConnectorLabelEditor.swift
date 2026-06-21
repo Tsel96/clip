@@ -20,9 +20,13 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         // scales with zoom (the container is magnified by the scroll view).
         field.font = .systemFont(ofSize: 20, weight: .medium)
         field.alignment = .center
-        field.isBezeled = true
-        field.bezelStyle = .roundedBezel
+        // Obsidian-style: no bezel/border — just text with a caret. A
+        // canvas-coloured background (invisible on the canvas) masks the line.
+        field.isBezeled = false
+        field.isBordered = false
         field.drawsBackground = true
+        field.backgroundColor = NSColor(srgbRed: 0.95, green: 0.95, blue: 0.95, alpha: 1)
+        field.textColor = NSColor(srgbRed: 0.1, green: 0.12, blue: 0.1, alpha: 1)
         field.focusRingType = .none
         field.usesSingleLineMode = true
         field.delegate = self
