@@ -719,6 +719,15 @@ struct CanvasView: View {
                     .padding(.bottom, 0)
             }
         }
+        // Top-CENTER: Canvas / Colorform / Archive segmented control (Figma
+        // 73:37182) — the mirror of the bottom tool palette, 18 pt from the top of
+        // the canvas. Shown in every mode (the affordance to switch between them).
+        .overlay(alignment: .top) {
+            NativeCanvasTopSegmentedControl(state: state)
+                .frame(width: CanvasTopSegmentedControlView.totalW,
+                       height: CanvasTopSegmentedControlView.totalH)
+                .padding(.top, 18)
+        }
         // Inline "Insert link here" field (Figma 72:36784) — floats above the
         // toolbar, centered on the round "+" (240 pt right of the toolbar's
         // center: 542/2 − 31). ALWAYS mounted (not `if`-inserted): a SwiftUI
