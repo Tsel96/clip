@@ -220,9 +220,10 @@ final class ConnectorOverlayController {
         }
         b.labelBG.isHidden = false; b.labelText.isHidden = false
 
+        let shown = text.uppercased()              // Figma: uppercase label text
         let fs = Self.labelFontSize                // content units → scales with zoom
         let font = NSFont.monospacedSystemFont(ofSize: fs, weight: .semibold)   // SF Mono Semibold (Figma)
-        let measured = (text as NSString).size(withAttributes: [.font: font])
+        let measured = (shown as NSString).size(withAttributes: [.font: font])
         let padH: CGFloat = 8, padV: CGFloat = 4
         let w = measured.width + padH * 2
         let h = measured.height + padV * 2
@@ -235,7 +236,7 @@ final class ConnectorOverlayController {
         b.labelText.frame = CGRect(x: center.x - measured.width / 2,
                                    y: center.y - measured.height / 2,
                                    width: measured.width, height: measured.height)
-        b.labelText.string = NSAttributedString(string: text, attributes: [
+        b.labelText.string = NSAttributedString(string: shown, attributes: [
             .font: font,
             .foregroundColor: NSColor.black            // Figma: pure black
         ])

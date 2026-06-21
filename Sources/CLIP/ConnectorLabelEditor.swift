@@ -24,8 +24,8 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         let current = config.connectors.first(where: { $0.id == cid })?.label ?? ""
 
         let field = NSTextField()
-        field.stringValue = current
-        field.placeholderString = "Label"
+        field.stringValue = current.uppercased()
+        field.placeholderString = "LABEL"
         // On-screen font = content size × zoom → matches the rendered label.
         field.font = .monospacedSystemFont(ofSize: Self.labelContentFontSize * mag, weight: .semibold)
         field.alignment = .center
@@ -68,7 +68,9 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
               let container = container, let host = scroll?.superview,
               let mid = connectorController?.midpoints[cid] else { return }
         let mag = max(scroll?.magnification ?? 1, 0.0001)
-        field.font = .monospacedSystemFont(ofSize: Self.labelContentFontSize * mag, weight: .semibold)
+        let f = NSFont.monospacedSystemFont(ofSize: Self.labelContentFontSize * mag, weight: .semibold)
+        field.font = f
+        field.currentEditor()?.font = f          // the ACTIVE field editor needs it too, or the live text won't resize
         let center = container.convert(mid, to: host)
         field.sizeToFit()
         let w = max(40 * mag, field.frame.width + 14 * mag)
@@ -89,6 +91,15 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
     // MARK: NSTextFieldDelegate
 
     public func controlTextDidChange(_ obj: Notification) {
+        // Force uppercase display (Figma), preserving the caret position.
+        if let field = editingConnectorField {
+            let upper = field.stringValue.uppercased()
+            if upper != field.stringValue {
+                let sel = field.currentEditor()?.selectedRange
+                field.stringValue = upper
+                if let sel { field.currentEditor()?.selectedRange = sel }
+            }
+        }
         if let cid = editingConnectorID { positionEditor(at: cid) }
     }
 

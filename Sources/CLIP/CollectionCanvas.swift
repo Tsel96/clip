@@ -26,12 +26,20 @@ import AppKit
 /// at the gesture location keeps the point under your fingers fixed — the
 /// expected canvas-zoom feel.
 final class CenterZoomScrollView: NSScrollView {
+    /// Fired on every live magnify tick so connector stroke widths (÷ magnification
+    /// → constant on-screen) and the inline label editor track the zoom in real
+    /// time (the contentView bounds notification alone lagged the pinch).
+    var onZoomChange: (() -> Void)?
     override func magnify(with event: NSEvent) {
         let target = max(minMagnification,
                          min(maxMagnification, magnification * (1 + event.magnification)))
         let point = documentView?.convert(event.locationInWindow, from: nil)
             ?? convert(event.locationInWindow, from: nil)
-        setMagnification(target, centeredAt: point)
+        setMagnification(target, centeredAt: point)   // routes through the override below
+    }
+    override func setMagnification(_ magnification: CGFloat, centeredAt point: NSPoint) {
+        super.setMagnification(magnification, centeredAt: point)
+        onZoomChange?()
     }
 }
 

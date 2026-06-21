@@ -143,6 +143,12 @@ final class CLIPCanvasView: NSView {
             // on-screen width while zooming — cheap CALayer updates, no re-render.
             coordinator?.refreshChrome()
         }
+        // Live magnify ticks update connector stroke widths (constant on screen)
+        // + the inline label editor — the bounds notification lagged the pinch.
+        scroll.onZoomChange = { [weak coordinator] in
+            coordinator?.pushCameraFromScroll()
+            coordinator?.refreshChrome()
+        }
 
         // Escape deselects (keyboard path, always available — no race).
         coordinator.escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in
