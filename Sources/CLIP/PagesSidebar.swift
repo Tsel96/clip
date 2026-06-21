@@ -138,10 +138,12 @@ struct PagesSidebar: View {
             topTrailingRadius: panelCorner,
             style: .continuous
         )
+        // No drop shadow here — the split-view column hard-clips it (it read as a
+        // weird dark edge). The rightward shadow is rendered, un-clipped, at the
+        // canvas's leading edge in ContentView instead.
         return shape
             .fill(panelFill)
             .overlay(shape.strokeBorder(panelBorder, lineWidth: 1))
-            .shadow(color: .black.opacity(0.12), radius: 7.5, x: 4, y: 0)
     }
 
     // MARK: - Header (PAGES + add)
@@ -186,7 +188,12 @@ struct PagesSidebar: View {
 
         HStack(spacing: 6) {
             if renamingID == page.id {
-                TextField("Page name", text: $renameText)
+                // Uppercase via the binding — `.textCase(.uppercase)` doesn't
+                // transform an editable field's input, so force it on every keystroke.
+                TextField("Page name", text: Binding(
+                    get: { renameText },
+                    set: { renameText = $0.uppercased() }
+                ))
                     .textFieldStyle(.plain)
                     .font(.clip(11))
                     .foregroundStyle(labelColor)
@@ -241,6 +248,8 @@ struct PagesSidebar: View {
             beginRename(page)
         }
         .onTapGesture {
+            // Clicking another page while renaming commits the edit first.
+            if let editing = renamingID, editing != page.id { commitRename(for: editing) }
             if renamingID != page.id { state.switchTo(pageID: page.id) }
         }
         .contextMenu {

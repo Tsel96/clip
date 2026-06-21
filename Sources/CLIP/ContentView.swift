@@ -33,9 +33,14 @@ struct ContentView: View {
                 // column, so render it at the canvas's leading edge instead (not
                 // clipped here) — a soft fade matching Figma's `4 0 / blur 15`.
                 .overlay(alignment: .leading) {
-                    LinearGradient(colors: [Color.black.opacity(0.12), .clear],
-                                   startPoint: .leading, endPoint: .trailing)
-                        .frame(width: 14)
+                    LinearGradient(
+                        stops: [
+                            .init(color: Color.black.opacity(0.10), location: 0.0),
+                            .init(color: Color.black.opacity(0.03), location: 0.45),
+                            .init(color: .clear, location: 1.0),
+                        ],
+                        startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 16)
                         .allowsHitTesting(false)
                         .ignoresSafeArea()
                 }

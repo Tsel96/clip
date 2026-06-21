@@ -61,7 +61,7 @@ struct CanvasView: View {
         switch state.canvasMode {
         case .colorform: return Color(red: 0.985, green: 0.965, blue: 0.945)
         case .archive:   return Color(red: 0.965, green: 0.955, blue: 0.940)
-        case .canvas:    return theme.canvas
+        case .canvas:    return Color(red: 237 / 255, green: 240 / 255, blue: 241 / 255)  // #EDF0F1
         }
     }
 
