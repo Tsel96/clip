@@ -1084,6 +1084,14 @@ final class ToolPaletteButton: NSView {
         } else {
             opacity = 0                 // keep the last colour so the fade-out is visible
         }
+        // Hover lifts the circle with a soft drop shadow (Figma hover state).
+        // Selected has no lift shadow (it carries the icon's white glow instead).
+        let lift = isHovered && !isActive
+        bgLayer.masksToBounds = false
+        bgLayer.shadowColor   = NSColor.black.cgColor
+        bgLayer.shadowOpacity = lift ? 0.18 : 0
+        bgLayer.shadowRadius  = 3
+        bgLayer.shadowOffset  = CGSize(width: 0, height: 2)
         if animated {
             CLIPSpring.animate(bgLayer, "opacity", to: opacity, preset: .control, key: "bg")
         } else {
