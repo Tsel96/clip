@@ -158,7 +158,8 @@ final class CLIPCanvasView: NSView {
             }
             return event
         }
-        // "C" with a single section selected → radial color picker at the cursor.
+        // "C" with a single item selected → Spatial flower color picker at the
+        // cursor (works on any node, like Spatial — not just sections).
         coordinator.colorKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in
             // Plain 'c' only — never with ⌘/⌥/⌃ (so ⌘C copy etc. still work).
             guard let coordinator, event.keyCode == 8,
@@ -166,9 +167,7 @@ final class CLIPCanvasView: NSView {
                   coordinator.config.editingTextNodeID == nil,          // not typing
                   coordinator.colorPicker == nil else { return event }
             let sel = coordinator.config.liveSelection()
-            guard sel.count == 1, let id = sel.first,
-                  let node = coordinator.config.nodes.first(where: { $0.id == id }),
-                  node.isSection else { return event }
+            guard sel.count == 1, let id = sel.first else { return event }
             coordinator.presentColorPicker(for: id)
             return nil
         }
