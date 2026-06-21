@@ -29,12 +29,12 @@ final class RadialColorPicker: NSView {
     /// than the leaves and the rings are spread enough that the vibrant outer
     /// ring is never buried under the pale inner ring.
     private let discR: CGFloat = 72
-    private let petalR: CGFloat = 14         // smaller at rest; rings tightened in step so NO gaps appear
+    private let petalR: CGFloat = 14         // small leaves, but the rings below still fill the disc
     private let coreR: CGFloat = 17          // white centre, slightly larger
     private let pad: CGFloat = 36            // room for the glow + drop shadow (must not clip)
     private var discCenter: CGPoint = .zero
-    private let innerR: CGFloat = 18
-    private let outerR: CGFloat = 35         // outer leaf edge ≈ 49 → bigger dark margin to the rim
+    private let innerR: CGFloat = 20
+    private let outerR: CGFloat = 39         // flower fills the disc; small leaves still overlap (no gaps)
 
     // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
     /// Peak scale boost for the hovered circle, the core's extra pop, and the
@@ -264,14 +264,14 @@ final class RadialColorPicker: NSView {
         hovered = idx
         if idx != nil { CLIPHaptics.snap() }
         // (no cursor change on hover — keep the default arrow)
-        applyHover(idx)                                   // hovered scales; neighbours shove out
+        applyHover(idx, animated: false)                  // hover-IN: snap instantly
         updateHoverRing(for: idx, animated: false)
         if !picked { onHoverPreview(idx.map { petals[$0].color }) }
     }
 
     override func mouseExited(with event: NSEvent) {
         hovered = nil
-        applyHover(nil)                                   // everything flexes back
+        applyHover(nil, animated: true)                   // hover-OUT: smooth flex back
         updateHoverRing(for: nil, animated: true)
         if !picked { onHoverPreview(nil) }
     }
@@ -279,7 +279,7 @@ final class RadialColorPicker: NSView {
     /// Spatial's flower hover: the hovered leaf scales up and physically SHOVES
     /// its neighbours outward (away from it), the shove falling off over ~3 rings
     /// — the whole flower flexes around the hovered colour. All spring-animated.
-    private func applyHover(_ idx: Int?) {
+    private func applyHover(_ idx: Int?, animated: Bool) {
         let hc = idx.map { petals[$0].center }
         for (i, petal) in petals.enumerated() {
             var s: CGFloat = 1, tx: CGFloat = 0, ty: CGFloat = 0
@@ -294,7 +294,7 @@ final class RadialColorPicker: NSView {
                 }
             }
             petal.layer.zPosition = petal.baseZ + (i == idx ? 100_000 : 0)
-            setTransform(petal.layer, scale: s, tx: tx, ty: ty, center: petal.center)
+            setTransform(petal.layer, scale: s, tx: tx, ty: ty, center: petal.center, animated: animated)
         }
     }
 
@@ -323,13 +323,21 @@ final class RadialColorPicker: NSView {
         return best
     }
 
-    /// Animate a leaf to a scale + outward shove (about its centre) with a fluid
-    /// spring (slight overshoot) — the physical "flex" both into and out of hover.
-    private func setTransform(_ layer: CAShapeLayer, scale s: CGFloat, tx: CGFloat, ty: CGFloat, center c: CGPoint) {
+    /// Set a leaf's scale + outward shove (about its centre). `animated` is false
+    /// on hover-IN (snaps instantly) and true on hover-OUT (springs back smoothly).
+    private func setTransform(_ layer: CAShapeLayer, scale s: CGFloat, tx: CGFloat, ty: CGFloat, center c: CGPoint, animated: Bool) {
         var m = CATransform3DMakeTranslation(-c.x, -c.y, 0)
         m = CATransform3DConcat(m, CATransform3DMakeScale(s, s, 1))
         m = CATransform3DConcat(m, CATransform3DMakeTranslation(c.x + tx, c.y + ty, 0))
-        let preset = CLIPSpring.Preset(response: 0.34, damping: 0.7)
+        if !animated {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            layer.removeAnimation(forKey: "hoverTransform")
+            layer.transform = m
+            CATransaction.commit()
+            return
+        }
+        // Smooth, slightly-overshooting return — the "scale back" on hover-out.
+        let preset = CLIPSpring.Preset(response: 0.40, damping: 0.72)
         let a = CASpringAnimation(keyPath: "transform")
         a.fromValue = layer.presentation()?.transform ?? layer.transform
         a.toValue = m
