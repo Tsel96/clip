@@ -1121,8 +1121,10 @@ struct _PaletteRepresentable: NSViewRepresentable {
         // sections now (folder-colour model is the separate F4 feature).
         v.onColorPick = { nsColor in
             let preset = RadialColorPicker.nearestSectionColor(to: nsColor)
-            for id in state.selectedNodeIDs where state.nodes.first(where: { $0.id == id })?.isSection == true {
-                state.setSectionColor(id: id, to: preset)
+            for id in state.selectedNodeIDs {
+                guard let n = state.nodes.first(where: { $0.id == id }) else { continue }
+                if n.isSection      { state.setSectionColor(id: id, to: preset) }
+                else if n.isFolder  { state.setFolderColor(id: id, to: preset) }
             }
         }
         // Download / Eject actions: TODO (pending behaviour spec).

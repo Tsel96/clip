@@ -15,6 +15,9 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     /// White stroke tracing the folder silhouette (Figma node 58:232), overlaid
     /// on the fill so the folder has a crisp outline.
     private let outlineView = NSImageView()
+    /// Folder tint (flower colour) — a colour-blend over the lavender fill that
+    /// swaps the hue while keeping the fill's luminance + gradient.
+    private let tintLayer = CALayer()
     private var isSelected = false
     private var currentCount = 0
     /// Current art canvas height (1044 rest/per-count, 1099 selected — the
@@ -64,6 +67,15 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         shapeView.layer?.shadowRadius = 12
         shapeView.layer?.shadowOffset = .zero
         addSubview(shapeView)
+
+        // Colour tint sits over the lavender fill, masked to the folder shape,
+        // and BELOW the white outline / text / icon (those are separate subviews).
+        tintLayer.isHidden = true
+        // Colour-blend recolours only the opaque folder pixels (transparent
+        // corners stay transparent) and preserves the fill's light gradient.
+        tintLayer.compositingFilter = CIFilter(name: "CIColorBlendMode")
+        shapeView.layer?.addSublayer(tintLayer)
+
         outlineView.image = Self.outlineImage
         outlineView.imageScaling = .scaleAxesIndependently
         // Crisp white edge tracing the folder silhouette (Figma outline.svg, 994×854,
@@ -106,6 +118,13 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         }
         currentCount = childIDs.count
         refreshArt()
+        // Folder tint from the flower picker (nil → default lavender).
+        if let fc = node.folderColor {
+            tintLayer.backgroundColor = fc.nsColor.cgColor
+            tintLayer.isHidden = false
+        } else {
+            tintLayer.isHidden = true
+        }
         // The 1/2/3-item SVGs bake in their own count + "Untitled" (as outlined
         // paths), so suppress our dynamic overlays whenever a baked-text SVG is
         // shown — only the text-stripped empty Folder_Rest needs them. (4+ caps at
@@ -160,6 +179,10 @@ final class FolderCardView: NSView, NativeCardUpdatable {
                                  y: -Self.folderRect.minY * sy,
                                  width: Self.svgSize.width * sx,
                                  height: currentArtHeight * sy)
+        // Tint covers the folder art; colour-blend clips itself to the opaque pixels.
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        tintLayer.frame = shapeView.bounds
+        CATransaction.commit()
         // Outline art (994×854) is tight to its canvas, same ~1.16 ratio as the
         // folder, so it traces the silhouette when filling the node bounds.
         outlineView.frame = bounds
