@@ -63,10 +63,13 @@ if [ -d "$ICON_DOT" ] && [ -n "$ACTOOL" ] && [ -x "$ACTOOL" ]; then
   if "$ACTOOL" "$ICON_DOT" --compile "$ICON_OUT" --platform macosx \
         --minimum-deployment-target 26.0 --app-icon AppIcon \
         --output-partial-info-plist "$ICON_OUT/icon.plist" >/dev/null 2>&1 \
-     && [ -f "$ICON_OUT/Assets.car" ]; then
-    cp "$ICON_OUT/Assets.car" "$APP/Contents/Resources/Assets.car"
-    [ -f "$ICON_OUT/AppIcon.icns" ] && cp "$ICON_OUT/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
-    ICON_NATIVE=1
+     && [ -f "$ICON_OUT/AppIcon.icns" ]; then
+    # Use ONLY the flattened icns — Tahoe still auto-masks it to a squircle and
+    # applies the glass material, so it still looks native. We deliberately DON'T
+    # ship Assets.car: its Liquid Glass render IGNORES the Icon Composer layer
+    # `scale` (always fills the tile), so the flattened icns — which honours the
+    # scale — is the only way to control the on-screen size.
+    cp "$ICON_OUT/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
   fi
   rm -rf "$ICON_OUT"
 fi
