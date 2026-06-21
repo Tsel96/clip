@@ -517,5 +517,7 @@ final class NativeVideoCache {
 
 /// Shared card-chrome constants so native content + the item chrome agree.
 enum CardChrome {
-    static let cornerRadius: CGFloat = 19.375
+    /// Cards are SQUARE (Figma 88:329/330/336 — the CARD layer has no corner
+    /// radius). Sticky/section keep their own small radii in their content views.
+    static let cornerRadius: CGFloat = 0
 }

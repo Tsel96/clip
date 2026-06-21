@@ -275,6 +275,10 @@ struct CollectionCanvas: NSViewRepresentable {
         private var seenNodeIDs: Set<UUID> = []
         private var didInitialApply = false
         var pendingAppearIDs: Set<UUID> = []
+        /// Node currently under the cursor (drives the hover state — scale +
+        /// elevated shadow). Set by `CanvasInputView`'s mouse tracking; read by
+        /// `CardItemView.updateChrome`. `nil` = nothing hovered.
+        var hoveredNodeID: UUID?
 
         init(_ config: CanvasConfig) { self.config = config }
 
@@ -734,10 +738,14 @@ final class CardItemView: NSView {
     var usesNativeContent = false
 
     private let sectionLayer = CAShapeLayer()
-    private let selectionLayer = CAShapeLayer()
-    /// 8 resize handles: 0–3 corners (tl, tr, bl, br), 4–7 edges (top, bottom,
-    /// left, right) — matching Spatial's corner + edge resize handles.
-    private let handleLayers: [CAShapeLayer] = (0..<8).map { _ in CAShapeLayer() }
+    /// Selection outline (cards): a white rounded rect sitting an **8px gap**
+    /// outside the (scaled) card edge, **4px** thick, **8px** corner radius — all
+    /// three constant on-screen (÷ magnification). Shown on SELECT only (Figma
+    /// 88:336). Folders draw their own curved silhouette outline instead.
+    private let outlineLayer = CAShapeLayer()
+    /// Hover/selected scale, applied to every canvas object EXCEPT marker
+    /// drawings (user spec). Same factor for hover and select (not compounded).
+    static let liftScale: CGFloat = 1.06
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -757,23 +765,18 @@ final class CardItemView: NSView {
         sectionLayer.isHidden = true
         layer?.addSublayer(sectionLayer)
 
-        // Selection ring + handles use `opacity` (not isHidden) so they can FADE
-        // in/out; they start fully transparent.
-        selectionLayer.fillColor = nil
-        selectionLayer.strokeColor = NSColor.white.cgColor
-        selectionLayer.shadowColor = NSColor.white.cgColor
-        selectionLayer.shadowOpacity = 0.9
-        selectionLayer.shadowOffset = .zero
-        selectionLayer.zPosition = 100
-        selectionLayer.opacity = 0
-        layer?.addSublayer(selectionLayer)
-        for h in handleLayers {
-            h.fillColor = NSColor.white.cgColor
-            h.strokeColor = NSColor.black.withAlphaComponent(0.18).cgColor
-            h.zPosition = 101
-            h.opacity = 0
-            layer?.addSublayer(h)
-        }
+        // Selection outline uses `opacity` (not isHidden) so it FADES in/out;
+        // starts transparent. White stroke with a faint black drop shadow for
+        // depth (Figma 88:340), geometry set per-frame in `updateChrome`.
+        outlineLayer.fillColor = nil
+        outlineLayer.strokeColor = NSColor.white.cgColor
+        outlineLayer.lineJoin = .round
+        outlineLayer.shadowColor = NSColor.black.cgColor
+        outlineLayer.shadowOpacity = 0.12
+        outlineLayer.shadowOffset = .zero
+        outlineLayer.zPosition = 100
+        outlineLayer.opacity = 0
+        layer?.addSublayer(outlineLayer)
     }
 
     /// Draw the section outline, selection ring + 8 resize handles. Geometry is
@@ -786,6 +789,12 @@ final class CardItemView: NSView {
         let mag = magnification
         let node = liveNode
         let valid = bounds.width > 1 && bounds.height > 1
+        let folderView = subviews.compactMap { $0 as? FolderCardView }.first
+        let selected = valid && isSelectedNow
+        let hovered = valid && isHoveredNow
+        let lifted = selected || hovered
+        var isDrawing = false
+        if case .drawing = node?.kind { isDrawing = true }
 
         CATransaction.begin(); CATransaction.setDisableActions(true)
 
@@ -801,74 +810,64 @@ final class CardItemView: NSView {
             sectionLayer.isHidden = true
         }
 
-        // Selection ring geometry (always sized so it's correct the instant it
-        // fades in). One native ring per card; hosted cards' SwiftUI ring is off.
-        let selected = valid && nodeID.map { coordinator?.config.liveSelection().contains($0) == true } ?? false
-        // Folders show selection via their glow art + a slight scale (Spatial),
-        // not the white ring.
-        let folderView = subviews.compactMap { $0 as? FolderCardView }.first
-        folderView?.setSelected(selected)
-        if valid {
-            let inset = 1.25 / mag
-            selectionLayer.path = CGPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
-                                         cornerWidth: CardChrome.cornerRadius,
-                                         cornerHeight: CardChrome.cornerRadius, transform: nil)
-            selectionLayer.lineWidth = 2 / mag
-            selectionLayer.shadowRadius = 3 / mag
-
-            // 8 handles: corners + edge midpoints, each centered on its point.
-            let hs = 9 / mag
-            let pts = [CGPoint(x: bounds.minX, y: bounds.minY),   // tl
-                       CGPoint(x: bounds.maxX, y: bounds.minY),   // tr
-                       CGPoint(x: bounds.minX, y: bounds.maxY),   // bl
-                       CGPoint(x: bounds.maxX, y: bounds.maxY),   // br
-                       CGPoint(x: bounds.midX, y: bounds.minY),   // top
-                       CGPoint(x: bounds.midX, y: bounds.maxY),   // bottom
-                       CGPoint(x: bounds.minX, y: bounds.midY),   // left
-                       CGPoint(x: bounds.maxX, y: bounds.midY)]   // right
-            for (i, h) in handleLayers.enumerated() {
-                h.frame = CGRect(x: pts[i].x - hs / 2, y: pts[i].y - hs / 2, width: hs, height: hs)
-                h.cornerRadius = hs * 0.22
-                h.lineWidth = 1 / mag
-            }
+        // Selection outline geometry (cards only — folders trace their own
+        // silhouette). Always sized so it's correct the instant it fades in.
+        // The gap must clear the lift scale so the 8px is measured from the
+        // SCALED card edge: outset = half·(scale−1) + 8/mag.
+        if valid, folderView == nil {
+            let s: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
+            let extraX = bounds.width / 2 * (s - 1)
+            let extraY = bounds.height / 2 * (s - 1)
+            let gap = 8 / mag
+            let rect = bounds.insetBy(dx: -(extraX + gap), dy: -(extraY + gap))
+            let radius = 8 / mag
+            outlineLayer.path = CGPath(roundedRect: rect, cornerWidth: radius,
+                                       cornerHeight: radius, transform: nil)
+            outlineLayer.lineWidth = 4 / mag
+            outlineLayer.shadowRadius = 2 / mag
         }
         CATransaction.commit()
 
         // Animated visibility (fade) — OUTSIDE the no-animation transaction.
-        // Folders show selection via their own subtle scale (FolderCardView.setSelected),
-        // NOT the node-bounds ring — that rect ring doesn't trace the folder silhouette
-        // and reads as a broken stray outline.
-        fade(selectionLayer, to: (selected && folderView == nil) ? 1 : 0)
-        // Every NON-folder card pops with the same subtle scale folders use
-        // (folders apply it via FolderCardView.setSelected above).
-        if folderView == nil { applySelectionScale(selected) }
-        let showHandles = selected && resizeEnabled
-        for h in handleLayers { fade(h, to: showHandles ? 1 : 0) }
+        // Outline shows on SELECT only (hover never shows it, per Figma 88:330).
+        fade(outlineLayer, to: (selected && folderView == nil) ? 1 : 0)
+        // Lift scale (hover OR select): folders scale + show their curved outline
+        // internally; every other card scales its content here.
+        if let folderView {
+            folderView.setState(lifted: lifted, selected: selected)
+        } else {
+            applyLiftScale(lifted, kind: node?.kind)
+        }
     }
 
-    private var lastSelectedForScale = false
-    /// Subtle "pop" on selection for every card (Spatial). Scales the content
-    /// subviews (they fill the card) around the card centre — NOT the item's own
-    /// layer, which carries the live-drag transform, so the two compose cleanly.
-    private func applySelectionScale(_ selected: Bool) {
+    private var lastLiftFactor: CGFloat = 1.0
+    /// Hover/selected "pop" for every card except marker drawings. Scales the
+    /// content subviews (they fill the card) around the card centre — NOT the
+    /// item's own layer, which carries the live-drag transform, so the two
+    /// compose cleanly. The transform is re-applied every call so it survives a
+    /// `reloadData` (which recreates the content subviews); it only ANIMATES when
+    /// the factor actually changes.
+    private func applyLiftScale(_ lifted: Bool, kind: CanvasNode.Kind?) {
         guard bounds.width > 1, bounds.height > 1 else { return }
-        let factor: CGFloat = selected ? 1.04 : 1.0
+        var isDrawing = false
+        if case .drawing = kind { isDrawing = true }
+        let factor: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
         let cx = bounds.width / 2, cy = bounds.height / 2
         let t = CATransform3DConcat(
             CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
                                 CATransform3DMakeScale(factor, factor, 1)),
             CATransform3DMakeTranslation(cx, cy, 0))
-        let animate = selected != lastSelectedForScale
-        lastSelectedForScale = selected
+        let animate = factor != lastLiftFactor
+        lastLiftFactor = factor
         for sv in subviews {
             guard let layer = sv.layer else { continue }
             if animate {
                 let a = CABasicAnimation(keyPath: "transform")
                 a.fromValue = layer.presentation()?.transform ?? layer.transform
                 a.toValue = t
-                a.duration = 0.18
+                a.duration = 0.16
                 a.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                layer.add(a, forKey: "selectScale")
+                layer.add(a, forKey: "liftScale")
             }
             layer.transform = t
         }
@@ -902,16 +901,13 @@ final class CardItemView: NSView {
         guard let id = nodeID else { return nil }
         return coordinator?.config.nodes.first { $0.id == id }
     }
-    /// Whether this item is the lone selected resizable node — drives whether
-    /// the corner handles are drawn (display only; the resize gesture lives in
-    /// CanvasInputView). Reads the LIVE selection so it's never one event stale.
-    private var resizeEnabled: Bool {
-        guard let n = liveNode, let id = nodeID,
-              let sel = coordinator?.config.liveSelection(),
-              sel.count == 1, sel.contains(id) else { return false }
-        if case .text = n.kind { return false }
-        return true
+    /// Live select/hover state (reads the coordinator so it's never one event
+    /// stale). `isLifted` = either → drives the 1.06 scale + elevated shadow.
+    private var isSelectedNow: Bool {
+        nodeID.map { coordinator?.config.liveSelection().contains($0) == true } ?? false
     }
+    private var isHoveredNow: Bool { nodeID != nil && coordinator?.hoveredNodeID == nodeID }
+    private var isLifted: Bool { isSelectedNow || isHoveredNow }
 
     // MARK: - Appear animation (Spatial zoom-in)
 
@@ -933,10 +929,8 @@ final class CardItemView: NSView {
 
     // MARK: - Float shadow (Spatial-style)
 
-    /// Card corner radius — matches `figmaCardStyle`'s default so the shadow
-    /// hugs the rounded card. (Text/sticky use a tighter radius; the small
-    /// difference in their shadow corners is imperceptible.)
-    private let shadowCornerRadius: CGFloat = 19.375
+    /// Cards are square (Figma), so the float shadow is square too.
+    private let shadowCornerRadius: CGFloat = CardChrome.cornerRadius
 
     override func layout() {
         super.layout()
