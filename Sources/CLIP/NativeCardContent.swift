@@ -54,7 +54,7 @@ func nativeContentKey(for node: CanvasNode) -> String? {
     case .section(let t, let c):    return "section|\(t)|\(c.rawValue)"
     case .stickyNote(let t, let c): return "sticky|\(t)|\(c.rawValue)"
     case .text(let t, let s):       return "text|\(t)|\(s)"
-    case .folder(let t, let i, let c): return "folder|\(t)|\(i)|\(c.count)"
+    case .folder(let t, let i, let c): return "folder|\(t)|\(i)|\(c.count)|\(node.folderColor?.rawValue ?? "")"
     default:                        return nil
     }
 }

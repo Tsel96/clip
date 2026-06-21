@@ -35,6 +35,12 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     /// (not in any folder). Folders can't be nested inside folders.
     var folderID: UUID? = nil
 
+    /// Folder tint from the flower color picker. Only meaningful when `kind` is
+    /// `.folder`. Kept as a struct property (NOT a `Kind.folder` associated
+    /// value) so it needs zero enum pattern-match changes across the codebase.
+    /// `decodeIfPresent` → older snapshots default to `nil` (the lavender folder).
+    var folderColor: SectionColor? = nil
+
     /// Where this node came from. `.phone` marks cards ingested from the
     /// iPhone share pipe (the iCloud Drive inbox) so the UI can badge
     /// them. `decodeIfPresent` defaults older snapshots to `.local`.
@@ -103,7 +109,8 @@ struct CanvasNode: Identifiable, Equatable, Codable {
          tags: [String] = [],
          imagePrompt: String? = nil,
          trimStart: Double? = nil,
-         trimEnd: Double? = nil) {
+         trimEnd: Double? = nil,
+         folderColor: SectionColor? = nil) {
         self.id = id
         self.position = position
         self.width = width
@@ -120,6 +127,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.imagePrompt = imagePrompt
         self.trimStart = trimStart
         self.trimEnd = trimEnd
+        self.folderColor = folderColor
     }
 
     // MARK: - Codable (manual to migrate older snapshots)
@@ -127,7 +135,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, position, width, height, kind, addedAt, groupID, folderID, origin
         case name, note, linkURL, tags, imagePrompt
-        case trimStart, trimEnd
+        case trimStart, trimEnd, folderColor
     }
 
     init(from decoder: Decoder) throws {
@@ -152,6 +160,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.imagePrompt = try c.decodeIfPresent(String.self, forKey: .imagePrompt)
         self.trimStart = try c.decodeIfPresent(Double.self, forKey: .trimStart)
         self.trimEnd   = try c.decodeIfPresent(Double.self, forKey: .trimEnd)
+        self.folderColor = try c.decodeIfPresent(SectionColor.self, forKey: .folderColor)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -172,6 +181,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         try c.encodeIfPresent(imagePrompt, forKey: .imagePrompt)
         try c.encodeIfPresent(trimStart, forKey: .trimStart)
         try c.encodeIfPresent(trimEnd, forKey: .trimEnd)
+        try c.encodeIfPresent(folderColor, forKey: .folderColor)
     }
 
     static func tweet(url: String, position: CGPoint, width: CGFloat = 360) -> CanvasNode {

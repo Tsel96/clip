@@ -2158,6 +2158,15 @@ final class CanvasState: ObservableObject {
         }
     }
 
+    /// Tint a folder from the flower color picker. Mutating `folderColor`
+    /// changes the node's `nativeContentKey`, so the folder card re-renders.
+    func setFolderColor(id: UUID, to color: SectionColor) {
+        withUndoable {
+            guard let idx = nodes.firstIndex(where: { $0.id == id }), nodes[idx].isFolder else { return }
+            nodes[idx].folderColor = color
+        }
+    }
+
     /// World rect of a section node by id, or nil if not a section.
     func sectionRect(of id: UUID) -> CGRect? {
         guard let n = nodeByID[id], n.isSection else { return nil }
