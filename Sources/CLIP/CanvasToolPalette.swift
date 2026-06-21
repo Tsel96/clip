@@ -267,8 +267,9 @@ final class CanvasToolPaletteView: NSView {
         let btnCenterSelf = CGPoint(x: folderBar.frame.minX + FolderActionBarView.colorButtonCenterX,
                                     y: folderBar.frame.midY)
         let btnScreen = window.convertPoint(toScreen: convert(btnCenterSelf, to: nil))
-        // Up in screen space (+y): half-bar 31 + gap 14 + disc radius 68 ≈ 113.
-        let discScreen = CGPoint(x: btnScreen.x, y: btnScreen.y + 113)
+        // Up in screen space (+y). Disc overlaps the bar top ~19pt (Spatial-style):
+        // half-bar 31 + disc radius 68 − overlap 19 ≈ 80.
+        let discScreen = CGPoint(x: btnScreen.x, y: btnScreen.y + 80)
         let discInHost = host.convert(window.convertPoint(fromScreen: discScreen), from: nil)
         picker.present(in: host, at: discInHost)
     }

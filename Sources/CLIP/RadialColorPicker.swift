@@ -23,7 +23,7 @@ final class RadialColorPicker: NSView {
     // MARK: Geometry
     private let discR: CGFloat = 68
     private let petalD: CGFloat = 36         // ALL circles share this diameter (core + petals)
-    private let pad: CGFloat = 18
+    private let pad: CGFloat = 36            // room for the glow + drop shadow (must not clip)
     private var discCenter: CGPoint = .zero
     private var innerR: CGFloat = 0
     private var outerR: CGFloat = 0
@@ -103,9 +103,9 @@ final class RadialColorPicker: NSView {
         bloom.startPoint = CGPoint(x: 0.5, y: 0.5)
         bloom.endPoint = CGPoint(x: 0.5, y: 0)
         bloom.colors = conicColors
-        bloom.opacity = 0.55
+        bloom.opacity = 0.72
         if let blur = CIFilter(name: "CIGaussianBlur") {
-            blur.setValue(7, forKey: "inputRadius"); bloom.filters = [blur]
+            blur.setValue(9, forKey: "inputRadius"); bloom.filters = [blur]
         }
         layer?.addSublayer(bloom)
 
@@ -124,8 +124,8 @@ final class RadialColorPicker: NSView {
         disc.cornerRadius = discR
         disc.backgroundColor = discColor.cgColor
         disc.shadowColor = NSColor.black.cgColor
-        disc.shadowOpacity = 0.32; disc.shadowRadius = 16
-        disc.shadowOffset = CGSize(width: 0, height: -7)
+        disc.shadowOpacity = 0.34; disc.shadowRadius = 22   // soft float, fits in `pad`
+        disc.shadowOffset = CGSize(width: 0, height: -8)
         layer?.addSublayer(disc)
     }
 
@@ -163,11 +163,8 @@ final class RadialColorPicker: NSView {
         p.path = CGPath(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2), transform: nil)
         p.fillColor = color.cgColor
         p.zPosition = baseZ
-        // Subtle shadow separates overlapping circles on the dark disc.
-        p.shadowColor = NSColor.black.cgColor
-        p.shadowOpacity = isCore ? 0.30 : 0.22
-        p.shadowRadius = isCore ? 4 : 2.5
-        p.shadowOffset = CGSize(width: 0, height: -1)
+        // No stroke/shadow — overlap + the dark disc behind give the separation,
+        // and a per-petal shadow read as an ugly outline on the hovered (scaled) one.
         layer?.addSublayer(p)
         petals.append(Petal(layer: p, color: color, center: center, r: r, isCore: isCore, baseZ: baseZ))
     }
@@ -250,11 +247,12 @@ final class RadialColorPicker: NSView {
         host.addSubview(self)
         let popper = CLIPSpring.Preset(response: 0.34, damping: 0.66)
         if let layer = layer {
-            let pivot = CGPoint(x: discCenter.x, y: 0)        // bottom-centre = the button
+            // Bloom from the disc centre (Spatial spreads its leaves out of the
+            // centre) — scale 0.4 → 1 anchored at centre.
+            let pivot = discCenter
             var small = CATransform3DConcat(CATransform3DMakeTranslation(-pivot.x, -pivot.y, 0),
-                                            CATransform3DMakeScale(0.5, 0.5, 1))
+                                            CATransform3DMakeScale(0.4, 0.4, 1))
             small = CATransform3DConcat(small, CATransform3DMakeTranslation(pivot.x, pivot.y, 0))
-            small = CATransform3DConcat(small, CATransform3DMakeTranslation(0, -12, 0))   // 12pt rise
             CATransaction.begin(); CATransaction.setDisableActions(true)
             layer.transform = small; layer.opacity = 0
             CATransaction.commit()
