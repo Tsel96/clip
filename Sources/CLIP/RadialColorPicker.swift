@@ -66,8 +66,46 @@ final class RadialColorPicker: NSView {
         innerR = radii[0]; outerR = radii[1]
         buildHaloDisc()
         buildPetals()
+        buildHoverRing()
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    /// A single reusable ring layer, drawn above every petal, that traces the
+    /// hovered circle. Hidden until a petal is hovered.
+    private func buildHoverRing() {
+        hoverRing.fillColor = nil
+        hoverRing.lineWidth = 2.5
+        hoverRing.strokeColor = NSColor.white.cgColor
+        hoverRing.zPosition = 2_000_000          // above the lifted petal (baseZ + 100000)
+        hoverRing.opacity = 0
+        hoverRing.shadowColor = NSColor.black.cgColor
+        hoverRing.shadowOpacity = 0.45           // keyline so the ring reads on light petals too
+        hoverRing.shadowRadius = 1.5
+        hoverRing.shadowOffset = .zero
+        layer?.addSublayer(hoverRing)
+    }
+
+    /// Trace the ring around the (scaled) hovered petal, or hide it. The stroke
+    /// colour flips to a dark grey on bright petals so it never disappears.
+    private func updateHoverRing(for idx: Int?) {
+        guard let idx else {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            hoverRing.opacity = 0
+            CATransaction.commit()
+            return
+        }
+        let petal = petals[idx]
+        let scaled = petal.r * (petal.isCore ? 1.85 : 1.4) + 1.5
+        let rect = CGRect(x: petal.center.x - scaled, y: petal.center.y - scaled,
+                          width: scaled * 2, height: scaled * 2)
+        let c = petal.color.usingColorSpace(.sRGB) ?? petal.color
+        let lum = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        hoverRing.path = CGPath(ellipseIn: rect, transform: nil)
+        hoverRing.strokeColor = (lum > 0.6 ? NSColor(white: 0.34, alpha: 1) : .white).cgColor
+        hoverRing.opacity = 1
+        CATransaction.commit()
+    }
 
     // MARK: Layout math (port of BlossomColorPicker calculateLayerRadii)
 
@@ -197,6 +235,8 @@ final class RadialColorPicker: NSView {
                 petal.layer.zPosition = petal.baseZ + (i == idx ? 100000 : 0)
                 scale(petal.layer, s, center: petal.center)
             }
+            updateHoverRing(for: idx)
+            if !picked { onHoverPreview(idx.map { petals[$0].color }) }
         }
     }
 
@@ -204,6 +244,8 @@ final class RadialColorPicker: NSView {
         hovered = nil
         NSCursor.arrow.set()
         for petal in petals { scale(petal.layer, 1.0, center: petal.center) }
+        updateHoverRing(for: nil)
+        if !picked { onHoverPreview(nil) }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -212,6 +254,7 @@ final class RadialColorPicker: NSView {
     }
 
     private func pick(_ color: NSColor) {
+        picked = true                 // freeze the preview; the commit stands
         CLIPHaptics.levelChange()
         onPick(color)
         dismiss()

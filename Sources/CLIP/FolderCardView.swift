@@ -7,8 +7,22 @@ import CoreImage
 /// icon natively so they update. The SVG's shadow margin bleeds *outside* the
 /// node bounds so the folder itself fills the node. Refreshes in place via
 /// `NativeCardUpdatable`.
+/// One level of the folder's Figma drop shadow (node 953×818). Values are in the
+/// 953-wide design space and are scaled to the rendered folder.
+private struct FolderShadowLevel { let alpha: Float; let radius: CGFloat; let dy: CGFloat }
+
 final class FolderCardView: NSView, NativeCardUpdatable {
     private let shapeView = NSImageView()
+    /// Figma's 4-layer drop shadow, softest/largest last. Each level is cast by a
+    /// dedicated image view stacked BEHIND `shapeView` (a CALayer holds only one
+    /// shadow), deriving its shape from the clean folder silhouette's alpha.
+    private static let shadowLevels: [FolderShadowLevel] = [
+        .init(alpha: 0.09, radius: 6,  dy: 3),
+        .init(alpha: 0.07, radius: 11, dy: 11),
+        .init(alpha: 0.04, radius: 14, dy: 24),
+        .init(alpha: 0.01, radius: 17, dy: 43),
+    ]
+    private let shadowViews: [NSImageView] = (0..<4).map { _ in NSImageView() }
     private let countField = NSTextField(labelWithString: "No items")
     private let titleField = NSTextField(labelWithString: "Untitled")
     private let iconChip = NSView()
@@ -82,17 +96,24 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         wantsLayer = true
         layer?.masksToBounds = false
 
+        // Shadow casters FIRST so they sit behind the folder fill. Each shows the
+        // (clean) folder image purely to derive its alpha shadow — the image
+        // itself is hidden by the opaque `shapeView` directly on top.
+        for (i, sv) in shadowViews.enumerated() {
+            sv.image = Self.restImage
+            sv.imageScaling = .scaleAxesIndependently
+            sv.wantsLayer = true
+            sv.layer?.masksToBounds = false
+            sv.layer?.shadowColor = NSColor.black.cgColor
+            sv.layer?.shadowOpacity = Self.shadowLevels[i].alpha
+            sv.layer?.shadowOffset = .zero    // scaled in layout()
+            addSubview(sv)
+        }
+
         shapeView.image = Self.restImage
         shapeView.imageScaling = .scaleAxesIndependently
         shapeView.wantsLayer = true
         shapeView.layer?.masksToBounds = false
-        // NSImage doesn't render the SVG's baked filter shadow, so add it on the
-        // layer (Figma: black 13%, radius 22 @ the 494-wide art → ~12 at the
-        // 260-pt node). No shadowPath ⇒ derived from the folder+peek silhouette.
-        shapeView.layer?.shadowColor = NSColor.black.cgColor
-        shapeView.layer?.shadowOpacity = 0.13
-        shapeView.layer?.shadowRadius = 12
-        shapeView.layer?.shadowOffset = .zero
         addSubview(shapeView)
         outlineView.image = Self.outlineImage
         outlineView.imageScaling = .scaleAxesIndependently
@@ -157,6 +178,9 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         // Always the per-count art (so the count + card peek stay visible when
         // selected); selection is shown by the scale + ring, not an art swap.
         shapeView.image = Self.art(forCount: currentCount)
+        // Shadow casters trace the SAME (clean, untinted) silhouette so the drop
+        // shadow is identical whether or not the folder is recoloured.
+        for sv in shadowViews { sv.image = shapeView.image }
         currentArtHeight = 1044
     }
 
@@ -196,6 +220,14 @@ final class FolderCardView: NSView, NativeCardUpdatable {
                                  y: -Self.folderRect.minY * sy,
                                  width: Self.svgSize.width * sx,
                                  height: currentArtHeight * sy)
+        // Shadow casters share the folder frame; the Figma values (953-wide design
+        // space) scale by `sx`. Negative height = downward (non-flipped sublayer).
+        for (i, sv) in shadowViews.enumerated() {
+            sv.frame = shapeView.frame
+            let lvl = Self.shadowLevels[i]
+            sv.layer?.shadowRadius = lvl.radius * sx
+            sv.layer?.shadowOffset = CGSize(width: 0, height: -lvl.dy * sx)
+        }
         // Outline art (994×854) is tight to its canvas, same ~1.16 ratio as the
         // folder, so it traces the silhouette when filling the node bounds.
         outlineView.frame = bounds

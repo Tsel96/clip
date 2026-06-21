@@ -192,6 +192,11 @@ final class CanvasToolPaletteView: NSView {
     var onColorPick: ((NSColor, [UUID]) -> Void)?
     /// Current canvas selection (set by the bridge) — snapshotted at Color-tap.
     var selectionProvider: (() -> [UUID])?
+    /// Read a folder's current tint hex (or nil) — to capture originals so a
+    /// hover-preview can be reverted if the picker is dismissed without a pick.
+    var folderColorReader: ((UUID) -> String?)?
+    /// Set a folder's tint WITHOUT undo (live hover preview; nil = restore).
+    var folderColorPreviewer: ((UUID, String?) -> Void)?
 
     /// Morph between the tool pills and the folder action bar (Figma 72:37017):
     /// a spring crossfade + subtle scale — the Apple-style contextual-toolbar
@@ -266,8 +271,32 @@ final class CanvasToolPaletteView: NSView {
     func presentColorFlower() {
         guard let window = self.window, let host = window.contentView else { return }
         let targets = selectionProvider?() ?? []          // capture the selection now
+        // Snapshot each target's current tint so a dismiss-without-pick reverts.
+        let originals: [UUID: String?] = Dictionary(uniqueKeysWithValues:
+            targets.map { ($0, folderColorReader?($0) ?? nil) })
+        var committed = false
         let picker = RadialColorPicker()
-        picker.onPick = { [weak self] c in self?.onColorPick?(c, targets) }
+        // Live preview: recolour the folder(s) to the hovered petal; restore on nil.
+        picker.onHoverPreview = { [weak self] color in
+            guard let self else { return }
+            if let color {
+                let hex = color.hexRGB
+                for id in targets { self.folderColorPreviewer?(id, hex) }
+            } else {
+                for id in targets { self.folderColorPreviewer?(id, originals[id] ?? nil) }
+            }
+        }
+        picker.onPick = { [weak self] c in
+            committed = true
+            // Restore originals first so the undoable commit records a real change
+            // (otherwise `withUndoable` sees before == after and skips the entry).
+            for id in targets { self?.folderColorPreviewer?(id, originals[id] ?? nil) }
+            self?.onColorPick?(c, targets)
+        }
+        picker.onDismiss = { [weak self] in
+            guard !committed else { return }
+            for id in targets { self?.folderColorPreviewer?(id, originals[id] ?? nil) }
+        }
         let btnCenterSelf = CGPoint(x: folderBar.frame.minX + FolderActionBarView.colorButtonCenterX,
                                     y: folderBar.frame.midY)
         let btnScreen = window.convertPoint(toScreen: convert(btnCenterSelf, to: nil))
@@ -1124,6 +1153,8 @@ struct _PaletteRepresentable: NSViewRepresentable {
         // Folder-bar Color button → flower picks a colour; apply to any selected
         // sections now (folder-colour model is the separate F4 feature).
         v.selectionProvider = { Array(state.selectedNodeIDs) }
+        v.folderColorReader = { id in state.nodes.first(where: { $0.id == id })?.folderColor }
+        v.folderColorPreviewer = { id, hex in state.previewFolderColor(id: id, hex: hex) }
         v.onColorPick = { nsColor, targets in
             let preset = RadialColorPicker.nearestSectionColor(to: nsColor)
             let hex = nsColor.hexRGB
