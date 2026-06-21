@@ -307,7 +307,8 @@ final class RadialColorPicker: NSView {
     }
 
     private func pick(_ color: NSColor) {
-        picked = true                 // freeze the preview; the commit stands
+        guard !picked else { return }   // safe if both the monitor and mouseDown fire
+        picked = true                   // freeze the preview; the commit stands
         CLIPHaptics.levelChange()
         onPick(color)
         dismiss()
@@ -387,7 +388,17 @@ final class RadialColorPicker: NSView {
         outsideMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] e in
             guard let self else { return e }
             let p = self.convert(e.locationInWindow, from: nil)
-            if !self.bounds.contains(p) { self.dismiss() }
+            if self.bounds.contains(p) {
+                // Pick HERE — this monitor fires reliably even if the overlay's own
+                // `mouseDown` isn't delivered over the SwiftUI host (the bug behind
+                // "click doesn't apply"). Consume the event on a successful pick.
+                if e.type == .leftMouseDown, let idx = self.nearestPetal(to: p) {
+                    self.pick(self.petals[idx].color)
+                    return nil
+                }
+                return e
+            }
+            self.dismiss()
             return e
         }
     }
