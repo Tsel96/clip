@@ -23,7 +23,7 @@ struct StickyNodeView: View {
     @State private var hovering = false
     @FocusState private var focused: Bool
 
-    static let cornerRadius: CGFloat = 6
+    static let cornerRadius: CGFloat = 0
     private let shadowLipHeight: CGFloat = 6
     private let pickerReservedHeight: CGFloat = 26
 

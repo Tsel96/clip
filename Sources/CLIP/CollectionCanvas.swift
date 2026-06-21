@@ -748,7 +748,7 @@ final class CardItemView: NSView {
     private let innerHairlineLayer = CAShapeLayer()
     /// Hover/selected scale, applied to every canvas object EXCEPT marker
     /// drawings (user spec). Same factor for hover and select (not compounded).
-    static let liftScale: CGFloat = 1.04
+    static let liftScale: CGFloat = 1.02
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -803,10 +803,10 @@ final class CardItemView: NSView {
         let selected = valid && isSelectedNow
         let hovered = valid && isHoveredNow
         let lifted = selected || hovered
-        var isDrawing = false, isMediaCard = false
+        var isDrawing = false, wantsHairline = false
         switch node?.kind {
         case .drawing: isDrawing = true
-        case .image, .video: isMediaCard = true
+        case .image, .video, .stickyNote: wantsHairline = true
         default: break
         }
         let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
@@ -827,31 +827,30 @@ final class CardItemView: NSView {
 
         // Selection outline geometry (cards only — folders trace their own
         // silhouette). Always sized so it's correct the instant it fades in.
-        // Lengths are CONTENT-space (scale with zoom, locked to the card like
-        // Figma — NOT ÷mag), so the outline reads identically at any zoom. 8px
-        // gap to the OUTER edge; the 4px stroke is drawn INSIDE that edge (Figma
-        // border-box) → centreline at gap − 2. The gap clears the lift scale so
-        // the 8px is measured from the SCALED card edge.
+        // Lengths are SCREEN-constant (÷mag) so the gap/thickness DON'T drift as
+        // you zoom — a clean fixed 8px gap / 4px line like Figma at every zoom.
+        // The 4px stroke is drawn INSIDE the gap boundary (Figma border-box): the
+        // outer edge sits 8px out from the card frame, the stroke grows inward →
+        // centreline at gap − 2px, outer corner radius 8px.
         if valid, folderView == nil {
-            let extraX = bounds.width / 2 * (liftS - 1)
-            let extraY = bounds.height / 2 * (liftS - 1)
-            let lineW: CGFloat = 4, gap: CGFloat = 8
-            let rect = bounds.insetBy(dx: -(extraX + gap - lineW / 2),
-                                      dy: -(extraY + gap - lineW / 2))
-            let radius: CGFloat = 8 - lineW / 2        // outer corner radius = 8
+            let lineW = 4 / mag, gap = 8 / mag
+            let inset = -(gap - lineW / 2)
+            let rect = bounds.insetBy(dx: inset, dy: inset)
+            let radius = (8 / mag) - lineW / 2
             outlineLayer.path = CGPath(roundedRect: rect, cornerWidth: radius,
                                        cornerHeight: radius, transform: nil)
             outlineLayer.lineWidth = lineW
-            outlineLayer.shadowRadius = 2
+            outlineLayer.shadowRadius = 2 / mag
         }
 
-        // Inner card hairline (media cards): 0.5px black 15%, drawn INSIDE the
-        // (scaled) card edge. Content-space so it scales with the card.
-        if valid, isMediaCard {
+        // Inner card hairline (media + sticky): 0.5px black 15%, drawn INSIDE the
+        // (scaled) card edge. Screen-constant (÷mag) so it stays a visible 0.5px
+        // at any zoom; tracks the scaled card edge via `liftS`.
+        if valid, wantsHairline {
             let sw = bounds.width * liftS, sh = bounds.height * liftS
             let scaled = CGRect(x: (bounds.width - sw) / 2, y: (bounds.height - sh) / 2,
                                 width: sw, height: sh)
-            let lw: CGFloat = 0.5
+            let lw = 0.5 / mag
             innerHairlineLayer.path = CGPath(rect: scaled.insetBy(dx: lw / 2, dy: lw / 2),
                                              transform: nil)
             innerHairlineLayer.lineWidth = lw
@@ -902,15 +901,16 @@ final class CardItemView: NSView {
         }
     }
 
-    /// The canvas-item scale spring recovered from Spatial (`CanvasItemsAnimator`
-    /// / `resetScaleWithStiffness:damping:`): stiffness 100, mass 1, damping ~18
-    /// (ζ≈0.9 — smooth, a touch of settle, no bounce). Shared by cards + folders.
+    /// The canvas-item scale spring, modelled on Spatial's `CanvasItemsAnimator`
+    /// / `resetScaleWithStiffness:damping:` but tuned FAST — Spatial's state
+    /// transitions settle in ≤150ms. stiffness 2000, mass 1, damping 70 (ζ≈0.78)
+    /// settles ~130ms with no bounce. Shared by cards + folders.
     static func liftSpring(from: CATransform3D, to: CATransform3D) -> CASpringAnimation {
         let a = CASpringAnimation(keyPath: "transform")
         a.fromValue = from
         a.toValue = to
-        a.stiffness = 100
-        a.damping = 18
+        a.stiffness = 2000
+        a.damping = 70
         a.mass = 1
         if #available(macOS 14.0, *) { a.allowsOverdamping = true }
         a.duration = a.settlingDuration
@@ -1036,7 +1036,7 @@ final class CardItemView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(!animated)
         if animated {
-            CATransaction.setAnimationDuration(0.16)
+            CATransaction.setAnimationDuration(0.14)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
         }
         layer.shadowColor = NSColor.black.cgColor
