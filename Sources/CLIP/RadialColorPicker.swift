@@ -43,7 +43,7 @@ final class RadialColorPicker: NSView {
     ]
     private let discColor = NSColor(srgbRed: 0.055, green: 0.055, blue: 0.063, alpha: 1)  // #0E0E10
     private let barColor  = NSColor(srgbRed: 0.114, green: 0.125, blue: 0.137, alpha: 1)  // #1D2023
-    private let iconColor = NSColor(srgbRed: 0.62, green: 0.63, blue: 0.64, alpha: 1)
+    private let iconColor = NSColor(srgbRed: 0.96, green: 0.97, blue: 0.98, alpha: 1)  // SVGs carry 0.7 opacity → light gray on the bar
 
     private struct Petal { let layer: CAShapeLayer; let color: NSColor; let center: CGPoint; let r: CGFloat; let isCore: Bool; let baseZ: CGFloat }
     private var petals: [Petal] = []
@@ -193,31 +193,34 @@ final class RadialColorPicker: NSView {
         bar.shadowOffset = CGSize(width: 0, height: -4)
         layer?.addSublayer(bar)
 
-        let names = ["arrow.down.to.line", "drop", "eject"]
+        // Exact Figma folder-selection bar icons (Download / Color / Eject).
+        let names = ["Download", "Color", "Eject"]
         let fracs: [CGFloat] = [0.2, 0.5, 0.8]
         iconRects = []
         for (name, f) in zip(names, fracs) {
             let cx = barRect.minX + barW * f, cy = barRect.midY
-            let box = CGRect(x: cx - 16, y: cy - 16, width: 32, height: 32)
-            iconRects.append(box)
+            iconRects.append(CGRect(x: cx - 16, y: cy - 16, width: 32, height: 32))   // hit target
+            let s: CGFloat = 24
             let icon = CALayer()
-            icon.frame = box
+            icon.frame = CGRect(x: cx - s / 2, y: cy - s / 2, width: s, height: s)
             icon.contentsGravity = .resizeAspect
-            icon.contents = Self.symbol(name, size: 19, color: iconColor)
+            icon.contentsScale = 2
+            icon.contents = Self.barIcon(name, tint: iconColor)
             layer?.addSublayer(icon)
         }
     }
 
-    private static func symbol(_ name: String, size: CGFloat, color: NSColor) -> CGImage? {
-        let cfg = NSImage.SymbolConfiguration(pointSize: size, weight: .regular)
-        guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(cfg) else { return nil }
-        let img = NSImage(size: base.size)
+    /// Loads a 24×24 bar icon SVG from the bundle, tinted for the dark bar.
+    private static func barIcon(_ name: String, tint: NSColor) -> CGImage? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
+              let svg = NSImage(contentsOf: url) else { return nil }
+        let px: CGFloat = 48
+        let img = NSImage(size: NSSize(width: px, height: px))
         img.lockFocus()
-        color.set()
-        let r = NSRect(origin: .zero, size: base.size)
-        base.draw(in: r)
-        r.fill(using: .sourceAtop)
+        let r = NSRect(x: 0, y: 0, width: px, height: px)
+        svg.draw(in: r)
+        tint.set()
+        r.fill(using: .sourceAtop)          // recolor the (template) strokes
         img.unlockFocus()
         var rect = r
         return img.cgImage(forProposedRect: &rect, context: nil, hints: nil)
