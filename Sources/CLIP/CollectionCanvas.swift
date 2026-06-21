@@ -833,10 +833,10 @@ final class CardItemView: NSView {
         // outer edge sits 8px out from the card frame, the stroke grows inward →
         // centreline at gap − 2px, outer corner radius 8px.
         if valid, folderView == nil {
-            let lineW = 4 / mag, gap = 8 / mag
+            let lineW = 4 / mag, gap = 7 / mag      // gap 1px smaller (was 8)
             let inset = -(gap - lineW / 2)
             let rect = bounds.insetBy(dx: inset, dy: inset)
-            let radius = (8 / mag) - lineW / 2
+            let radius = gap - lineW / 2            // outer corner radius = gap
             outlineLayer.path = CGPath(roundedRect: rect, cornerWidth: radius,
                                        cornerHeight: radius, transform: nil)
             outlineLayer.lineWidth = lineW
@@ -905,15 +905,15 @@ final class CardItemView: NSView {
     }
 
     /// The canvas-item scale spring (Spatial's `CanvasItemsAnimator` /
-    /// `resetScaleWithStiffness:damping:`), tuned to feel *pleasurable* on hover:
-    /// a fast rise with a gentle overshoot that settles cleanly (stiffness 500,
-    /// mass 1, damping 18 → ζ≈0.40). Shared by cards + folders.
+    /// `resetScaleWithStiffness:damping:`). Critically damped — a smooth fast
+    /// ease with NO overshoot/bounce, settling ~150ms (stiffness 950, mass 1,
+    /// damping 64 → ζ≈1.0). Shared by cards + folders.
     static func liftSpring(from: CATransform3D, to: CATransform3D) -> CASpringAnimation {
         let a = CASpringAnimation(keyPath: "transform")
         a.fromValue = from
         a.toValue = to
-        a.stiffness = 500
-        a.damping = 18
+        a.stiffness = 950
+        a.damping = 64
         a.mass = 1
         if #available(macOS 14.0, *) { a.allowsOverdamping = true }
         a.duration = a.settlingDuration
