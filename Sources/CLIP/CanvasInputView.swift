@@ -70,6 +70,10 @@ final class CanvasInputView: NSView {
         return l
     }()
     private var drawPoints: [NSPoint] = []
+    /// Tracks the cursor to drive object HOVER (the input view owns all pointer
+    /// interaction, so hover is resolved here — not via per-item tracking areas,
+    /// which fight this view's top-of-stack ownership).
+    private var hoverTracking: NSTrackingArea?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -78,6 +82,42 @@ final class CanvasInputView: NSView {
         layer?.addSublayer(drawLayer)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    // MARK: - Hover tracking
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = hoverTracking { removeTrackingArea(t) }
+        // `.inVisibleRect` keeps the area pinned to the visible portion of this
+        // (world-sized) view as it scrolls/zooms, so we never track the whole
+        // canvas. `.mouseMoved` resolves which card is under the cursor.
+        let t = NSTrackingArea(rect: .zero,
+                               options: [.mouseMoved, .mouseEnteredAndExited,
+                                         .activeInKeyWindow, .inVisibleRect],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t)
+        hoverTracking = t
+    }
+
+    override func mouseMoved(with event: NSEvent) { updateHover(event) }
+    override func mouseEntered(with event: NSEvent) { updateHover(event) }
+    override func mouseExited(with event: NSEvent) { setHovered(nil) }
+
+    /// Resolve the topmost hoverable node under the cursor → coordinator. Only in
+    /// select mode and when idle (a drag/resize/marquee owns the gesture instead).
+    private func updateHover(_ event: NSEvent) {
+        guard let p = config, mode == .idle, p.isSelectMode() else { setHovered(nil); return }
+        let pt = convert(event.locationInWindow, from: nil)
+        let n = hitNode(at: pt, p)
+        // Sections aren't hoverable (they're background frames, like for selection).
+        setHovered((n != nil && !n!.isSection) ? n!.id : nil)
+    }
+
+    private func setHovered(_ id: UUID?) {
+        guard coordinator?.hoveredNodeID != id else { return }
+        coordinator?.hoveredNodeID = id
+        coordinator?.refreshChrome()
+    }
 
     private var config: CanvasConfig? { coordinator?.config }
     private var mag: CGFloat { max(enclosingScrollView?.magnification ?? 1, 0.0001) }
@@ -328,6 +368,8 @@ final class CanvasInputView: NSView {
         connectSourceID = nil
         coordinator?.refreshChrome()
         reset()
+        // Re-resolve hover from the drop point (no mouseMoved fires during a drag).
+        updateHover(event)
     }
 
     private func reset() {

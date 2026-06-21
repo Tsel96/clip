@@ -28,9 +28,15 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private let iconChip = NSView()
     private let iconView = NSImageView()
     /// White stroke tracing the folder silhouette (Figma node 58:232), overlaid
-    /// on the fill so the folder has a crisp outline.
+    /// on the fill so the folder has a crisp outline (always on).
     private let outlineView = NSImageView()
-    private var isSelected = false
+    /// The hover/selected SELECTION outline — the same silhouette stroke, drawn
+    /// in a slightly larger frame so it sits as a curved outline OUTSIDE the
+    /// folder (the folder's analogue of the cards' offset rect outline). Faded
+    /// in on SELECT only.
+    private let selectionOutlineView = NSImageView()
+    private var isLifted = false
+    private var showsSelectionOutline = false
     private var currentCount = 0
     /// Current art canvas height (1044 rest/per-count, 1099 selected — the
     /// selected SVG carries extra glow margin) so layout maps the taller art.
@@ -123,6 +129,15 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         outlineView.isHidden = false
         addSubview(outlineView)
 
+        // Offset selection outline: same silhouette stroke, hidden until lifted,
+        // sized larger than the folder in `layout` so it reads as a curved
+        // outline sitting just outside the folder edge.
+        selectionOutlineView.image = Self.outlineImage
+        selectionOutlineView.imageScaling = .scaleAxesIndependently
+        selectionOutlineView.wantsLayer = true
+        selectionOutlineView.layer?.opacity = 0
+        addSubview(selectionOutlineView)
+
         countField.textColor = NSColor(white: 0, alpha: 0.4)
         addSubview(countField)
         titleField.textColor = .black
@@ -184,28 +199,41 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         currentArtHeight = 1044
     }
 
-    /// Selection feedback: ONLY a subtle, animated scale (Spatial's "selected
-    /// folder is a bit scaled") — no ring, no art swap. Called from
-    /// CardItemView.updateChrome.
-    func setSelected(_ selected: Bool) {
-        guard selected != isSelected else { return }
-        isSelected = selected
-        // Scale from the CENTRE. A layer-backed NSView anchors its backing layer at
-        // the corner (anchorPoint 0,0), so `CATransform3DMakeScale` alone grows from
-        // a corner — build an explicit centre-pivot transform instead.
-        let cx = bounds.width / 2, cy = bounds.height / 2
-        let factor: CGFloat = selected ? 1.04 : 1.0
-        let target = CATransform3DConcat(
-            CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
-                                CATransform3DMakeScale(factor, factor, 1)),
-            CATransform3DMakeTranslation(cx, cy, 0))
-        let anim = CABasicAnimation(keyPath: "transform")
-        anim.fromValue = layer?.presentation()?.transform ?? layer?.transform
-        anim.toValue = target
-        anim.duration = 0.18
-        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        layer?.transform = target
-        layer?.add(anim, forKey: "selectScale")
+    /// Hover/selected feedback. `lifted` (hover OR select) drives the 1.06 scale;
+    /// `selected` drives the curved offset outline (hover shows scale only, to
+    /// match the cards' Figma-exact hover). Called from CardItemView.updateChrome.
+    func setState(lifted: Bool, selected: Bool) {
+        if lifted != isLifted {
+            isLifted = lifted
+            // Scale from the CENTRE. A layer-backed NSView anchors its backing layer
+            // at the corner (anchorPoint 0,0), so `CATransform3DMakeScale` alone grows
+            // from a corner — build an explicit centre-pivot transform instead.
+            let cx = bounds.width / 2, cy = bounds.height / 2
+            let factor: CGFloat = lifted ? CardItemView.liftScale : 1.0
+            let target = CATransform3DConcat(
+                CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
+                                    CATransform3DMakeScale(factor, factor, 1)),
+                CATransform3DMakeTranslation(cx, cy, 0))
+            let anim = CABasicAnimation(keyPath: "transform")
+            anim.fromValue = layer?.presentation()?.transform ?? layer?.transform
+            anim.toValue = target
+            anim.duration = 0.16
+            anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer?.transform = target
+            layer?.add(anim, forKey: "liftScale")
+        }
+        if selected != showsSelectionOutline {
+            showsSelectionOutline = selected
+            let target: Float = selected ? 1 : 0
+            let anim = CABasicAnimation(keyPath: "opacity")
+            anim.fromValue = selectionOutlineView.layer?.presentation()?.opacity
+                ?? selectionOutlineView.layer?.opacity
+            anim.toValue = target
+            anim.duration = 0.14
+            anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            selectionOutlineView.layer?.opacity = target
+            selectionOutlineView.layer?.add(anim, forKey: "fade")
+        }
     }
 
     override func layout() {
@@ -231,6 +259,12 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         // Outline art (994×854) is tight to its canvas, same ~1.16 ratio as the
         // folder, so it traces the silhouette when filling the node bounds.
         outlineView.frame = bounds
+        // Selection outline: the same silhouette stretched into a frame inset by
+        // a negative gap, so the traced edge sits just OUTSIDE the folder — a
+        // curved offset outline. The gap scales with the folder (≈4%) so it reads
+        // the same at any folder size / zoom.
+        let gap = max(6, min(w, h) * 0.04)
+        selectionOutlineView.frame = bounds.insetBy(dx: -gap, dy: -gap)
 
         // Live text, lower-left (the baked text sat at ≈12% in, 69%/77% down).
         let pad = w * 0.118

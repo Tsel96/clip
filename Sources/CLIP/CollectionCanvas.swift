@@ -958,11 +958,13 @@ final class CardItemView: NSView {
     /// content) precisely because a layer shadow renders OUTSIDE the bounds —
     /// a SwiftUI shadow would be clipped by the collection item, just like the
     /// resize handles were. `shadowPath` keeps it cheap and correctly rounded.
+    private var lastLiftedForShadow: Bool?
     func updateShadow() {
         guard let layer = layer else { return }
         layer.masksToBounds = false
         guard let n = liveNode, castsShadow(n.kind), bounds.width > 1, bounds.height > 1 else {
             layer.shadowOpacity = 0
+            lastLiftedForShadow = nil
             return
         }
         // Fade the float shadow out when zoomed far out (Spatial's
@@ -970,17 +972,37 @@ final class CardItemView: NSView {
         // board read as mud and cost fill-rate; near 1× they lift cleanly.
         let mag = magnification
         let minMag: CGFloat = 0.30, fullMag: CGFloat = 0.55
-        let fade = max(0, min(1, (mag - minMag) / (fullMag - minMag)))
-        // Spatial's float shadow is soft + wide + low-opacity (a gentle ambient
-        // lift), not a tight dark drop shadow.
+        let zoomFade = max(0, min(1, (mag - minMag) / (fullMag - minMag)))
+        // Per-state shadow (Figma 88:329 rest vs 88:330/336 lifted): rest is a
+        // tight subtle contact shadow; hover/selected lifts the card into a
+        // larger, softer, slightly darker pool. The shadow path is scaled by the
+        // lift factor so it tracks the (1.06×) scaled card edge.
+        let lifted = isLifted
+        let baseOpacity: Float = lifted ? 0.17 : 0.13
+        let offsetY: CGFloat   = lifted ? 16 : 6
+        let radius: CGFloat    = lifted ? 20 : 8
+        let liftS: CGFloat     = lifted ? Self.liftScale : 1.0
+        let sw = bounds.width * liftS, sh = bounds.height * liftS
+        let shadowRect = CGRect(x: (bounds.width - sw) / 2, y: (bounds.height - sh) / 2,
+                                width: sw, height: sh)
+        // Animate ONLY on a rest⇄lifted transition; zoom ticks set instantly.
+        let animated = (lastLiftedForShadow != nil && lastLiftedForShadow != lifted)
+        lastLiftedForShadow = lifted
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        if animated {
+            CATransaction.setAnimationDuration(0.16)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        }
         layer.shadowColor = NSColor.black.cgColor
-        layer.shadowOpacity = Float(0.12 * fade)
-        layer.shadowRadius = 17
-        layer.shadowOffset = CGSize(width: 0, height: 6)
-        layer.shadowPath = CGPath(roundedRect: bounds,
+        layer.shadowOpacity = baseOpacity * Float(zoomFade)
+        layer.shadowRadius = radius
+        layer.shadowOffset = CGSize(width: 0, height: offsetY)
+        layer.shadowPath = CGPath(roundedRect: shadowRect,
                                   cornerWidth: shadowCornerRadius,
                                   cornerHeight: shadowCornerRadius,
                                   transform: nil)
+        CATransaction.commit()
     }
 }
 
