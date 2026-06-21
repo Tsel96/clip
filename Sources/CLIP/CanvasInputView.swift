@@ -1,14 +1,5 @@
 import AppKit
 
-/// Lightweight file log for runtime diagnosis (user reads /tmp/clip_diag.txt).
-func clipDiag(_ s: String) {
-    let line = "[\(Date().timeIntervalSince1970)] \(s)\n"
-    let url = URL(fileURLWithPath: "/tmp/clip_diag.txt")
-    if let h = try? FileHandle(forWritingTo: url) {
-        h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close()
-    } else { try? line.data(using: .utf8)?.write(to: url) }
-}
-
 /// The SINGLE owner of all canvas pointer interaction (Spatial's
 /// `CanvasContentView` model). A transparent, flipped NSView sized to the whole
 /// world and layered above the cards, so NO other view competes for a click.
@@ -24,6 +15,10 @@ func clipDiag(_ s: String) {
 /// the left mouse-button events; scroll/magnify pass through to the scroll view.
 final class CanvasInputView: NSView {
     override var isFlipped: Bool { true }
+    // Accept first responder so a click on the canvas pulls focus away from any
+    // lingering SwiftUI TextField field-editor (search / rename / hidden fields).
+    // Without this the field-editor keeps focus forever and swallows Delete/⌫.
+    override var acceptsFirstResponder: Bool { true }
     weak var coordinator: CollectionCanvas.Coordinator?
 
     private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw, pendingConnect, connect, pan }
@@ -194,6 +189,10 @@ final class CanvasInputView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let p = config else { return }
+        // Take focus from any text field so the canvas owns the keyboard (Delete,
+        // etc.). Clicks INSIDE an editing text node never reach here (hitTest
+        // passes them to the field), so this won't interrupt active text editing.
+        if window?.firstResponder !== self { window?.makeFirstResponder(self) }
         let pt = convert(event.locationInWindow, from: nil)
         startPt = pt
         didBegin = false
