@@ -85,26 +85,44 @@ final class RadialColorPicker: NSView {
         layer?.addSublayer(hoverRing)
     }
 
-    /// Trace the ring around the (scaled) hovered petal, or hide it. The stroke
-    /// colour flips to a dark grey on bright petals so it never disappears.
+    /// Trace an always-white ring around the (scaled) hovered petal that GLIDES
+    /// between petals with a spring (Spatial's smooth selection ring), fading in
+    /// on first hover and out when over no petal.
     private func updateHoverRing(for idx: Int?) {
         guard let idx else {
-            CATransaction.begin(); CATransaction.setDisableActions(true)
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = hoverRing.presentation()?.opacity ?? hoverRing.opacity
+            fade.toValue = 0
+            fade.duration = 0.16
             hoverRing.opacity = 0
-            CATransaction.commit()
+            hoverRing.add(fade, forKey: "ringFade")
             return
         }
         let petal = petals[idx]
         let scaled = petal.r * (petal.isCore ? 1.85 : 1.4) + 1.5
         let rect = CGRect(x: petal.center.x - scaled, y: petal.center.y - scaled,
                           width: scaled * 2, height: scaled * 2)
-        let c = petal.color.usingColorSpace(.sRGB) ?? petal.color
-        let lum = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        hoverRing.path = CGPath(ellipseIn: rect, transform: nil)
-        hoverRing.strokeColor = (lum > 0.6 ? NSColor(white: 0.34, alpha: 1) : .white).cgColor
+        let newPath = CGPath(ellipseIn: rect, transform: nil)
+        let wasVisible = (hoverRing.presentation()?.opacity ?? hoverRing.opacity) > 0.01
+        let from = hoverRing.presentation()?.path ?? hoverRing.path
+        hoverRing.path = newPath
+        if wasVisible, let from {
+            // Morph the ring from the old petal to the new one — same spring as
+            // the petal lift, so the ring tracks it.
+            let a = CASpringAnimation(keyPath: "path")
+            a.fromValue = from
+            a.toValue = newPath
+            a.stiffness = CLIPSpring.Preset.control.stiffness
+            a.damping = CLIPSpring.Preset.control.caDamping
+            a.duration = a.settlingDuration
+            hoverRing.add(a, forKey: "ringPath")
+        } else {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0; fade.toValue = 1
+            fade.duration = 0.14
+            hoverRing.add(fade, forKey: "ringFade")
+        }
         hoverRing.opacity = 1
-        CATransaction.commit()
     }
 
     // MARK: Layout math (port of BlossomColorPicker calculateLayerRadii)
