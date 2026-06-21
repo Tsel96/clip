@@ -105,10 +105,10 @@ final class CanvasToolPaletteView: NSView {
 
     // MARK: - Layout
 
-    /// Total width = 470 + 10 + 62 = 542 pt (Figma Frame 44 width).
+    /// Total width = 386 + 10 + 62 = 458 pt (Figma 89-610 — smaller toolbar).
     /// We add `shadowBleed` of padding on every side so the host NSView
     /// is larger than the visual content and the drop-shadow is never clipped.
-    static let mainPillW: CGFloat  = 470
+    static let mainPillW: CGFloat  = 386
     static let addPillW: CGFloat   = 62
     static let gap: CGFloat        = 10
     /// Visual content height = 62; decorative props overflow ~12 pt above.
@@ -506,29 +506,27 @@ private final class MainPillView: NSView {
     private static let iconSize: CGFloat    = 24
     private static let buttonRadius: CGFloat = 60    // "60px" in Figma
 
-    // Button X origins within inner capsule (from Figma metadata)
-    // 60:12984 Cursor  left=2  → within inner capsule
-    // 60:12987 Hand    left=56
-    // 60:12990 Text    left=304 (opacity 70%)
-    // 60:12995 Folder  left=358 (opacity 70%)
-    // 60:12999 Connect left=412 (opacity 70%)
-    private static let buttonXs: [CGFloat] = [2, 56, 304, 358, 412]
-    private static let buttonOpacities: [CGFloat] = [1, 1, 0.7, 0.7, 0.7]
-    // Each button's tool MODE (nil = the Folder ACTION button — it creates a
-    // folder instead of entering a mode) + its icon. Draw and Sticky are NOT
-    // buttons; they're the Marker / Stickers props (made clickable below).
+    // Button X origins within inner capsule (Figma 89-610 — smaller toolbar,
+    // Folder button REMOVED from the bar; it moved to the + add popover).
+    // Cursor  left=2
+    // Hand    left=56
+    // Text    left=274 (opacity 70%)
+    // Connect left=328 (opacity 70%)
+    private static let buttonXs: [CGFloat] = [2, 56, 274, 328]
+    private static let buttonOpacities: [CGFloat] = [1, 1, 0.7, 0.7]
+    // Each button's tool MODE + its icon. Marker / Sticky are NOT buttons;
+    // they're the decorative props (made clickable below).
     private static let buttonModes: [ToolMode?] =
-        [.select, .hand, .text, nil, .connect]
+        [.select, .hand, .text, .connect]
     private static let buttonIcons: [String] =
-        ["tool_select", "tool_hand", "tool_text", "tool_folder", "tool_connect"]
+        ["tool_select", "tool_hand", "tool_text", "tool_connect"]
 
-    // Decorative prop positions (in inner capsule coords, Y from top of inner capsule)
-    // Marker:   x=129, y=-10  (overflows above rim by 10+innerTop=12)
-    // Stickers: x=195, y=-6   (overflows above rim by 6+innerTop=8)
-    // Both clip to the inner capsule rect horizontally but overflow top.
-    private static let markerX: CGFloat   = 129
-    private static let markerY: CGFloat   = -12   // Figma 60:13004 top:-12 (above inner-capsule top)
-    private static let stickersX: CGFloat = 195
+    // Decorative prop positions (Figma 89-610, inner-capsule coords; Y from top).
+    // Marker:   x=117  (overflows above rim by 12)
+    // Stickers: x=176  (overflows above rim by 6)
+    private static let markerX: CGFloat   = 117
+    private static let markerY: CGFloat   = -12
+    private static let stickersX: CGFloat = 176
     private static let stickersY: CGFloat = -6
 
     // MARK: Layers
@@ -1028,12 +1026,14 @@ final class ToolPaletteButton: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
+        refreshIconState()
         refreshBackground()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
         if isPressed { isPressed = false; CLIPSpring.scale(self, to: 1.0, key: "press") }
+        refreshIconState()
         refreshBackground()
     }
 
@@ -1065,9 +1065,8 @@ final class ToolPaletteButton: NSView {
         // #FEF33C; the rest art is a black template. Fall back to a yellow tint
         // if a tool has no `_active` asset yet.
         iconView.image = (active ? activeImage : restImage) ?? restImage
-        iconView.alphaValue       = active ? 1.0 : iconRestOpacity
         iconView.contentTintColor = active ? NSColor.fromHex(0xFEF33C) : .black
-        applyGlow(active)
+        refreshIconState()
         refreshBackground(animated: animated)
     }
 
@@ -1092,13 +1091,31 @@ final class ToolPaletteButton: NSView {
         }
     }
 
-    /// Selected icon gets a soft white halo (Figma: white@70%, blur ~10pt).
-    private func applyGlow(_ on: Bool) {
+    /// Icon-level state effects (Figma 89-576 rest / 89-578 hover / 89-581
+    /// selected) — applied to the ICON, not the hover circle:
+    ///   • rest      → dimmed to the per-tool rest opacity, no shadow
+    ///   • hover     → full opacity + soft dark drop shadow (the icon lifts)
+    ///   • selected  → full opacity + white glow (white@70%, blur ~10pt)
+    private func refreshIconState() {
+        iconView.wantsLayer = true
         guard let l = iconView.layer else { return }
-        l.shadowColor   = NSColor.white.cgColor
-        l.shadowOffset  = .zero
-        l.shadowRadius  = on ? 5 : 0
-        l.shadowOpacity = on ? 0.7 : 0
+        l.masksToBounds = false
+        if isActive {
+            iconView.alphaValue = 1.0
+            l.shadowColor = NSColor.white.cgColor
+            l.shadowOffset = .zero
+            l.shadowRadius = 5
+            l.shadowOpacity = 0.7
+        } else if isHovered {
+            iconView.alphaValue = 1.0
+            l.shadowColor = NSColor.black.cgColor
+            l.shadowOffset = CGSize(width: 0, height: -2)   // project DOWN (icon layer is y-up)
+            l.shadowRadius = 2
+            l.shadowOpacity = 0.35
+        } else {
+            iconView.alphaValue = iconRestOpacity
+            l.shadowOpacity = 0
+        }
     }
 
     // MARK: - Icon mapping
