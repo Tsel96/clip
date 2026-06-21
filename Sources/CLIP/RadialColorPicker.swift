@@ -29,8 +29,8 @@ final class RadialColorPicker: NSView {
     /// than the leaves and the rings are spread enough that the vibrant outer
     /// ring is never buried under the pale inner ring.
     private let discR: CGFloat = 72
-    private let petalR: CGFloat = 15         // inner + outer leaf radius
-    private let coreR: CGFloat = 19          // white centre, slightly larger
+    private let petalR: CGFloat = 13         // inner + outer leaf radius (Spatial: smaller, distinct)
+    private let coreR: CGFloat = 16          // white centre, slightly larger
     private let pad: CGFloat = 36            // room for the glow + drop shadow (must not clip)
     private var discCenter: CGPoint = .zero
     private let innerR: CGFloat = 23
@@ -39,11 +39,10 @@ final class RadialColorPicker: NSView {
     // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
     /// Peak scale boost for the hovered circle, the core's extra pop, and the
     /// Gaussian falloff width (pt) over which neighbours react.
-    // Bigger hovered scale + a WIDE falloff so every leaf in the flower responds
-    // to the hover (Spatial's whole-flower "breathing"), not just the neighbours.
+    // Spatial: ONLY the hovered leaf scales (neighbours stay put). The breathing
+    // feel comes from each leaf popping up instantly and easing back as you sweep.
     private let hoverBoost: CGFloat = 0.45
     private let hoverCoreBoost: CGFloat = 0.50
-    private let hoverSigma: CGFloat = 46
 
     // MARK: Palette (BlossomColorPicker)
     /// Inner ring — 6 pastels, clockwise from top.
@@ -272,24 +271,15 @@ final class RadialColorPicker: NSView {
     /// neighbours swell a little and the picker breathes as one — all on the
     /// snappy control spring.
     private func applyHoverScales(hovered idx: Int?) {
-        let hc = idx.map { petals[$0].center }
         for (i, petal) in petals.enumerated() {
-            let target: CGFloat
-            if let idx, let hc {
-                let d = hypot(petal.center.x - hc.x, petal.center.y - hc.y)
-                let g = exp(-0.5 * (d / hoverSigma) * (d / hoverSigma))   // 1 at hovered → 0 far
-                let boost = (i == idx && petal.isCore) ? hoverCoreBoost : hoverBoost
-                target = 1 + boost * g
-            } else {
-                target = 1
-            }
-            // Only the hovered leaf jumps to the front; neighbours keep resting z.
-            petal.layer.zPosition = petal.baseZ + (i == idx ? 100_000 : 0)
+            let isHov = (i == idx)
+            let target: CGFloat = isHov ? 1 + (petal.isCore ? hoverCoreBoost : hoverBoost) : 1
+            // Only the hovered leaf scales + jumps to the front; the rest stay put.
+            petal.layer.zPosition = petal.baseZ + (isHov ? 100_000 : 0)
             guard abs(target - petalScale[i]) > 0.001 else { continue }
             let growing = target > petalScale[i]
             petalScale[i] = target
-            // Spatial: pop up INSTANTLY when hovered, ease back SMOOTHLY when the
-            // cursor moves off — so animate only when a leaf is shrinking.
+            // Pop up INSTANTLY when hovered, ease back SMOOTHLY when moving off.
             scale(petal.layer, target, center: petal.center, animated: !growing)
         }
     }
