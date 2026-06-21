@@ -1121,10 +1121,11 @@ struct _PaletteRepresentable: NSViewRepresentable {
         // sections now (folder-colour model is the separate F4 feature).
         v.onColorPick = { nsColor in
             let preset = RadialColorPicker.nearestSectionColor(to: nsColor)
+            let hex = nsColor.hexRGB
             for id in state.selectedNodeIDs {
                 guard let n = state.nodes.first(where: { $0.id == id }) else { continue }
                 if n.isSection      { state.setSectionColor(id: id, to: preset) }
-                else if n.isFolder  { state.setFolderColor(id: id, to: preset) }
+                else if n.isFolder  { state.setFolderColor(id: id, hex: hex) }
             }
         }
         // Download / Eject actions: TODO (pending behaviour spec).
@@ -1142,6 +1143,15 @@ private extension NSColor {
         let g = CGFloat((hex >>  8) & 0xFF) / 255
         let b = CGFloat( hex        & 0xFF) / 255
         return NSColor(calibratedRed: r, green: g, blue: b, alpha: 1)
+    }
+
+    /// `#RRGGBB` (sRGB) — used to persist the folder tint.
+    var hexRGB: String {
+        let c = usingColorSpace(.sRGB) ?? self
+        return String(format: "#%02X%02X%02X",
+                      Int((c.redComponent * 255).rounded()),
+                      Int((c.greenComponent * 255).rounded()),
+                      Int((c.blueComponent * 255).rounded()))
     }
 }
 

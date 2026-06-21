@@ -35,11 +35,13 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     /// (not in any folder). Folders can't be nested inside folders.
     var folderID: UUID? = nil
 
-    /// Folder tint from the flower color picker. Only meaningful when `kind` is
-    /// `.folder`. Kept as a struct property (NOT a `Kind.folder` associated
-    /// value) so it needs zero enum pattern-match changes across the codebase.
-    /// `decodeIfPresent` → older snapshots default to `nil` (the lavender folder).
-    var folderColor: SectionColor? = nil
+    /// Folder tint from the flower color picker, as an `#RRGGBB` hex of the
+    /// actual picked colour (the flower is 18 vibrant hues — far more than the
+    /// 5 `SectionColor`s — so we store the real colour, not a nearest preset).
+    /// Only meaningful when `kind` is `.folder`. Kept as a struct property (NOT a
+    /// `Kind.folder` associated value) so it needs zero enum pattern-match
+    /// changes. `decodeIfPresent` → older snapshots default to `nil` (lavender).
+    var folderColor: String? = nil
 
     /// Where this node came from. `.phone` marks cards ingested from the
     /// iPhone share pipe (the iCloud Drive inbox) so the UI can badge
@@ -110,7 +112,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
          imagePrompt: String? = nil,
          trimStart: Double? = nil,
          trimEnd: Double? = nil,
-         folderColor: SectionColor? = nil) {
+         folderColor: String? = nil) {
         self.id = id
         self.position = position
         self.width = width
@@ -160,7 +162,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.imagePrompt = try c.decodeIfPresent(String.self, forKey: .imagePrompt)
         self.trimStart = try c.decodeIfPresent(Double.self, forKey: .trimStart)
         self.trimEnd   = try c.decodeIfPresent(Double.self, forKey: .trimEnd)
-        self.folderColor = try c.decodeIfPresent(SectionColor.self, forKey: .folderColor)
+        self.folderColor = try c.decodeIfPresent(String.self, forKey: .folderColor)
     }
 
     func encode(to encoder: Encoder) throws {
