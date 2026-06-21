@@ -38,7 +38,9 @@ final class ConnectorOverlayController {
     private static let selectedLineWidth: CGFloat = 3.5
     private static let arrowLen: CGFloat = 10
     private static let arrowHalf: CGFloat = 4.5
-    private static let labelFontSize: CGFloat = 13
+    private static let labelFontSize: CGFloat = 20   // CONTENT units → scales with zoom (Obsidian-style)
+    /// Canvas backdrop colour (light theme) — masks the line behind the label.
+    private static let labelBackground = NSColor(srgbRed: 0.95, green: 0.95, blue: 0.95, alpha: 1)
 
     /// Brand green (#3DA726) for the line/arrow; brighter green when selected.
     private static let green = NSColor(srgbRed: 0.239, green: 0.655, blue: 0.149, alpha: 1)
