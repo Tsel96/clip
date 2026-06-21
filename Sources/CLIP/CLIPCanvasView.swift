@@ -180,18 +180,20 @@ final class CLIPCanvasView: NSView {
         // the @StateObject reliably), so own it natively here — but NEVER steal
         // Delete from a text editor (canvas text edit, search, page rename…).
         coordinator.deleteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in
-            guard let coordinator,
-                  event.keyCode == 51 || event.keyCode == 117,      // ⌫ / fwd-delete
-                  event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+            guard let coordinator else { return event }
+            guard event.keyCode == 51 || event.keyCode == 117 else { return event }  // ⌫ / fwd-delete
+            let fr = coordinator.scroll?.window?.firstResponder
+            clipDiag("DELETE key fired: mods=\(event.modifierFlags.rawValue) editing=\(coordinator.config.editingTextNodeID != nil) fr=\(String(describing: fr.map { type(of: $0) })) sel=\(coordinator.config.liveSelection().count)")
+            guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
                   coordinator.config.editingTextNodeID == nil
-            else { return event }
+            else { clipDiag("  → blocked (mods/editing)"); return event }
             // A text field / field-editor has focus → let it handle the key.
-            if let fr = coordinator.scroll?.window?.firstResponder,
-               fr is NSText || (fr as? NSView)?.isKind(of: NSTextView.self) == true {
-                return event
+            if let fr, fr is NSText || (fr as? NSView)?.isKind(of: NSTextView.self) == true {
+                clipDiag("  → blocked by text firstResponder \(type(of: fr))"); return event
             }
             guard !coordinator.config.liveSelection().isEmpty
-                    || !coordinator.config.selectedConnectorIDs.isEmpty else { return event }
+                    || !coordinator.config.selectedConnectorIDs.isEmpty else { clipDiag("  → no selection"); return event }
+            clipDiag("  → calling onDelete()")
             coordinator.config.onDelete()
             return nil
         }
