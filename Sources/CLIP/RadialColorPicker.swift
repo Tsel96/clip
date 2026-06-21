@@ -64,6 +64,9 @@ final class RadialColorPicker: NSView {
     private let hoverRing = CAShapeLayer()
     /// Once a colour is picked, stop reverting the live preview on the way out.
     private var picked = false
+    /// Current scale of each petal, so a leaf can pop up INSTANTLY when hovered
+    /// but ease back SMOOTHLY once the cursor moves off it.
+    private var petalScale: [CGFloat] = []
 
     init() {
         // Disc only — the control bar is the candy folder toolbar this blooms ABOVE.
@@ -75,6 +78,7 @@ final class RadialColorPicker: NSView {
         buildHaloDisc()
         buildPetals()
         buildHoverRing()
+        petalScale = Array(repeating: 1, count: petals.count)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
@@ -167,7 +171,7 @@ final class RadialColorPicker: NSView {
         //    circle right at the disc edge, OFFSET from the blossom by the dark
         //    margin (Spatial's glowing ring). A full conic disc would be hidden by
         //    the dark disc; the ring mask reveals only the 4pt edge band.
-        let rimWidth: CGFloat = 4
+        let rimWidth: CGFloat = 2.5
         let rim = CAGradientLayer()
         rim.type = .conic
         rim.frame = discRect
@@ -190,8 +194,8 @@ final class RadialColorPicker: NSView {
         let blackRing = CAShapeLayer()
         blackRing.fillColor = nil
         blackRing.strokeColor = NSColor.black.cgColor
-        blackRing.lineWidth = 2.5
-        let br = discR + 1.5
+        blackRing.lineWidth = 2
+        let br = discR + 1
         blackRing.path = CGPath(ellipseIn: CGRect(x: discCenter.x - br, y: discCenter.y - br,
                                                   width: br * 2, height: br * 2), transform: nil)
         layer?.addSublayer(blackRing)
@@ -231,7 +235,7 @@ final class RadialColorPicker: NSView {
         p.fillColor = color.cgColor
         // Spatial: each leaf has a soft outline + a small drop shadow, so the
         // circles read as distinct glossy chips stacked over one another.
-        p.strokeColor = NSColor.white.withAlphaComponent(0.55).cgColor
+        p.strokeColor = NSColor.white.withAlphaComponent(0.85).cgColor
         p.lineWidth = 1
         p.shadowColor = NSColor.black.cgColor
         p.shadowOpacity = 0.30
@@ -258,7 +262,7 @@ final class RadialColorPicker: NSView {
         hovered = idx
         if idx != nil { CLIPHaptics.snap() }
         (idx != nil ? NSCursor.pointingHand : NSCursor.arrow).set()
-        applyHoverScales(hovered: idx, animated: false)   // instant on hover
+        applyHoverScales(hovered: idx)                    // grow instant, shrink smooth
         updateHoverRing(for: idx, animated: false)
         if !picked { onHoverPreview(idx.map { petals[$0].color }) }
     }
@@ -266,7 +270,7 @@ final class RadialColorPicker: NSView {
     override func mouseExited(with event: NSEvent) {
         hovered = nil
         NSCursor.arrow.set()
-        applyHoverScales(hovered: nil, animated: true)    // smooth on release
+        applyHoverScales(hovered: nil)                    // all ease back smoothly
         updateHoverRing(for: nil, animated: true)
         if !picked { onHoverPreview(nil) }
     }
@@ -275,23 +279,26 @@ final class RadialColorPicker: NSView {
     /// circle scales by a smooth Gaussian falloff of its distance to it, so the
     /// neighbours swell a little and the picker breathes as one — all on the
     /// snappy control spring.
-    private func applyHoverScales(hovered idx: Int?, animated: Bool) {
-        guard let idx else {
-            for petal in petals {
-                petal.layer.zPosition = petal.baseZ
-                scale(petal.layer, 1.0, center: petal.center, animated: animated)
-            }
-            return
-        }
-        let hc = petals[idx].center
+    private func applyHoverScales(hovered idx: Int?) {
+        let hc = idx.map { petals[$0].center }
         for (i, petal) in petals.enumerated() {
-            let d = hypot(petal.center.x - hc.x, petal.center.y - hc.y)
-            let g = exp(-0.5 * (d / hoverSigma) * (d / hoverSigma))   // 1 at hovered → 0 far
-            let boost = (i == idx && petal.isCore) ? hoverCoreBoost : hoverBoost
-            // Only the hovered leaf jumps to the front; neighbours keep their
-            // resting z so the stack never re-shuffles (that churn read as glitchy).
+            let target: CGFloat
+            if let idx, let hc {
+                let d = hypot(petal.center.x - hc.x, petal.center.y - hc.y)
+                let g = exp(-0.5 * (d / hoverSigma) * (d / hoverSigma))   // 1 at hovered → 0 far
+                let boost = (i == idx && petal.isCore) ? hoverCoreBoost : hoverBoost
+                target = 1 + boost * g
+            } else {
+                target = 1
+            }
+            // Only the hovered leaf jumps to the front; neighbours keep resting z.
             petal.layer.zPosition = petal.baseZ + (i == idx ? 100_000 : 0)
-            scale(petal.layer, 1 + boost * g, center: petal.center, animated: animated)
+            guard abs(target - petalScale[i]) > 0.001 else { continue }
+            let growing = target > petalScale[i]
+            petalScale[i] = target
+            // Spatial: pop up INSTANTLY when hovered, ease back SMOOTHLY when the
+            // cursor moves off — so animate only when a leaf is shrinking.
+            scale(petal.layer, target, center: petal.center, animated: !growing)
         }
     }
 
