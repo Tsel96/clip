@@ -29,20 +29,22 @@ final class RadialColorPicker: NSView {
     /// than the leaves and the rings are spread enough that the vibrant outer
     /// ring is never buried under the pale inner ring.
     private let discR: CGFloat = 72
-    private let petalR: CGFloat = 13         // inner + outer leaf radius (Spatial: smaller, distinct)
-    private let coreR: CGFloat = 16          // white centre, slightly larger
+    private let petalR: CGFloat = 16         // packed enough that NO dark disc shows between leaves
+    private let coreR: CGFloat = 20          // white centre, slightly larger
     private let pad: CGFloat = 36            // room for the glow + drop shadow (must not clip)
     private var discCenter: CGPoint = .zero
-    private let innerR: CGFloat = 23
-    private let outerR: CGFloat = 42         // outer leaf edge ≈ 57 → ~15pt dark margin to the rim
+    private let innerR: CGFloat = 21
+    private let outerR: CGFloat = 40         // outer leaf edge ≈ 56 → ~16pt dark margin to the rim
 
     // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
     /// Peak scale boost for the hovered circle, the core's extra pop, and the
     /// Gaussian falloff width (pt) over which neighbours react.
-    // Spatial: ONLY the hovered leaf scales (neighbours stay put). The breathing
-    // feel comes from each leaf popping up instantly and easing back as you sweep.
+    // Spatial: the hovered leaf scales up and physically SHOVES its neighbours
+    // outward, falling off over ~3 rings — the whole flower flexes around it.
     private let hoverBoost: CGFloat = 0.45
     private let hoverCoreBoost: CGFloat = 0.50
+    private let pushMax: CGFloat = 9         // outward shove for the closest neighbours (pt)
+    private let pushSigma: CGFloat = 30      // falloff reach (~3 rings)
 
     // MARK: Palette (BlossomColorPicker)
     /// Inner ring — 6 pastels, clockwise from top.
@@ -145,8 +147,20 @@ final class RadialColorPicker: NSView {
         let d = discR * 2
         let discRect = CGRect(x: discCenter.x - discR, y: discCenter.y - discR, width: d, height: d)
 
-        // Dark disc backdrop, floating with a soft (neutral) shadow — no coloured
-        // glow around it (per design: the rainbow lives ONLY in the crisp rim).
+        // Subtle coloured glow — a soft conic halo just past the rim (Spatial has a
+        // gentle bloom; understated, not the big wash from before).
+        let glow = CAGradientLayer()
+        glow.type = .conic
+        glow.frame = discRect.insetBy(dx: -8, dy: -8)
+        glow.cornerRadius = glow.frame.width / 2
+        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
+        glow.endPoint = CGPoint(x: 0.5, y: 0)
+        glow.colors = conicColors
+        glow.opacity = 0.5
+        if let blur = CIFilter(name: "CIGaussianBlur") { blur.setValue(9, forKey: "inputRadius"); glow.filters = [blur] }
+        layer?.addSublayer(glow)
+
+        // Dark disc backdrop, floating with a soft (neutral) shadow.
         let disc = CALayer()
         disc.frame = discRect
         disc.cornerRadius = discR
@@ -227,9 +241,9 @@ final class RadialColorPicker: NSView {
         p.strokeColor = NSColor.white.withAlphaComponent(0.15).cgColor   // very subtle at rest; the hovered leaf gets the bright ring
         p.lineWidth = 1
         p.shadowColor = NSColor.black.cgColor
-        p.shadowOpacity = 0.30
-        p.shadowRadius = 2.5
-        p.shadowOffset = CGSize(width: 0, height: -1.5)   // downward (picker view is y-up)
+        p.shadowOpacity = 0.16                            // subtle
+        p.shadowRadius = 2
+        p.shadowOffset = CGSize(width: 0, height: -1)     // downward (picker view is y-up)
         // Explicit shadowPath so CoreAnimation doesn't re-derive each leaf's shadow
         // from its contents EVERY frame while scaling — that was the low-FPS cause.
         p.shadowPath = p.path
