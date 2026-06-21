@@ -31,6 +31,13 @@ final class RadialColorPicker: NSView {
     private var innerR: CGFloat = 0
     private var outerR: CGFloat = 0
 
+    // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
+    /// Peak scale boost for the hovered circle, the core's extra pop, and the
+    /// Gaussian falloff width (pt) over which neighbours react.
+    private let hoverBoost: CGFloat = 0.30
+    private let hoverCoreBoost: CGFloat = 0.45
+    private let hoverSigma: CGFloat = 29
+
     // MARK: Palette (BlossomColorPicker)
     /// Inner ring — 6 pastels, clockwise from top.
     private let innerColors: [NSColor] = [
@@ -99,7 +106,7 @@ final class RadialColorPicker: NSView {
             return
         }
         let petal = petals[idx]
-        let scaled = petal.r * (petal.isCore ? 1.85 : 1.4) + 1.5
+        let scaled = petal.r * (1 + (petal.isCore ? hoverCoreBoost : hoverBoost)) + 1.5
         let rect = CGRect(x: petal.center.x - scaled, y: petal.center.y - scaled,
                           width: scaled * 2, height: scaled * 2)
         let newPath = CGPath(ellipseIn: rect, transform: nil)
@@ -244,26 +251,43 @@ final class RadialColorPicker: NSView {
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         let idx = nearestPetal(to: p)
-        if idx != hovered {
-            hovered = idx
-            CLIPHaptics.snap()
-            (idx != nil ? NSCursor.pointingHand : NSCursor.arrow).set()
-            for (i, petal) in petals.enumerated() {
-                let s: CGFloat = i == idx ? (petal.isCore ? 1.85 : 1.4) : 1.0
-                petal.layer.zPosition = petal.baseZ + (i == idx ? 100000 : 0)
-                scale(petal.layer, s, center: petal.center)
-            }
-            updateHoverRing(for: idx)
-            if !picked { onHoverPreview(idx.map { petals[$0].color }) }
-        }
+        guard idx != hovered else { return }
+        hovered = idx
+        if idx != nil { CLIPHaptics.snap() }
+        (idx != nil ? NSCursor.pointingHand : NSCursor.arrow).set()
+        applyHoverScales(hovered: idx)
+        updateHoverRing(for: idx)
+        if !picked { onHoverPreview(idx.map { petals[$0].color }) }
     }
 
     override func mouseExited(with event: NSEvent) {
         hovered = nil
         NSCursor.arrow.set()
-        for petal in petals { scale(petal.layer, 1.0, center: petal.center) }
+        applyHoverScales(hovered: nil)
         updateHoverRing(for: nil)
         if !picked { onHoverPreview(nil) }
+    }
+
+    /// Spatial's flower hover: the hovered circle scales most and every other
+    /// circle scales by a smooth Gaussian falloff of its distance to it, so the
+    /// neighbours swell a little and the picker breathes as one — all on the
+    /// snappy control spring.
+    private func applyHoverScales(hovered idx: Int?) {
+        guard let idx else {
+            for petal in petals {
+                petal.layer.zPosition = petal.baseZ
+                scale(petal.layer, 1.0, center: petal.center)
+            }
+            return
+        }
+        let hc = petals[idx].center
+        for (i, petal) in petals.enumerated() {
+            let d = hypot(petal.center.x - hc.x, petal.center.y - hc.y)
+            let g = exp(-0.5 * (d / hoverSigma) * (d / hoverSigma))   // 1 at hovered → 0 far
+            let boost = (i == idx && petal.isCore) ? hoverCoreBoost : hoverBoost
+            petal.layer.zPosition = petal.baseZ + (i == idx ? 100_000 : g * 1_000)
+            scale(petal.layer, 1 + boost * g, center: petal.center)
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
