@@ -56,7 +56,14 @@ struct ClipApp: App {
                 .environmentObject(state.cameraStore)
                 .environmentObject(state.smartSelection)
                 .frame(minWidth: 800, minHeight: 600)
-                .onAppear { NSApp.activate(ignoringOtherApps: true) }
+                .preferredColorScheme(.light)   // force light mode (dark theme not ready)
+                .onAppear {
+                    NSApp.activate(ignoringOtherApps: true)
+                    // Belt-and-suspenders: pin every window to the light appearance
+                    // so nothing renders in (broken) dark mode.
+                    NSApp.appearance = NSAppearance(named: .aqua)
+                    NSApp.windows.forEach { $0.appearance = NSAppearance(named: .aqua) }
+                }
         }
         // No top title bar — the window chrome is removed so the canvas reaches
         // the top edge (traffic lights float over the content).

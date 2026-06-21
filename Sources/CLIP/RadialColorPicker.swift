@@ -39,9 +39,9 @@ final class RadialColorPicker: NSView {
     // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
     /// Peak scale boost for the hovered circle, the core's extra pop, and the
     /// Gaussian falloff width (pt) over which neighbours react.
-    private let hoverBoost: CGFloat = 0.18
-    private let hoverCoreBoost: CGFloat = 0.24
-    private let hoverSigma: CGFloat = 20
+    private let hoverBoost: CGFloat = 0.30
+    private let hoverCoreBoost: CGFloat = 0.36
+    private let hoverSigma: CGFloat = 19
 
     // MARK: Palette (BlossomColorPicker)
     /// Inner ring — 6 pastels, clockwise from top.
@@ -233,14 +233,17 @@ final class RadialColorPicker: NSView {
         let p = CAShapeLayer()
         p.path = CGPath(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2), transform: nil)
         p.fillColor = color.cgColor
-        // Spatial: each leaf has a soft outline + a small drop shadow, so the
+        // Spatial: each leaf has a faint outline + a small drop shadow, so the
         // circles read as distinct glossy chips stacked over one another.
-        p.strokeColor = NSColor.white.withAlphaComponent(0.32).cgColor   // subtle at rest; the hovered leaf gets the bright ring
+        p.strokeColor = NSColor.white.withAlphaComponent(0.15).cgColor   // very subtle at rest; the hovered leaf gets the bright ring
         p.lineWidth = 1
         p.shadowColor = NSColor.black.cgColor
         p.shadowOpacity = 0.30
         p.shadowRadius = 2.5
         p.shadowOffset = CGSize(width: 0, height: -1.5)   // downward (picker view is y-up)
+        // Explicit shadowPath so CoreAnimation doesn't re-derive each leaf's shadow
+        // from its contents EVERY frame while scaling — that was the low-FPS cause.
+        p.shadowPath = p.path
         p.zPosition = baseZ
         layer?.addSublayer(p)
         petals.append(Petal(layer: p, color: color, center: center, r: r, isCore: isCore, baseZ: baseZ))
@@ -261,7 +264,7 @@ final class RadialColorPicker: NSView {
         guard idx != hovered else { return }
         hovered = idx
         if idx != nil { CLIPHaptics.snap() }
-        (idx != nil ? NSCursor.pointingHand : NSCursor.arrow).set()
+        // (no cursor change on hover — keep the default arrow)
         applyHoverScales(hovered: idx)                    // grow instant, shrink smooth
         updateHoverRing(for: idx, animated: false)
         if !picked { onHoverPreview(idx.map { petals[$0].color }) }
@@ -269,7 +272,6 @@ final class RadialColorPicker: NSView {
 
     override func mouseExited(with event: NSEvent) {
         hovered = nil
-        NSCursor.arrow.set()
         applyHoverScales(hovered: nil)                    // all ease back smoothly
         updateHoverRing(for: nil, animated: true)
         if !picked { onHoverPreview(nil) }
