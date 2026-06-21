@@ -19,6 +19,9 @@ final class RadialColorPicker: NSView {
 
     var onPick: (NSColor) -> Void = { _ in }
     var onDismiss: () -> Void = {}
+    /// Live preview as the cursor sweeps the petals: the hovered colour (or `nil`
+    /// when over no petal / on exit). Drives the folder's live recolour.
+    var onHoverPreview: (NSColor?) -> Void = { _ in }
 
     // MARK: Geometry
     private let discR: CGFloat = 68
@@ -45,6 +48,10 @@ final class RadialColorPicker: NSView {
     private var hovered: Int? = nil
     private var tracking: NSTrackingArea?
     private var outsideMonitor: Any?
+    /// Crisp outline traced around the hovered petal (above everything).
+    private let hoverRing = CAShapeLayer()
+    /// Once a colour is picked, stop reverting the live preview on the way out.
+    private var picked = false
 
     init() {
         // Disc only — the control bar is the candy folder toolbar this blooms ABOVE.

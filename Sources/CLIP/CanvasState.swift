@@ -2167,6 +2167,16 @@ final class CanvasState: ObservableObject {
         }
     }
 
+    /// Live, NON-undoable folder tint used while hovering the flower picker, so a
+    /// sweep across petals previews each colour on the folder without spamming the
+    /// undo stack. `nil` restores the folder's previous (or default) tint. The
+    /// commit on pick goes through `setFolderColor` (undoable).
+    func previewFolderColor(id: UUID, hex: String?) {
+        guard let idx = nodes.firstIndex(where: { $0.id == id }), nodes[idx].isFolder else { return }
+        guard nodes[idx].folderColor != hex else { return }
+        nodes[idx].folderColor = hex
+    }
+
     /// World rect of a section node by id, or nil if not a section.
     func sectionRect(of id: UUID) -> CGRect? {
         guard let n = nodeByID[id], n.isSection else { return nil }
