@@ -167,8 +167,11 @@ final class CLIPCanvasView: NSView {
                   coordinator.config.editingTextNodeID == nil,          // not typing
                   coordinator.colorPicker == nil else { return event }
             let sel = coordinator.config.liveSelection()
-            guard sel.count == 1, let id = sel.first else { return event }
-            coordinator.presentColorPicker(for: id)
+            if sel.count == 1, let id = sel.first { coordinator.presentColorPicker(for: id) }
+            // Always consume plain 'c' so it can NEVER fall through to the Connect
+            // tool's keyboard shortcut (that collision left the canvas stuck in
+            // connect mode, making card buttons unclickable). Proper launch =
+            // the toolbar color button (next).
             return nil
         }
 
