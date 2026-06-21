@@ -1,5 +1,14 @@
 import AppKit
 
+/// Lightweight file log for runtime diagnosis (user reads /tmp/clip_diag.txt).
+func clipDiag(_ s: String) {
+    let line = "[\(Date().timeIntervalSince1970)] \(s)\n"
+    let url = URL(fileURLWithPath: "/tmp/clip_diag.txt")
+    if let h = try? FileHandle(forWritingTo: url) {
+        h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close()
+    } else { try? line.data(using: .utf8)?.write(to: url) }
+}
+
 /// The SINGLE owner of all canvas pointer interaction (Spatial's
 /// `CanvasContentView` model). A transparent, flipped NSView sized to the whole
 /// world and layered above the cards, so NO other view competes for a click.

@@ -183,7 +183,8 @@ extension CanvasState {
     /// clears transient per-node state — all in one undo entry.
     private func removeNodesAndCascade(_ seed: Set<UUID>,
                                        extraConnectorIDs: Set<UUID>) {
-        guard !seed.isEmpty || !extraConnectorIDs.isEmpty else { return }
+        clipDiag("removeNodesAndCascade seed=\(seed.count) extraConn=\(extraConnectorIDs.count) nodesBefore=\(nodes.count)")
+        guard !seed.isEmpty || !extraConnectorIDs.isEmpty else { clipDiag("  → early return (empty seed)"); return }
 
         // Compute the full deletion set up front so we don't re-traverse
         // for each id (and don't risk order-dependent behaviour).
@@ -232,6 +233,7 @@ extension CanvasState {
             }
         }
         selectedConnectorIDs.subtract(extraConnectorIDs)
+        clipDiag("  → removedCount=\(removedCount) nodesAfter=\(nodes.count) allIDs=\(allIDs.count)")
 
         // If the unfolded folder was just deleted, re-fold to the main canvas.
         if let f = focusedFolderID, !nodes.contains(where: { $0.id == f }) {

@@ -106,6 +106,7 @@ struct ClipApp: App {
                     .keyboardShortcut("v", modifiers: .command)
                 Divider()
                 Button("Delete") {
+                    clipDiag("Delete menu FIRED hasSel=\(state.hasSelection) sel=\(state.selectedNodeIDs.count) smartLayout=\(state.smartSelection.layout != nil) marked=\(state.smartSelection.markedIDs.count)")
                     // If a Smart Selection is active and elements are
                     // marked, the cascade-reflow path runs first; only
                     // unmarked-or-no-smart-selection cases fall through
