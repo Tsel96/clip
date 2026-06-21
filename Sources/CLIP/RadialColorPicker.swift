@@ -133,31 +133,6 @@ final class RadialColorPicker: NSView {
         hoverRing.opacity = 1
     }
 
-    // MARK: Layout math (port of BlossomColorPicker calculateLayerRadii)
-
-    private static func layerRadii(counts: [Int], coreSize: CGFloat, petalSize: CGFloat) -> [CGFloat] {
-        var radii: [CGFloat] = []
-        let W = petalSize, Rc = coreSize / 2, Rp = petalSize / 2
-        for i in 0..<counts.count {
-            let N = CGFloat(counts[i])
-            let overlap: CGFloat = counts[i] <= 8 ? 0.45 : counts[i] <= 12 ? 0.5 : 0.55
-            let lateral = (N * W * overlap) / (2 * .pi)
-            var r: CGFloat
-            if i == 0 {
-                let coreOverlap = counts[i] <= 5 ? W * 0.35 : W * 0.25
-                r = max(Rc + Rp - coreOverlap, lateral)
-            } else {
-                let prevR = radii[i - 1], prevN = CGFloat(counts[i - 1])
-                let sparsity = (prevN * W) / (2 * .pi * prevR)
-                let step: CGFloat = sparsity < 0.85 ? W * 0.15 : sparsity > 1.1 ? W * 0.45 : W * 0.35
-                r = max(prevR + step, lateral)
-                r = max(r, prevR + W * 0.1)
-            }
-            radii.append(r)
-        }
-        return radii
-    }
-
     // MARK: Build — halo + disc
 
     private var conicColors: [CGColor] { (outerColors + [outerColors[0]]).map { $0.cgColor } }
