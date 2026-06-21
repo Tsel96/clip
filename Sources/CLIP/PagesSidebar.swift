@@ -138,12 +138,12 @@ struct PagesSidebar: View {
             topTrailingRadius: panelCorner,
             style: .continuous
         )
-        // No drop shadow here — the split-view column hard-clips it (it read as a
-        // weird dark edge). The rightward shadow is rendered, un-clipped, at the
-        // canvas's leading edge in ContentView instead.
+        // The panel now lays out directly (HStack with a higher zIndex), so its
+        // real rightward drop shadow spills over the canvas — Figma `4 0 / blur 15`.
         return shape
             .fill(panelFill)
             .overlay(shape.strokeBorder(panelBorder, lineWidth: 1))
+            .shadow(color: .black.opacity(0.12), radius: 7.5, x: 4, y: 0)
     }
 
     // MARK: - Header (PAGES + add)
@@ -200,7 +200,7 @@ struct PagesSidebar: View {
                     .tint(accentGreen)          // green caret + selection (Figma 88:342)
                     .focused($renameFocused)
                     .onAppear {
-                        renameText = page.name
+                        renameText = page.name.uppercased()   // start uppercased (no blink)
                         renameFocused = true
                     }
                     .onSubmit { commitRename(for: page.id) }

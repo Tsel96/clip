@@ -26,20 +26,12 @@ import AppKit
 /// at the gesture location keeps the point under your fingers fixed — the
 /// expected canvas-zoom feel.
 final class CenterZoomScrollView: NSScrollView {
-    /// Fired on every live magnify tick so connector stroke widths (÷ magnification
-    /// → constant on-screen) and the inline label editor track the zoom in real
-    /// time (the contentView bounds notification alone lagged the pinch).
-    var onZoomChange: (() -> Void)?
     override func magnify(with event: NSEvent) {
         let target = max(minMagnification,
                          min(maxMagnification, magnification * (1 + event.magnification)))
         let point = documentView?.convert(event.locationInWindow, from: nil)
             ?? convert(event.locationInWindow, from: nil)
-        setMagnification(target, centeredAt: point)   // routes through the override below
-    }
-    override func setMagnification(_ magnification: CGFloat, centeredAt point: NSPoint) {
-        super.setMagnification(magnification, centeredAt: point)
-        onZoomChange?()
+        setMagnification(target, centeredAt: point)
     }
 }
 
@@ -150,10 +142,6 @@ struct CanvasConfig {
     /// True in draw (marker) mode — the above-island ALSO passes clicks through
     /// then, so `CanvasInputView` draws the stroke natively (no SwiftUI gesture).
     let isDrawMode: () -> Bool
-    /// True in connect (connectors) mode — native drag-to-connect in CanvasInputView.
-    let isConnectMode: () -> Bool
-    /// Create a connector between two nodes (drag-to-connect commit).
-    let onAddConnector: (UUID, UUID) -> Void
     /// Live marker colour + width for the native draw preview.
     let drawColor: () -> NSColor
     let drawWidth: () -> CGFloat
@@ -166,8 +154,6 @@ struct CanvasConfig {
     let useNativeConnectors: Bool
     /// Select (or clear) a connector — native connector click-select.
     let onSelectConnector: (UUID?) -> Void
-    /// Set a connector's midpoint label (double-click to edit).
-    let onSetConnectorLabel: (UUID, String) -> Void
     /// Selected connector ids — drives the native connector highlight colour.
     let selectedConnectorIDs: Set<UUID>
     /// Empty-canvas click → deselect (cards handle their own selection taps).
@@ -261,10 +247,6 @@ struct CollectionCanvas: NSViewRepresentable {
         var colorPicker: RadialColorPicker?
         var connectorController: ConnectorOverlayController?
         var guideController: GuideOverlayController?
-        // Inline connector-label editor (double-click a connector).
-        var editingConnectorID: UUID?
-        var editingConnectorField: NSTextField?
-        var editingConnectorMonitor: Any?      // click-outside-to-commit monitor
         // internal (not private) so the camera-sync seam in
         // CanvasCameraController.swift can read/write the echo-suppression state.
         var lastCamera: Camera?
@@ -275,6 +257,13 @@ struct CollectionCanvas: NSViewRepresentable {
         private var seenNodeIDs: Set<UUID> = []
         private var didInitialApply = false
         var pendingAppearIDs: Set<UUID> = []
+
+        /// The node the cursor is currently over (drives the HOVER state — the
+        /// little scale-up + lifted shadow, Figma 88:330). Set by CanvasInputView's
+        /// mouse-tracking; read by `CardItemView.updateChrome` via `liveHover`.
+        private(set) var hoveredNodeID: UUID?
+        /// Live hover accessor for the chrome (mirrors `config.liveSelection`).
+        func liveHover() -> UUID? { hoveredNodeID }
 
         init(_ config: CanvasConfig) { self.config = config }
 
@@ -447,24 +436,37 @@ struct CollectionCanvas: NSViewRepresentable {
                 }
             }
             refreshConnectors()
-            // Keep the inline label editor matched to the live zoom/pan.
-            if let cid = editingConnectorID { positionEditor(at: cid) }
+        }
+
+        /// Update which node is hovered (HOVER state). Only the two affected
+        /// cards (old + new) get a chrome refresh, so mouse-move is cheap.
+        func setHover(_ id: UUID?) {
+            guard id != hoveredNodeID else { return }
+            let previous = hoveredNodeID
+            hoveredNodeID = id
+            guard let cv = collection else { return }
+            let affected = Set([previous, id].compactMap { $0 })
+            for ip in cv.indexPathsForVisibleItems() {
+                guard let card = (cv.item(at: ip) as? HostingCollectionItem)?.cardView,
+                      let nid = card.nodeID, affected.contains(nid) else { continue }
+                card.updateChrome()
+                card.updateShadow()
+            }
         }
 
         /// Phase B native connectors: rebuild content-space node frames and push
         /// them into the CAShapeLayer controller. Driven from `refreshChrome`, so
         /// it tracks node changes (apply → refreshChrome) AND zoom (bounds
         /// observer → refreshChrome). No-op unless `useNativeConnectors`.
-        func refreshConnectors() {
+        func refreshConnectors(offsets: [UUID: CGPoint] = [:]) {
             guard let cc = connectorController else { return }
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
             var frames: [UUID: CGRect] = [:]
             for n in config.nodes {
-                frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
+                let o = offsets[n.id] ?? .zero
+                frames[n.id] = CGRect(x: n.position.x - minX + o.x, y: n.position.y - minY + o.y,
                                       width: max(1, n.width), height: max(1, n.height ?? 120))
             }
-            // Committed frames only; live drag offsets live in the controller
-            // (`setLiveDragOffsets`) and are re-applied on every redraw.
             cc.update(connectors: config.connectors, nodeFrames: frames,
                       selected: config.selectedConnectorIDs,
                       magnification: scroll?.magnification ?? 1)
@@ -490,13 +492,12 @@ struct CollectionCanvas: NSViewRepresentable {
                 cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = t
             }
             CATransaction.commit()
-            // Native connectors track the dragged cards live: feed the offset to
-            // the controller, which re-applies it on every redraw (so nothing can
-            // reset the lines mid-drag). Model commits on mouse-up.
-            if let cc = connectorController {
+            // Native connectors track the dragged cards live (no per-tick model
+            // write — the model commits on mouse-up; this feeds the offset directly).
+            if connectorController != nil {
                 var offs: [UUID: CGPoint] = [:]
                 for id in startPos.keys { offs[id] = CGPoint(x: dx, y: dy) }
-                cc.setLiveDragOffsets(offs)
+                refreshConnectors(offsets: offs)
             }
         }
 
@@ -518,21 +519,6 @@ struct CollectionCanvas: NSViewRepresentable {
                 // Clear the live drag transform explicitly (don't rely on reloadData
                 // to discard it — required if item recycling is ever enabled).
                 cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = CATransform3DIdentity
-            }
-            // Redraw connectors at the COMMITTED positions and clear the live
-            // drag offset in one shot (avoids a double-offset / snap-back flicker
-            // before SwiftUI's updateNSView round-trips the new model positions).
-            if let cc = connectorController {
-                var frames: [UUID: CGRect] = [:]
-                for n in nodes {
-                    let p = startPos[n.id].map { CGPoint(x: $0.x + dx, y: $0.y + dy) } ?? n.position
-                    frames[n.id] = CGRect(x: p.x - minX, y: p.y - minY,
-                                          width: max(1, n.width), height: max(1, n.height ?? 120))
-                }
-                cc.setLiveDragOffsets([:])
-                cc.update(connectors: config.connectors, nodeFrames: frames,
-                          selected: config.selectedConnectorIDs,
-                          magnification: scroll?.magnification ?? 1)
             }
             layout.invalidateLayout()
             cv.reloadData()
@@ -734,10 +720,21 @@ final class CardItemView: NSView {
     var usesNativeContent = false
 
     private let sectionLayer = CAShapeLayer()
-    private let selectionLayer = CAShapeLayer()
+    /// Offset-OUTWARD white outline drawn in the SELECTED (and HOVER) state,
+    /// exactly per Figma 88:340 — 8px outward, 4px white stroke, 8px radius
+    /// (all ÷ width, then ÷ magnification so they stay constant on screen).
+    private let outlineLayer = CAShapeLayer()
     /// 8 resize handles: 0–3 corners (tl, tr, bl, br), 4–7 edges (top, bottom,
     /// left, right) — matching Spatial's corner + edge resize handles.
     private let handleLayers: [CAShapeLayer] = (0..<8).map { _ in CAShapeLayer() }
+
+    /// Per-state multi-layer drop shadows (Figma 88:329/330/336). One stack casts
+    /// the card's float shadow; a second casts the selected outline's soft shadow.
+    private let cardShadow = MultiShadowStack()
+    private let outlineShadow = MultiShadowStack()
+    /// Current resolved interaction state (rest/hover/selected) — drives shadow,
+    /// outline + scale so the three never fight (mirrors Spatial's highlightStyle).
+    private var highlight: CardHighlightState = .rest
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -746,7 +743,7 @@ final class CardItemView: NSView {
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    // MARK: - Native chrome (section outline + selection ring + handles)
+    // MARK: - Native chrome (section outline + selection outline + handles)
 
     private func setupChrome() {
         // Section outline — a crisp neutral border so empty section frames read
@@ -757,16 +754,20 @@ final class CardItemView: NSView {
         sectionLayer.isHidden = true
         layer?.addSublayer(sectionLayer)
 
-        // Selection ring + handles use `opacity` (not isHidden) so they can FADE
-        // in/out; they start fully transparent.
-        selectionLayer.fillColor = nil
-        selectionLayer.strokeColor = NSColor.white.cgColor
-        selectionLayer.shadowColor = NSColor.white.cgColor
-        selectionLayer.shadowOpacity = 0.9
-        selectionLayer.shadowOffset = .zero
-        selectionLayer.zPosition = 100
-        selectionLayer.opacity = 0
-        layer?.addSublayer(selectionLayer)
+        // Multi-layer shadow stacks live BEHIND the content (zPosition −2/−3 so
+        // the outline's own shadow sits under the card shadow, both under content).
+        cardShadow.container.zPosition = -2
+        outlineShadow.container.zPosition = -3
+        outlineShadow.setHidden(true)
+        layer?.addSublayer(outlineShadow.container)
+        layer?.addSublayer(cardShadow.container)
+
+        // Offset-outward selection outline. Uses `opacity` so it FADES in/out.
+        outlineLayer.fillColor = nil
+        outlineLayer.strokeColor = NSColor.white.cgColor
+        outlineLayer.zPosition = 100
+        outlineLayer.opacity = 0
+        layer?.addSublayer(outlineLayer)
         for h in handleLayers {
             h.fillColor = NSColor.white.cgColor
             h.strokeColor = NSColor.black.withAlphaComponent(0.18).cgColor
@@ -801,20 +802,33 @@ final class CardItemView: NSView {
             sectionLayer.isHidden = true
         }
 
-        // Selection ring geometry (always sized so it's correct the instant it
-        // fades in). One native ring per card; hosted cards' SwiftUI ring is off.
+        // Resolve the interaction state (selected wins over hover wins over rest)
+        // from the LIVE selection + hover so it never lags a render. Folders use
+        // their own curved silhouette outline (FolderCardView), so they never get
+        // the rounded-rect outline here.
         let selected = valid && nodeID.map { coordinator?.config.liveSelection().contains($0) == true } ?? false
-        // Folders show selection via their glow art + a slight scale (Spatial),
-        // not the white ring.
+        let hovered  = valid && nodeID.map { coordinator?.liveHover() == $0 } ?? false
         let folderView = subviews.compactMap { $0 as? FolderCardView }.first
-        folderView?.setSelected(selected)
+        let state: CardHighlightState = selected ? .selected : (hovered ? .hover : .rest)
+        highlight = state
+        folderView?.setHighlight(state)
+
+        // Offset-OUTWARD outline (Figma 88:340). Drawn for SELECTED on non-folders;
+        // its geometry is set even when hidden so it's correct the instant it fades.
+        // Offset, width + radius ALL scale with the card (1:1 with Figma at any zoom),
+        // but the stroke is floored at ~1px on screen so it never vanishes far out.
         if valid {
-            let inset = 1.25 / mag
-            selectionLayer.path = CGPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
-                                         cornerWidth: CardChrome.cornerRadius,
-                                         cornerHeight: CardChrome.cornerRadius, transform: nil)
-            selectionLayer.lineWidth = 2 / mag
-            selectionLayer.shadowRadius = 3 / mag
+            let w = bounds.width
+            // Stroke CENTRE offset from the unscaled bounds edge (bakes in the
+            // selected card's 1.0417 grow + the 6px gap, Figma 88:340).
+            let out = CardStateSpec.outlineCenterOffsetN * w
+            let lineW = max(CardStateSpec.outlineWidthN * w, 1 / mag)   // ≥1px on screen
+            // Concentric with the lifted (19.375-radius × scale) card corner.
+            let radius = CardChrome.cornerRadius * CardStateSpec.hoverScale + out
+            let rect = bounds.insetBy(dx: -out, dy: -out)
+            outlineLayer.path = CGPath(roundedRect: rect, cornerWidth: radius,
+                                       cornerHeight: radius, transform: nil)
+            outlineLayer.lineWidth = lineW
 
             // 8 handles: corners + edge midpoints, each centered on its point.
             let hs = 9 / mag
@@ -835,43 +849,73 @@ final class CardItemView: NSView {
         CATransaction.commit()
 
         // Animated visibility (fade) — OUTSIDE the no-animation transaction.
-        // Folders show selection via their own subtle scale (FolderCardView.setSelected),
-        // NOT the node-bounds ring — that rect ring doesn't trace the folder silhouette
-        // and reads as a broken stray outline.
-        fade(selectionLayer, to: (selected && folderView == nil) ? 1 : 0)
-        // Every NON-folder card pops with the same subtle scale folders use
-        // (folders apply it via FolderCardView.setSelected above).
-        if folderView == nil { applySelectionScale(selected) }
+        // Folders show selection via their own curved silhouette outline.
+        let showOutline = selected && folderView == nil
+        fade(outlineLayer, to: showOutline ? 1 : 0)
+        outlineShadow.setHidden(!(showOutline))
+        // Hover + selection both scale the object up (Figma 88:330/336). Folders
+        // apply the scale themselves via setHighlight.
+        if folderView == nil { applyStateScale(state) }
         let showHandles = selected && resizeEnabled
         for h in handleLayers { fade(h, to: showHandles ? 1 : 0) }
+        updateShadow()
     }
 
-    private var lastSelectedForScale = false
-    /// Subtle "pop" on selection for every card (Spatial). Scales the content
-    /// subviews (they fill the card) around the card centre — NOT the item's own
-    /// layer, which carries the live-drag transform, so the two compose cleanly.
-    private func applySelectionScale(_ selected: Bool) {
+    private var lastScaleState: CardHighlightState = .rest
+    /// Subtle scale-up on HOVER and SELECTED (Figma CARD 524/503 = 1.0417), via a
+    /// quick spring (Spatial-snappy). Scales the content subviews (they fill the
+    /// card) around the card centre — NOT the item's own layer, which carries the
+    /// live-drag transform, so the two compose cleanly. The offset outline + its
+    /// shadow live on the item layer (unscaled) so they stay crisp & correctly
+    /// offset; only the content lifts.
+    private func applyStateScale(_ state: CardHighlightState) {
         guard bounds.width > 1, bounds.height > 1 else { return }
-        let factor: CGFloat = selected ? 1.04 : 1.0
+        let factor = CardStateSpec.scale(for: state)
         let cx = bounds.width / 2, cy = bounds.height / 2
         let t = CATransform3DConcat(
             CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
                                 CATransform3DMakeScale(factor, factor, 1)),
             CATransform3DMakeTranslation(cx, cy, 0))
-        let animate = selected != lastSelectedForScale
-        lastSelectedForScale = selected
+        let animate = state != lastScaleState
+        lastScaleState = state
         for sv in subviews {
             guard let layer = sv.layer else { continue }
             if animate {
-                let a = CABasicAnimation(keyPath: "transform")
+                let a = CASpringAnimation(keyPath: "transform")
                 a.fromValue = layer.presentation()?.transform ?? layer.transform
                 a.toValue = t
-                a.duration = 0.18
-                a.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                layer.add(a, forKey: "selectScale")
+                a.stiffness = CardStateSpec.scaleSpring.stiffness
+                a.damping = CardStateSpec.scaleSpring.caDamping
+                a.mass = 1
+                a.duration = a.settlingDuration
+                a.fillMode = .forwards
+                layer.add(a, forKey: "stateScale")
             }
             layer.transform = t
         }
+    }
+
+    private var lastShadowScale: CGFloat = 1
+    /// Scale the shadow `container` to match the card's lifted scale. The
+    /// container is centred on the card (frame inset by −w,−h around bounds), and
+    /// a CALayer scales about its anchorPoint (0.5,0.5 = its centre = the card
+    /// centre), so a plain scale transform suffices. Springs when it changes.
+    private func applyShadowScale(_ container: CALayer, scale: CGFloat) {
+        let target = CATransform3DMakeScale(scale, scale, 1)
+        let changed = scale != lastShadowScale
+        lastShadowScale = scale
+        if changed {
+            let a = CASpringAnimation(keyPath: "transform")
+            a.fromValue = container.presentation()?.transform ?? container.transform
+            a.toValue = target
+            a.stiffness = CardStateSpec.scaleSpring.stiffness
+            a.damping = CardStateSpec.scaleSpring.caDamping
+            a.mass = 1
+            a.duration = a.settlingDuration
+            a.fillMode = .forwards
+            container.add(a, forKey: "shadowScale")
+        }
+        container.transform = target
     }
 
     /// Animate a chrome layer's opacity toward `target` (Spatial-style selection
@@ -940,8 +984,7 @@ final class CardItemView: NSView {
 
     override func layout() {
         super.layout()
-        updateShadow()
-        updateChrome()
+        updateChrome()        // also refreshes the per-state shadow stacks
         if wantsAppear, bounds.width > 1, bounds.height > 1 {
             wantsAppear = false
             playAppear()
@@ -960,33 +1003,51 @@ final class CardItemView: NSView {
         }
     }
 
-    /// Spatial draws the card shadow on the item's CALayer (not in the card
-    /// content) precisely because a layer shadow renders OUTSIDE the bounds —
-    /// a SwiftUI shadow would be clipped by the collection item, just like the
-    /// resize handles were. `shadowPath` keeps it cheap and correctly rounded.
+    /// Per-state multi-layer drop shadow (Figma 88:329/330/336), rebuilt exactly
+    /// as a stack of shadow-only sublayers behind the content (a CALayer carries
+    /// only one shadow). The card shadow follows the resolved REST/HOVER/SELECTED
+    /// state; the SELECTED state adds the outline's own soft shadow.
+    ///
+    /// Spatial draws the shadow on the item (not the card content) precisely
+    /// because a layer shadow renders OUTSIDE the bounds — a SwiftUI shadow would
+    /// be clipped by the collection item, like the resize handles were.
     func updateShadow() {
         guard let layer = layer else { return }
         layer.masksToBounds = false
+        layer.shadowOpacity = 0   // legacy single shadow off — stacks own it now
         guard let n = liveNode, castsShadow(n.kind), bounds.width > 1, bounds.height > 1 else {
-            layer.shadowOpacity = 0
+            cardShadow.setHidden(true); outlineShadow.setHidden(true)
             return
         }
+        cardShadow.setHidden(false)
         // Fade the float shadow out when zoomed far out (Spatial's
         // minMagnificationForShadow) — dozens of soft shadows on a zoomed-out
         // board read as mud and cost fill-rate; near 1× they lift cleanly.
         let mag = magnification
         let minMag: CGFloat = 0.30, fullMag: CGFloat = 0.55
         let fade = max(0, min(1, (mag - minMag) / (fullMag - minMag)))
-        // Spatial's float shadow is soft + wide + low-opacity (a gentle ambient
-        // lift), not a tight dark drop shadow.
-        layer.shadowColor = NSColor.black.cgColor
-        layer.shadowOpacity = Float(0.12 * fade)
-        layer.shadowRadius = 17
-        layer.shadowOffset = CGSize(width: 0, height: 6)
-        layer.shadowPath = CGPath(roundedRect: bounds,
-                                  cornerWidth: shadowCornerRadius,
-                                  cornerHeight: shadowCornerRadius,
-                                  transform: nil)
+
+        cardShadow.update(bounds: bounds, cornerRadius: shadowCornerRadius,
+                          state: highlight)
+        cardShadow.container.opacity = Float(fade)
+        // Grow the shadow with the lifted card (HOVER/SELECTED scale) so it stays
+        // anchored under the scaled content. Center-pivot about the card centre.
+        applyShadowScale(cardShadow.container, scale: CardStateSpec.scale(for: highlight))
+
+        // Selected outline's soft shadow, traced on the OFFSET-outward outline rect.
+        if highlight == .selected {
+            let w = bounds.width
+            let out = CardStateSpec.outlineCenterOffsetN * w
+            let oRect = bounds.insetBy(dx: -out, dy: -out)
+            let oRadius = CardChrome.cornerRadius * CardStateSpec.hoverScale + out
+            outlineShadow.setHidden(false)
+            outlineShadow.update(bounds: oRect, cornerRadius: oRadius,
+                                 state: .selected,
+                                 specs: CardStateSpec.outlineShadow, animated: false)
+            outlineShadow.container.opacity = Float(fade)
+        } else {
+            outlineShadow.setHidden(true)
+        }
     }
 }
 

@@ -17,7 +17,7 @@ final class CanvasInputView: NSView {
     override var isFlipped: Bool { true }
     weak var coordinator: CollectionCanvas.Coordinator?
 
-    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw, pendingConnect, connect }
+    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw }
     /// Which edges a resize drag moves. A corner moves two (one H + one V); an
     /// edge moves one — matching Spatial's corner + edge resize handles.
     private struct Grip {
@@ -47,7 +47,6 @@ final class CanvasInputView: NSView {
     private var moveStartPos: [UUID: CGPoint] = [:] // world coords
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
-    private var connectSourceID: UUID?              // drag-to-connect origin node
     private var didBegin = false
     private var clickedSelectedNoShift: UUID?       // collapse-to-one on a no-drag click
 
@@ -78,6 +77,38 @@ final class CanvasInputView: NSView {
         layer?.addSublayer(drawLayer)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    // MARK: - Hover tracking (drives the HOVER object state)
+
+    private var hoverTracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = hoverTracking { removeTrackingArea(t) }
+        // `inVisibleRect` keeps the area matched to the (huge) world view's
+        // currently-visible portion; mouseMoved fires for cursor motion over it.
+        let t = NSTrackingArea(rect: .zero,
+                               options: [.mouseEnteredAndExited, .mouseMoved,
+                                         .activeInKeyWindow, .inVisibleRect],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t); hoverTracking = t
+    }
+
+    /// Update the hovered node from a cursor point (content coords). Suppressed
+    /// during a drag/resize/marquee/draw so the hover lift doesn't fight the
+    /// active gesture.
+    private func updateHover(at pt: NSPoint, _ p: CanvasConfig) {
+        guard mode == .idle else { return }
+        // Sections aren't "objects" with the hover lift (they're frames).
+        let n = hitNode(at: pt, p)
+        coordinator?.setHover((n?.isSection == true) ? nil : n?.id)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard let p = config else { return }
+        updateHover(at: convert(event.locationInWindow, from: nil), p)
+    }
+    override func mouseExited(with event: NSEvent) { coordinator?.setHover(nil) }
 
     private var config: CanvasConfig? { coordinator?.config }
     private var mag: CGFloat { max(enclosingScrollView?.magnification ?? 1, 0.0001) }
@@ -135,6 +166,7 @@ final class CanvasInputView: NSView {
         startPt = pt
         didBegin = false
         clickedSelectedNoShift = nil
+        coordinator?.setHover(nil)   // a press starts a gesture; drop the hover lift
         let shift = event.modifierFlags.contains(.shift)
 
         // Native draw (marker): collect content-space points; commit on mouse-up.
@@ -144,27 +176,9 @@ final class CanvasInputView: NSView {
             return
         }
 
-        // Native drag-to-connect (connectors tool): drag from one card to another.
-        if p.isConnectMode() {
-            if let n = hitNode(at: pt, p), !n.isSection {
-                mode = .pendingConnect
-                connectSourceID = n.id
-            } else {
-                mode = .idle
-            }
-            return
-        }
-
         // Double-click → activate (text edit / stack focus / lightbox).
         if event.clickCount == 2, let n = hitNode(at: pt, p), !n.isSection {
             p.onActivate(n.id); mode = .idle; return
-        }
-        // Double-click on a connector → edit its midpoint label (Obsidian-style).
-        if event.clickCount == 2, p.useNativeConnectors,
-           let cid = coordinator?.connectorController?.hitTest(pt, tolerance: 16 / mag) {
-            coordinator?.beginEditingConnectorLabel(cid)
-            mode = .idle
-            return
         }
         // Corner / edge resize on the single selected resizable node.
         if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
@@ -273,15 +287,6 @@ final class CanvasInputView: NSView {
         case .draw:
             drawPoints.append(pt)
             updateDrawPreview(p)
-        case .pendingConnect, .connect:
-            mode = .connect
-            guard let srcID = connectSourceID,
-                  let src = p.nodes.first(where: { $0.id == srcID }) else { break }
-            let hovered = hitNode(at: pt, p)
-            let target = (hovered != nil && hovered!.id != srcID && !hovered!.isSection) ? hovered : nil
-            let srcRect = contentFrame(src, p)
-            let tgtRect = target.map { contentFrame($0, p) } ?? CGRect(x: pt.x, y: pt.y, width: 0, height: 0)
-            coordinator?.connectorController?.setPreview(sourceRect: srcRect, targetRect: tgtRect, magnification: mag)
         case .idle: break
         }
     }
@@ -315,17 +320,9 @@ final class CanvasInputView: NSView {
                     CGPoint(x: $0.x + wb.minX, y: $0.y + wb.minY)
                 })
             }
-        case .connect:
-            let pt = convert(event.locationInWindow, from: nil)
-            if let srcID = connectSourceID, let hovered = hitNode(at: pt, p),
-               hovered.id != srcID, !hovered.isSection {
-                p.onAddConnector(srcID, hovered.id)
-            }
-            coordinator?.connectorController?.clearPreview()
-        case .pendingConnect, .marquee, .idle:
-            coordinator?.connectorController?.clearPreview()
+        case .marquee, .idle:
+            break
         }
-        connectSourceID = nil
         coordinator?.refreshChrome()
         reset()
     }
@@ -336,6 +333,12 @@ final class CanvasInputView: NSView {
         coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
         mode = .idle; resizeGrip = nil; resizeNodeID = nil
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
+        // Re-evaluate hover under the cursor now the gesture is over (the node
+        // may have moved out from / into the pointer).
+        if let p = config, let win = window {
+            let pt = convert(win.mouseLocationOutsideOfEventStream, from: nil)
+            updateHover(at: pt, p)
+        }
     }
 
     private func beginIfNeeded(_ p: CanvasConfig, primary: UUID?) {
