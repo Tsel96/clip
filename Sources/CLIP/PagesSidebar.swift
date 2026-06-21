@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Left-column sidebar listing every page in the document — rebuilt 1:1 from
 /// Figma node 74:25948 (`sidebar-panel`).
@@ -26,6 +27,14 @@ struct PagesSidebar: View {
     @State private var renamingID: UUID? = nil
     @State private var renameText: String = ""
     @FocusState private var renameFocused: Bool
+    @State private var hoveredID: UUID? = nil
+    /// Sidebar width (live), so the rename-dismiss monitor knows where the canvas
+    /// begins (a click past this width = outside → commit).
+    @State private var sidebarWidth: CGFloat = 200
+    /// Local mouse monitor installed while renaming, to commit when the user
+    /// clicks out onto the canvas (SwiftUI focus doesn't drop on an AppKit-canvas
+    /// click, so `renameFocused` alone never fires).
+    @State private var renameClickMonitor: Any? = nil
 
     // MARK: Figma tokens
 
@@ -35,8 +44,11 @@ struct PagesSidebar: View {
     private let panelBorder = Color.black.opacity(0.16)
     /// Primary text (`rgba(0,0,0,0.85)`).
     private let labelColor  = Color.black.opacity(0.85)
-    /// Selected-row wash (`rgba(0,0,0,0.05)`, multiply).
-    private let selectedFill = Color.black.opacity(0.05)
+    /// Hover + selected row wash — green `#208F08` @ 10%, multiply (Figma 74:25952
+    /// hover / 74:25949 selected use the identical wash).
+    private let rowWash = Color(red: 32 / 255, green: 143 / 255, blue: 8 / 255).opacity(0.10)
+    /// Renaming-row border + text-selection tint — `#3DA726` (Figma 88:342).
+    private let accentGreen = Color(red: 61 / 255, green: 167 / 255, blue: 38 / 255)
 
     private let panelCorner: CGFloat = 20
     private let rowHeight: CGFloat   = 24
@@ -87,6 +99,15 @@ struct PagesSidebar: View {
         .background(panelBackground)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+        // Track the live sidebar width so the rename-dismiss monitor knows where
+        // the canvas begins.
+        .background(
+            GeometryReader { g in
+                Color.clear
+                    .onAppear { sidebarWidth = g.size.width }
+                    .onChange(of: g.size.width) { sidebarWidth = $0 }
+            }
+        )
         // Deleting a page destroys every card on it — confirm before the
         // (undoable) removal in `confirmDeletePage()`.
         .confirmationDialog(
@@ -160,6 +181,8 @@ struct PagesSidebar: View {
     @ViewBuilder
     private func row(for page: Page) -> some View {
         let isSelected = page.id == state.activePageID
+        // Hover and selected share the same green wash (Figma); renaming adds it too.
+        let washed = isSelected || hoveredID == page.id || renamingID == page.id
 
         HStack(spacing: 6) {
             if renamingID == page.id {
@@ -167,6 +190,7 @@ struct PagesSidebar: View {
                     .textFieldStyle(.plain)
                     .font(.clip(11))
                     .foregroundStyle(labelColor)
+                    .tint(accentGreen)          // green caret + selection (Figma 88:342)
                     .focused($renameFocused)
                     .onAppear {
                         renameText = page.name
@@ -199,10 +223,20 @@ struct PagesSidebar: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: rowCorner, style: .continuous)
-                .fill(isSelected ? selectedFill : .clear)
-                .blendMode(isSelected ? .multiply : .normal)
+                .fill(washed ? rowWash : .clear)
+                .blendMode(washed ? .multiply : .normal)
+        )
+        .overlay(
+            renamingID == page.id
+                ? RoundedRectangle(cornerRadius: rowCorner, style: .continuous)
+                    .strokeBorder(accentGreen, lineWidth: 1)
+                : nil
         )
         .contentShape(RoundedRectangle(cornerRadius: rowCorner, style: .continuous))
+        .onHover { inside in
+            if inside { hoveredID = page.id }
+            else if hoveredID == page.id { hoveredID = nil }
+        }
         .onTapGesture(count: 2) {
             beginRename(page)
         }
@@ -253,15 +287,37 @@ struct PagesSidebar: View {
         renameText = page.name
         renamingID = page.id
         renameFocused = true
+        installRenameDismissMonitor()
     }
 
     private func commitRename(for id: UUID) {
+        guard renamingID == id else { return }   // ignore stale/duplicate commits
         let value = renameText
         renamingID = nil
+        removeRenameDismissMonitor()
         state.renamePage(id, to: value)
     }
 
     private func cancelRename() {
         renamingID = nil
+        removeRenameDismissMonitor()
+    }
+
+    /// A click on the canvas doesn't drop SwiftUI focus from the rename field, so
+    /// `renameFocused` never flips — leaving the row stuck in edit mode. While
+    /// renaming, watch for a mouse-down past the sidebar's right edge (= on the
+    /// canvas) and commit then.
+    private func installRenameDismissMonitor() {
+        removeRenameDismissMonitor()
+        renameClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            if event.locationInWindow.x > sidebarWidth, let id = renamingID {
+                DispatchQueue.main.async { commitRename(for: id) }
+            }
+            return event
+        }
+    }
+
+    private func removeRenameDismissMonitor() {
+        if let m = renameClickMonitor { NSEvent.removeMonitor(m); renameClickMonitor = nil }
     }
 }
