@@ -235,7 +235,7 @@ final class RadialColorPicker: NSView {
         p.fillColor = color.cgColor
         // Spatial: each leaf has a soft outline + a small drop shadow, so the
         // circles read as distinct glossy chips stacked over one another.
-        p.strokeColor = NSColor.white.withAlphaComponent(0.85).cgColor
+        p.strokeColor = NSColor.white.withAlphaComponent(0.32).cgColor   // subtle at rest; the hovered leaf gets the bright ring
         p.lineWidth = 1
         p.shadowColor = NSColor.black.cgColor
         p.shadowOpacity = 0.30
@@ -342,11 +342,15 @@ final class RadialColorPicker: NSView {
             CATransaction.commit()
             return
         }
+        // Clearly-visible smooth return (slight overshoot) — the "scale back".
+        let preset = CLIPSpring.Preset(response: 0.40, damping: 0.72)
         let a = CASpringAnimation(keyPath: "transform")
         a.fromValue = layer.presentation()?.transform ?? layer.transform
         a.toValue = to
-        a.stiffness = CLIPSpring.Preset.control.stiffness
-        a.damping = CLIPSpring.Preset.control.caDamping
+        a.stiffness = preset.stiffness
+        a.damping = preset.caDamping
+        a.initialVelocity = 0
+        if #available(macOS 14.0, *) { a.allowsOverdamping = true }
         a.duration = a.settlingDuration
         layer.transform = to
         layer.add(a, forKey: "hoverScale")
