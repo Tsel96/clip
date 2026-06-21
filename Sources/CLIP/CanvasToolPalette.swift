@@ -58,7 +58,6 @@ final class CanvasToolPaletteView: NSView {
     var onAddTap: (() -> Void)?
     var onFolderTap: (() -> Void)?
     // Folder-bar actions (only live while morphed in).
-    var onColorTap: (() -> Void)?
     var onDownloadTap: (() -> Void)?
     var onEjectTap: (() -> Void)?
 
@@ -97,7 +96,7 @@ final class CanvasToolPaletteView: NSView {
         folderBar.isHidden = true
         folderShadows.forEach { $0.opacity = 0 }
         folderBar.onDownload = { [weak self] in self?.onDownloadTap?() }
-        folderBar.onColor    = { [weak self] in self?.onColorTap?() }
+        folderBar.onColor    = { [weak self] in self?.presentColorFlower() }
         folderBar.onEject    = { [weak self] in self?.onEjectTap?() }
     }
 
@@ -1045,11 +1044,16 @@ struct _PaletteRepresentable: NSViewRepresentable {
     let state: CanvasState
     let toolMode: ToolMode
     let isAddSelected: Bool
+    let folderSelected: Bool   // value field so SwiftUI diffs it → updateNSView fires
 
     init(state: CanvasState) {
         self.state        = state
         self.toolMode     = state.toolMode
         self.isAddSelected = state.isLinkInputPresented
+        let ids = state.selectedNodeIDs
+        self.folderSelected = !ids.isEmpty && ids.allSatisfy { id in
+            state.nodes.first(where: { $0.id == id })?.isFolder ?? false
+        }
     }
 
     func makeNSView(context: Context) -> CanvasToolPaletteView {
@@ -1057,6 +1061,7 @@ struct _PaletteRepresentable: NSViewRepresentable {
         v.configure(active: toolMode)
         v.setAddSelected(isAddSelected)
         wireCallbacks(v, state: state)
+        v.setFolderMode(folderSelected, animated: false)
         return v
     }
 
@@ -1064,6 +1069,7 @@ struct _PaletteRepresentable: NSViewRepresentable {
         nsView.configure(active: toolMode)
         nsView.setAddSelected(isAddSelected)
         wireCallbacks(nsView, state: state)
+        nsView.setFolderMode(folderSelected)
     }
 
     private func wireCallbacks(_ v: CanvasToolPaletteView, state: CanvasState) {
@@ -1078,6 +1084,15 @@ struct _PaletteRepresentable: NSViewRepresentable {
         v.onAddTap = {
             withAnimation(Motion.popper) { state.isLinkInputPresented.toggle() }
         }
+        // Folder-bar Color button → flower picks a colour; apply to any selected
+        // sections now (folder-colour model is the separate F4 feature).
+        v.onColorPick = { nsColor in
+            let preset = RadialColorPicker.nearestSectionColor(to: nsColor)
+            for id in state.selectedNodeIDs where state.nodes.first(where: { $0.id == id })?.isSection == true {
+                state.setSectionColor(id: id, to: preset)
+            }
+        }
+        // Download / Eject actions: TODO (pending behaviour spec).
     }
 
     func makeCoordinator() -> Void { }
@@ -1092,5 +1107,75 @@ private extension NSColor {
         let g = CGFloat((hex >>  8) & 0xFF) / 255
         let b = CGFloat( hex        & 0xFF) / 255
         return NSColor(calibratedRed: r, green: g, blue: b, alpha: 1)
+    }
+}
+
+// MARK: - FolderActionBarView
+
+/// The folder-selection action bar (Figma 72:37017) the main toolbar morphs
+/// INTO when a folder is selected. Same candy skin as the main pill (green
+/// `#3DA726` border + `#fff53b→#f8de47` gradient + pale top rim), a narrower
+/// 168×62 capsule, with three round icon buttons — Download / Color / Eject.
+private final class FolderActionBarView: NSView {
+
+    static let outerW: CGFloat = 168
+    static let outerH: CGFloat = 62
+    /// Center-x of the Color (droplet) button in this view's coords — used by the
+    /// toolbar to bloom the flower picker above it. originX(4) + slot(54) + half(26).
+    static let colorButtonCenterX: CGFloat = 84
+
+    var onDownload: (() -> Void)?
+    var onColor: (() -> Void)?
+    var onEject: (() -> Void)?
+
+    private let outerLayer = CALayer()
+    private let innerLayer = CAGradientLayer()
+    private let download = ToolPaletteButton(iconName: "Download")
+    private let colorBtn = ToolPaletteButton(iconName: "Color")
+    private let eject    = ToolPaletteButton(iconName: "Eject")
+
+    override init(frame: NSRect) { super.init(frame: frame); commonInit() }
+    required init?(coder: NSCoder) { super.init(coder: coder); commonInit() }
+
+    private func commonInit() {
+        wantsLayer = true
+        layer?.masksToBounds = false
+        outerLayer.backgroundColor = NSColor.fromHex(0x3DA726).cgColor
+        outerLayer.masksToBounds = false
+        layer?.addSublayer(outerLayer)
+        innerLayer.colors = [
+            NSColor.fromHex(0xFFFCA9).cgColor, NSColor.fromHex(0xFFFCA9).cgColor,
+            NSColor.fromHex(0xFFF53B).cgColor, NSColor.fromHex(0xF8DE47).cgColor,
+        ]
+        innerLayer.locations = [0.0, 0.0345, 0.0345, 1.0]
+        innerLayer.startPoint = CGPoint(x: 0.5, y: 0)
+        innerLayer.endPoint   = CGPoint(x: 0.5, y: 1)
+        innerLayer.masksToBounds = true
+        outerLayer.addSublayer(innerLayer)
+        download.onTap = { [weak self] in self?.onDownload?() }
+        colorBtn.onTap = { [weak self] in self?.onColor?() }
+        eject.onTap    = { [weak self] in self?.onEject?() }
+        [download, colorBtn, eject].forEach(addSubview)
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        outerLayer.frame = bounds
+        outerLayer.cornerRadius = bounds.height / 2
+        outerLayer.cornerCurve  = .continuous
+        let inset: CGFloat = 2
+        innerLayer.frame = bounds.insetBy(dx: inset, dy: inset)
+        innerLayer.cornerRadius = innerLayer.frame.height / 2
+        innerLayer.cornerCurve  = .continuous
+        CATransaction.commit()
+        let bs: CGFloat = 52
+        let originX: CGFloat = 4
+        let y = (bounds.height - bs) / 2
+        download.frame = NSRect(x: originX,       y: y, width: bs, height: bs)
+        colorBtn.frame = NSRect(x: originX + 54,  y: y, width: bs, height: bs)
+        eject.frame    = NSRect(x: originX + 108, y: y, width: bs, height: bs)
     }
 }
