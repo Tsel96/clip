@@ -63,12 +63,15 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     /// blend (`CIColorBlendMode`: hue/chroma from the colour, luminance + alpha
     /// from the folder).
     private static func tinted(_ image: NSImage, with color: NSColor) -> NSImage {
-        guard let tiff = image.tiffRepresentation, let bg = CIImage(data: tiff),
-              let c = CIColor(color: color.usingColorSpace(.sRGB) ?? color),
-              let f = CIFilter(name: "CIColorBlendMode") else { return image }
-        f.setValue(CIImage(color: c).cropped(to: bg.extent), forKey: kCIInputImageKey)
-        f.setValue(bg, forKey: kCIInputBackgroundImageKey)
-        guard let out = f.outputImage else { return image }
+        guard let tiff = image.tiffRepresentation, let folder = CIImage(data: tiff),
+              let c = CIColor(color: color.usingColorSpace(.sRGB) ?? color) else { return image }
+        // Grayscale folder = luminance + shading + alpha, with no lavender hue.
+        let mono = folder.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
+        // Solid colour clipped to the folder silhouette (transparent corners stay clear).
+        let colorClipped = CIImage(color: c).cropped(to: folder.extent)
+            .applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: folder])
+        // Multiply colour × shading → a clearly-coloured folder that keeps its depth.
+        let out = colorClipped.applyingFilter("CIMultiplyBlendMode", parameters: [kCIInputBackgroundImageKey: mono])
         let result = NSImage(size: image.size)
         result.addRepresentation(NSCIImageRep(ciImage: out))
         return result

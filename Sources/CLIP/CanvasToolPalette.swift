@@ -187,8 +187,11 @@ final class CanvasToolPaletteView: NSView {
 
     // MARK: - Folder-bar morph
 
-    /// Called from `RadialColorPicker.onPick` (wired by the bridge).
-    var onColorPick: ((NSColor) -> Void)?
+    /// Called on flower pick: the colour + the ids captured when the flower
+    /// opened (so a selection change while picking can't drop the target).
+    var onColorPick: ((NSColor, [UUID]) -> Void)?
+    /// Current canvas selection (set by the bridge) — snapshotted at Color-tap.
+    var selectionProvider: (() -> [UUID])?
 
     /// Morph between the tool pills and the folder action bar (Figma 72:37017):
     /// a spring crossfade + subtle scale — the Apple-style contextual-toolbar
@@ -262,8 +265,9 @@ final class CanvasToolPaletteView: NSView {
     /// bar with no overlap.
     func presentColorFlower() {
         guard let window = self.window, let host = window.contentView else { return }
+        let targets = selectionProvider?() ?? []          // capture the selection now
         let picker = RadialColorPicker()
-        picker.onPick = { [weak self] c in self?.onColorPick?(c) }
+        picker.onPick = { [weak self] c in self?.onColorPick?(c, targets) }
         let btnCenterSelf = CGPoint(x: folderBar.frame.minX + FolderActionBarView.colorButtonCenterX,
                                     y: folderBar.frame.midY)
         let btnScreen = window.convertPoint(toScreen: convert(btnCenterSelf, to: nil))
@@ -1119,10 +1123,11 @@ struct _PaletteRepresentable: NSViewRepresentable {
         }
         // Folder-bar Color button → flower picks a colour; apply to any selected
         // sections now (folder-colour model is the separate F4 feature).
-        v.onColorPick = { nsColor in
+        v.selectionProvider = { Array(state.selectedNodeIDs) }
+        v.onColorPick = { nsColor, targets in
             let preset = RadialColorPicker.nearestSectionColor(to: nsColor)
             let hex = nsColor.hexRGB
-            for id in state.selectedNodeIDs {
+            for id in targets {
                 guard let n = state.nodes.first(where: { $0.id == id }) else { continue }
                 if n.isSection      { state.setSectionColor(id: id, to: preset) }
                 else if n.isFolder  { state.setFolderColor(id: id, hex: hex) }
