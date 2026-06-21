@@ -173,15 +173,14 @@ final class ConnectorOverlayController {
         arrow.strokeColor = nil
 
         let labelBG = CALayer()
-        labelBG.backgroundColor = NSColor(srgbRed: 0.96, green: 0.96, blue: 0.96, alpha: 1).cgColor
-        labelBG.borderColor = Self.green.withAlphaComponent(0.45).cgColor
+        labelBG.backgroundColor = Self.labelBackground.cgColor
         labelBG.cornerCurve = .continuous
         labelBG.isHidden = true
 
         let labelText = CATextLayer()
         labelText.alignmentMode = .center
-        labelText.truncationMode = .end
-        labelText.foregroundColor = NSColor(srgbRed: 0.1, green: 0.12, blue: 0.1, alpha: 1).cgColor
+        labelText.truncationMode = .none
+        labelText.isWrapped = false
         labelText.isHidden = true
 
         root.addSublayer(line)
@@ -210,8 +209,10 @@ final class ConnectorOverlayController {
         return path
     }
 
-    /// Position/size the midpoint label pill (content units; text stays constant
-    /// on screen). Hidden when the label is empty.
+    /// Position the midpoint label in CONTENT space (so it scales with zoom like
+    /// the cards / Obsidian). A subtle canvas-coloured chip masks the line behind
+    /// the dark text. Uses an attributed string so the font + colour render
+    /// reliably (a bare `CATextLayer.font = NSFont` often draws nothing).
     private func layoutLabel(_ b: Bundle, text: String, center: CGPoint, mag: CGFloat, selected: Bool) {
         guard !text.isEmpty else {
             b.labelBG.isHidden = true; b.labelText.isHidden = true
@@ -219,26 +220,25 @@ final class ConnectorOverlayController {
         }
         b.labelBG.isHidden = false; b.labelText.isHidden = false
 
-        let fontSize = Self.labelFontSize          // on-screen size
-        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        let fs = Self.labelFontSize                // content units → scales with zoom
+        let font = NSFont.systemFont(ofSize: fs, weight: .medium)
         let measured = (text as NSString).size(withAttributes: [.font: font])
-        let padH: CGFloat = 7, padV: CGFloat = 3
-        // Convert on-screen sizes into content units (÷ mag).
-        let w = (measured.width + padH * 2) / mag
-        let h = (measured.height + padV * 2) / mag
+        let padH: CGFloat = 8, padV: CGFloat = 4
+        let w = measured.width + padH * 2
+        let h = measured.height + padV * 2
 
         b.labelBG.frame = CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
-        b.labelBG.cornerRadius = h / 2
-        b.labelBG.borderWidth = (selected ? 1.5 : 1) / mag
+        b.labelBG.cornerRadius = 5
+        b.labelBG.borderWidth = selected ? 2 : 0
+        b.labelBG.borderColor = Self.greenSelected.cgColor
 
-        b.labelText.frame = b.labelBG.frame
-        b.labelText.string = text
-        b.labelText.fontSize = fontSize / mag
-        b.labelText.font = font
-        // Vertically center one line of text inside the pill.
-        let textH = measured.height / mag
-        b.labelText.frame.origin.y = center.y - textH / 2
-        b.labelText.frame.size.height = textH
-        b.labelText.contentsScale = max(2, 2 * mag)
+        b.labelText.frame = CGRect(x: center.x - measured.width / 2,
+                                   y: center.y - measured.height / 2,
+                                   width: measured.width, height: measured.height)
+        b.labelText.string = NSAttributedString(string: text, attributes: [
+            .font: font,
+            .foregroundColor: NSColor(srgbRed: 0.1, green: 0.12, blue: 0.1, alpha: 1)
+        ])
+        b.labelText.contentsScale = 3              // crisp when zoomed in
     }
 }

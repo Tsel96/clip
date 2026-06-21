@@ -11,13 +11,14 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
               let mid = connectorController?.midpoints[cid] else { return }
         finishConnectorLabelEdit(commit: false)   // dismiss any in-flight editor
 
-        let mag = max(scroll?.magnification ?? 1, 0.0001)
         let current = config.connectors.first(where: { $0.id == cid })?.label ?? ""
 
         let field = NSTextField()
         field.stringValue = current
         field.placeholderString = "Label"
-        field.font = .systemFont(ofSize: 13 / mag, weight: .medium)
+        // Content-space sizing so the editor matches the rendered label and
+        // scales with zoom (the container is magnified by the scroll view).
+        field.font = .systemFont(ofSize: 20, weight: .medium)
         field.alignment = .center
         field.isBezeled = true
         field.bezelStyle = .roundedBezel
@@ -26,7 +27,7 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         field.usesSingleLineMode = true
         field.delegate = self
 
-        let w = 160 / mag, h = 26 / mag
+        let w: CGFloat = 220, h: CGFloat = 32   // content units
         field.frame = CGRect(x: mid.x - w / 2, y: mid.y - h / 2, width: w, height: h)
         container.addSubview(field)
 
