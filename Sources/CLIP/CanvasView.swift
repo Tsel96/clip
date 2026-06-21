@@ -270,34 +270,9 @@ struct CanvasView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                // Background dot grid (toggleable). Hidden in Archive
-                // because its calendar / bento layers paint their own
-                // surface.
-                if !useNativeShell, state.showGrid, state.canvasMode != .archive {
-                    // No `.ignoresSafeArea()` — the grid must share the
-                    // exact coordinate space the pointer is reported in
-                    // (the canvas view's safe-area-respecting bounds), or
-                    // the spotlight draws offset from the real cursor.
-                    // (Native shell: moved into CLIPCanvasView's behind-island.)
-                    DotGrid(camera: cameraStore.camera, pointer: pointerLocation)
-                        .allowsHitTesting(false)
-                }
-
-                // Empty-state hint. (Native shell: in the behind-island.)
-                if !useNativeShell, state.nodes.isEmpty {
-                    EmptyStateView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .allowsHitTesting(false)
-                }
-
-                // Drawing / text input layer (active when not in select mode).
-                // Sits BEHIND nodes so nodes still get hover/click in select mode.
-                // Only rendered in Canvas mode — Colorform and Archive
-                // are all read-only views. Suppressed in stack focus
-                // mode so the focus backdrop receives clicks cleanly.
-                if !useNativeShell, state.canvasMode == .canvas, state.focusedStackID == nil {
-                    ToolInputLayer()
-                }
+                // Dot grid, empty-state, and the tool-input layer are hosted
+                // inside CLIPCanvasView's screen-space islands (CanvasConfig
+                // behind/above overlays below), not as ZStack siblings.
 
                 // Archive — a chronological list of everything added,
                 // newest first, grouped by day with per-row timestamps.
@@ -335,7 +310,6 @@ struct CanvasView: View {
                 // "apply scale changes directly to the whole graphics
                 // context.")
                 if state.canvasMode != .archive {
-                    if useNativeCanvas {
                         // Phase 1 — native NSScrollView core (zoom = magnification,
                         // pan = scrolling). Only the node layer moves in; the
                         // overlays below stay screen-space and track the camera
@@ -378,18 +352,18 @@ struct CanvasView: View {
                             // Screen-space islands (native shell): dot-grid +
                             // empty-state BEHIND the cards; tool-input + smart-
                             // selection + alignment/spacing guides ABOVE.
-                            behindOverlay: useNativeShell ? AnyView(
+                            behindOverlay: AnyView(
                                 CanvasBehindOverlays()
                                     .environmentObject(state)
                                     .environmentObject(cameraStore)
                                     .environmentObject(pointerStore)
-                            ) : nil,
-                            aboveOverlay: useNativeShell ? AnyView(
+                            ),
+                            aboveOverlay: AnyView(
                                 CanvasAboveOverlays()
                                     .environmentObject(state)
                                     .environmentObject(cameraStore)
                                     .environmentObject(state.smartSelection)
-                            ) : nil,
+                            ),
                             isSelectMode: { state.toolMode == .select },
                             isDrawMode: { state.toolMode == .draw },
                             isConnectMode: { state.toolMode == .connect },
@@ -488,25 +462,10 @@ struct CanvasView: View {
                         .opacity(cardsOpacity)
                         .blur(radius: cardsBlur)
                         .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
-                    }
                 }
 
-                // Figma-style Smart Selection chrome — pink center rings +
-                // gutter handles + tooltip + insertion indicator. Sits
-                // above connectors so it can intercept clicks on rings and
-                // handles cleanly. Auto-detects 1D rows / columns / 2D
-                // grids in the current selection.
-                // Suppressed in stack focus mode — the focus chrome owns
-                // the screen and Smart Selection wouldn't apply anyway.
-                if !useNativeShell, state.canvasMode == .canvas, state.focusedStackID == nil {
-                    // On the native canvas, gate Smart Selection's ring/gutter
-                    // gestures OFF — they're competing pointer handlers that would
-                    // re-enter the very race CanvasInputView exists to remove.
-                    // Re-introduce via the native controller later (task #15).
-                    // (Native shell: in the above-island, non-interactive.)
-                    SmartSelectionLayer()
-                        .allowsHitTesting(!useNativeCanvas)
-                }
+                // (Smart Selection chrome is hosted in CLIPCanvasView's
+                // above-island, not as a ZStack sibling.)
 
                 // Stack focus chrome — count pill + exit chip — sits
                 // ABOVE the nodes so it's always reachable. The matching
@@ -516,15 +475,8 @@ struct CanvasView: View {
                     StackFocusLayer(layer: .chrome)
                 }
 
-                // Live alignment guides (red lines while dragging). Only
-                // relevant during a drag, which only happens in canvas mode.
-                // (Native shell: in the above-island, non-interactive.)
-                if !useNativeShell, state.canvasMode == .canvas {
-                    AlignmentGuidesOverlay()
-                        .allowsHitTesting(false)
-                    SpacingIndicatorsOverlay()
-                        .allowsHitTesting(false)
-                }
+                // (Alignment + spacing guides are drawn natively by
+                // GuideOverlayController inside the scrolled container.)
 
                 // Trackpad scroll & pinch capture. Archive owns its own
                 // navigation (calendar ScrollView, breadcrumb pop) so we
