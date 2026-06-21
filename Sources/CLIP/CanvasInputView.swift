@@ -55,6 +55,7 @@ final class CanvasInputView: NSView {
     private var didBegin = false
     private var clickedSelectedNoShift: UUID?       // collapse-to-one on a no-drag click
     private var panStartContent: NSPoint = .zero    // hand-tool grab anchor (content coords)
+    private var pannedCursorPushed = false          // closed-hand cursor pushed for the pan
 
     private lazy var marqueeLayer: CAShapeLayer = {
         let l = CAShapeLayer()
@@ -107,10 +108,16 @@ final class CanvasInputView: NSView {
     /// Reliable cursor management (NSCursor.set() in mouseMoved gets reset by the
     /// cursor system). The hand tool shows the open-grab cursor at rest.
     override func cursorUpdate(with event: NSEvent) {
-        if config?.isHandMode() == true, mode != .pan {
-            NSCursor.openHand.set()
+        guard let p = config, mode != .pan else { return }   // pan owns it (pushed grab cursor)
+        if p.isHandMode() { NSCursor.openHand.set(); return }
+        // Select mode: resize cursor over a selected node's grip, else the arrow
+        // (this also resets the grab cursor when you switch off the Hand tool).
+        let pt = convert(event.locationInWindow, from: nil)
+        if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
+           isResizable(sel), let g = grip(at: pt, of: sel, p) {
+            g.cursor.set()
         } else {
-            super.cursorUpdate(with: event)
+            NSCursor.arrow.set()
         }
     }
 
@@ -122,8 +129,8 @@ final class CanvasInputView: NSView {
     /// select mode and when idle (a drag/resize/marquee owns the gesture instead).
     private func updateHover(_ event: NSEvent) {
         guard let p = config, mode == .idle else { setHovered(nil); return }
-        // Hand tool: show the open-grab cursor at rest (no card hover).
-        if p.isHandMode() { NSCursor.openHand.set(); setHovered(nil); return }
+        // Hand tool: no card hover (cursorUpdate shows the grab cursor).
+        if p.isHandMode() { setHovered(nil); return }
         guard p.isSelectMode() else { setHovered(nil); return }
         let pt = convert(event.locationInWindow, from: nil)
         let n = hitNode(at: pt, p)
@@ -204,7 +211,9 @@ final class CanvasInputView: NSView {
         if p.isHandMode() {
             mode = .pan
             panStartContent = pt
-            NSCursor.closedHand.set()
+            // Push (not set) the grab cursor so scroll ticks can't reset it mid-pan
+            // (that reset↔set fight is the "blinking cursor").
+            if !pannedCursorPushed { NSCursor.closedHand.push(); pannedCursorPushed = true }
             return
         }
 
@@ -364,7 +373,6 @@ final class CanvasInputView: NSView {
                 clip.scroll(to: o)
                 scroll.reflectScrolledClipView(clip)
             }
-            NSCursor.closedHand.set()
         case .idle: break
         }
     }
@@ -416,6 +424,7 @@ final class CanvasInputView: NSView {
     }
 
     private func reset() {
+        if pannedCursorPushed { NSCursor.pop(); pannedCursorPushed = false }
         marqueeLayer.isHidden = true; marqueeLayer.path = nil
         drawLayer.isHidden = true; drawLayer.path = nil; drawPoints = []
         coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
@@ -464,25 +473,6 @@ final class CanvasInputView: NSView {
         p.onResize(id, CGRect(x: ox, y: oy, width: w, height: h))
     }
 
-    override func resetCursorRects() {
-        guard let p = config, !p.isHandMode(),      // hand tool owns the cursor
-              let selID = p.selectedNodeID,
-              let sel = p.nodes.first(where: { $0.id == selID }), isResizable(sel) else { return }
-        let f = contentFrame(sel, p)
-        let r = min(26 / mag, min(f.width, f.height) * 0.25)
-        // Corner + edge cursor rects.
-        let specs: [(CGRect, Grip)] = [
-            (CGRect(x: f.minX, y: f.minY, width: r, height: r), Grip(left: true, top: true)),
-            (CGRect(x: f.maxX - r, y: f.minY, width: r, height: r), Grip(right: true, top: true)),
-            (CGRect(x: f.minX, y: f.maxY - r, width: r, height: r), Grip(left: true, bottom: true)),
-            (CGRect(x: f.maxX - r, y: f.maxY - r, width: r, height: r), Grip(right: true, bottom: true)),
-            (CGRect(x: f.minX + r, y: f.minY, width: f.width - 2*r, height: r), Grip(top: true)),
-            (CGRect(x: f.minX + r, y: f.maxY - r, width: f.width - 2*r, height: r), Grip(bottom: true)),
-            (CGRect(x: f.minX, y: f.minY + r, width: r, height: f.height - 2*r), Grip(left: true)),
-            (CGRect(x: f.maxX - r, y: f.minY + r, width: r, height: f.height - 2*r), Grip(right: true)),
-        ]
-        for (rect, g) in specs where rect.width > 0 && rect.height > 0 {
-            addCursorRect(rect, cursor: g.cursor)
-        }
-    }
+    // Cursor management is handled entirely in `cursorUpdate(with:)` (hand /
+    // resize-grip / arrow) — no cursor rects, so the two mechanisms can't fight.
 }

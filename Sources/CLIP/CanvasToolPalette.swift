@@ -660,7 +660,9 @@ private final class MainPillView: NSView {
 
         for (i, btn) in buttonViews.enumerated() {
             let bx = Self.buttonXs[i]
-            let by: CGFloat = 2   // buttonY within inner capsule = 2pt from top
+            // Centre the 52pt button in the 58pt inner capsule → even 3pt top/bottom
+            // (was 2pt, which read as an uneven 2/4 gap).
+            let by: CGFloat = (Self.innerH - Self.buttonSize) / 2
             btn.frame = NSRect(
                 x: innerOriginX + bx,
                 y: innerOriginY + by,
