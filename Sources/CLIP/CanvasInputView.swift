@@ -17,7 +17,7 @@ final class CanvasInputView: NSView {
     override var isFlipped: Bool { true }
     weak var coordinator: CollectionCanvas.Coordinator?
 
-    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw, pendingConnect, connect }
+    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw, pendingConnect, connect, pan }
     /// Which edges a resize drag moves. A corner moves two (one H + one V); an
     /// edge moves one — matching Spatial's corner + edge resize handles.
     private struct Grip {
@@ -50,6 +50,7 @@ final class CanvasInputView: NSView {
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var didBegin = false
     private var clickedSelectedNoShift: UUID?       // collapse-to-one on a no-drag click
+    private var panStartContent: NSPoint = .zero    // hand-tool grab anchor (content coords)
 
     private lazy var marqueeLayer: CAShapeLayer = {
         let l = CAShapeLayer()
@@ -106,7 +107,10 @@ final class CanvasInputView: NSView {
     /// Resolve the topmost hoverable node under the cursor → coordinator. Only in
     /// select mode and when idle (a drag/resize/marquee owns the gesture instead).
     private func updateHover(_ event: NSEvent) {
-        guard let p = config, mode == .idle, p.isSelectMode() else { setHovered(nil); return }
+        guard let p = config, mode == .idle else { setHovered(nil); return }
+        // Hand tool: show the open-grab cursor at rest (no card hover).
+        if p.isHandMode() { NSCursor.openHand.set(); setHovered(nil); return }
+        guard p.isSelectMode() else { setHovered(nil); return }
         let pt = convert(event.locationInWindow, from: nil)
         let n = hitNode(at: pt, p)
         // Sections aren't hoverable (they're background frames, like for selection).
@@ -176,6 +180,15 @@ final class CanvasInputView: NSView {
         didBegin = false
         clickedSelectedNoShift = nil
         let shift = event.modifierFlags.contains(.shift)
+
+        // Hand (pan) tool: grab the canvas and pan it 1:1 with the cursor
+        // (Figma hand tool). Anchors the content point under the cursor.
+        if p.isHandMode() {
+            mode = .pan
+            panStartContent = pt
+            NSCursor.closedHand.set()
+            return
+        }
 
         // Native draw (marker): collect content-space points; commit on mouse-up.
         if p.isDrawMode() {
@@ -322,6 +335,18 @@ final class CanvasInputView: NSView {
             let srcRect = contentFrame(src, p)
             let tgtRect = target.map { contentFrame($0, p) } ?? CGRect(x: pt.x, y: pt.y, width: 0, height: 0)
             coordinator?.connectorController?.setPreview(sourceRect: srcRect, targetRect: tgtRect, magnification: mag)
+        case .pan:
+            // Grab-pan (Figma hand tool): scroll the clip view by the slip of the
+            // grabbed content point so it stays glued under the cursor 1:1.
+            if let scroll = enclosingScrollView {
+                let clip = scroll.contentView
+                var o = clip.bounds.origin
+                o.x += panStartContent.x - pt.x
+                o.y += panStartContent.y - pt.y
+                clip.scroll(to: o)
+                scroll.reflectScrolledClipView(clip)
+            }
+            NSCursor.closedHand.set()
         case .idle: break
         }
     }
@@ -362,7 +387,7 @@ final class CanvasInputView: NSView {
                 p.onAddConnector(srcID, hovered.id)
             }
             coordinator?.connectorController?.clearPreview()
-        case .pendingConnect, .marquee, .idle:
+        case .pendingConnect, .marquee, .idle, .pan:
             coordinator?.connectorController?.clearPreview()
         }
         connectSourceID = nil
@@ -422,7 +447,8 @@ final class CanvasInputView: NSView {
     }
 
     override func resetCursorRects() {
-        guard let p = config, let selID = p.selectedNodeID,
+        guard let p = config, !p.isHandMode(),      // hand tool owns the cursor
+              let selID = p.selectedNodeID,
               let sel = p.nodes.first(where: { $0.id == selID }), isResizable(sel) else { return }
         let f = contentFrame(sel, p)
         let r = min(26 / mag, min(f.width, f.height) * 0.25)
