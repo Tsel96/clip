@@ -39,9 +39,9 @@ final class RadialColorPicker: NSView {
     // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
     /// Peak scale boost for the hovered circle, the core's extra pop, and the
     /// Gaussian falloff width (pt) over which neighbours react.
-    private let hoverBoost: CGFloat = 0.24
-    private let hoverCoreBoost: CGFloat = 0.30
-    private let hoverSigma: CGFloat = 22
+    private let hoverBoost: CGFloat = 0.18
+    private let hoverCoreBoost: CGFloat = 0.24
+    private let hoverSigma: CGFloat = 20
 
     // MARK: Palette (BlossomColorPicker)
     /// Inner ring — 6 pastels, clockwise from top.
@@ -141,30 +141,21 @@ final class RadialColorPicker: NSView {
         let d = discR * 2
         let discRect = CGRect(x: discCenter.x - discR, y: discCenter.y - discR, width: d, height: d)
 
-        // Soft outer glow — a lightly-blurred conic spilling just past the rim.
-        let bloom = CAGradientLayer()
-        bloom.type = .conic
-        bloom.frame = discRect.insetBy(dx: -9, dy: -9)
-        bloom.cornerRadius = bloom.frame.width / 2
-        bloom.startPoint = CGPoint(x: 0.5, y: 0.5)
-        bloom.endPoint = CGPoint(x: 0.5, y: 0)
-        bloom.colors = conicColors
-        bloom.opacity = 0.72
+        // 1. Soft coloured outer glow — a blurred conic spilling past the rim.
+        let glow = CAGradientLayer()
+        glow.type = .conic
+        glow.frame = discRect.insetBy(dx: -12, dy: -12)
+        glow.cornerRadius = glow.frame.width / 2
+        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
+        glow.endPoint = CGPoint(x: 0.5, y: 0)
+        glow.colors = conicColors
+        glow.opacity = 0.85
         if let blur = CIFilter(name: "CIGaussianBlur") {
-            blur.setValue(9, forKey: "inputRadius"); bloom.filters = [blur]
+            blur.setValue(11, forKey: "inputRadius"); glow.filters = [blur]
         }
-        layer?.addSublayer(bloom)
+        layer?.addSublayer(glow)
 
-        // Crisp spectrum rim: a conic disc just larger than the dark disc.
-        let rim = CAGradientLayer()
-        rim.type = .conic
-        rim.frame = discRect.insetBy(dx: -2.5, dy: -2.5)
-        rim.cornerRadius = rim.frame.width / 2
-        rim.startPoint = CGPoint(x: 0.5, y: 0.5)
-        rim.endPoint = CGPoint(x: 0.5, y: 0)
-        rim.colors = conicColors
-        layer?.addSublayer(rim)
-
+        // 2. Dark disc backdrop, floating with a soft shadow.
         let disc = CALayer()
         disc.frame = discRect
         disc.cornerRadius = discR
@@ -173,6 +164,28 @@ final class RadialColorPicker: NSView {
         disc.shadowOpacity = 0.34; disc.shadowRadius = 22   // soft float, fits in `pad`
         disc.shadowOffset = CGSize(width: 0, height: -8)
         layer?.addSublayer(disc)
+
+        // 3. CRISP bright rainbow rim — a conic gradient masked to a thin stroked
+        //    circle right at the disc edge, OFFSET from the blossom by the dark
+        //    margin (Spatial's glowing ring). A full conic disc would be hidden by
+        //    the dark disc; the ring mask reveals only the 4pt edge band.
+        let rimWidth: CGFloat = 4
+        let rim = CAGradientLayer()
+        rim.type = .conic
+        rim.frame = discRect
+        rim.cornerRadius = discR
+        rim.startPoint = CGPoint(x: 0.5, y: 0.5)
+        rim.endPoint = CGPoint(x: 0.5, y: 0)
+        rim.colors = conicColors
+        let rimMask = CAShapeLayer()
+        rimMask.frame = rim.bounds
+        rimMask.fillColor = nil
+        rimMask.strokeColor = NSColor.black.cgColor
+        rimMask.lineWidth = rimWidth
+        rimMask.path = CGPath(ellipseIn: CGRect(x: rimWidth / 2, y: rimWidth / 2,
+                                                width: d - rimWidth, height: d - rimWidth), transform: nil)
+        rim.mask = rimMask
+        layer?.addSublayer(rim)
     }
 
     // MARK: Build — flower
@@ -260,7 +273,9 @@ final class RadialColorPicker: NSView {
             let d = hypot(petal.center.x - hc.x, petal.center.y - hc.y)
             let g = exp(-0.5 * (d / hoverSigma) * (d / hoverSigma))   // 1 at hovered → 0 far
             let boost = (i == idx && petal.isCore) ? hoverCoreBoost : hoverBoost
-            petal.layer.zPosition = petal.baseZ + (i == idx ? 100_000 : g * 1_000)
+            // Only the hovered leaf jumps to the front; neighbours keep their
+            // resting z so the stack never re-shuffles (that churn read as glitchy).
+            petal.layer.zPosition = petal.baseZ + (i == idx ? 100_000 : 0)
             scale(petal.layer, 1 + boost * g, center: petal.center)
         }
     }
@@ -278,12 +293,14 @@ final class RadialColorPicker: NSView {
     }
 
     private func nearestPetal(to p: CGPoint) -> Int? {
-        // Topmost (highest z) circle containing the point.
-        var best: Int? = nil; var bestZ: CGFloat = -1
+        // The circle whose CENTRE is nearest the cursor (within a small reach).
+        // Picking by nearest centre — not "topmost circle containing the point" —
+        // means small moves don't flip between overlapping leaves, so the hover is
+        // stable and predictable (you always target the closest colour).
+        var best: Int? = nil; var bestD = CGFloat.greatestFiniteMagnitude
         for (i, petal) in petals.enumerated() {
-            if hypot(p.x - petal.center.x, p.y - petal.center.y) <= petal.r, petal.baseZ >= bestZ {
-                best = i; bestZ = petal.baseZ
-            }
+            let d = hypot(p.x - petal.center.x, p.y - petal.center.y)
+            if d <= petal.r + 7, d < bestD { bestD = d; best = i }
         }
         return best
     }
