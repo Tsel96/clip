@@ -13,9 +13,6 @@ struct CanvasView: View {
     /// NSEvent monitor for Archive's keyboard nav (Esc + arrow keys).
     /// Installed on appear, torn down on disappear so it doesn't leak.
     @State private var archiveKeyMonitor: Any? = nil
-    /// Cursor position over the canvas (hover or drag), driving the
-    /// Stitch-style grid spotlight. `nil` when the pointer is off-canvas.
-    @State private var pointerLocation: CGPoint? = nil
 
     // MARK: - Colorform zoom-driven crossfade
     //
@@ -216,23 +213,6 @@ struct CanvasView: View {
     /// land offset from the camera-derived overlays; (2) card drag math (÷zoom +
     /// `.global`) is wrong inside a magnified scroll view; (3) pan/zoom feel.
     /// Now points at the NSCollectionView core (milestone 1 = placeholder cards).
-    /// Native canvas rewrite (Spatial-style NSScrollView + NSCollectionView).
-    /// Zoom-anchor coordinate bug fixed (document-view coords). Placeholder
-    /// boxes for now — validating pan/zoom smoothness before card hosting.
-    private let useNativeCanvas = true
-
-    /// Native shell collapse (A5): host the canvas-core SCREEN-space overlays
-    /// (dot-grid, tool-input, smart-selection, alignment/spacing guides) as two
-    /// passthrough islands INSIDE the native `CLIPCanvasView` instead of as
-    /// SwiftUI ZStack siblings — so the canvas is one native view with one input
-    /// owner. Flip to `false` to fall back to the proven ZStack shell (kept
-    /// intact below as the `!useNativeShell` branches).
-    /// Re-enabled for the debug-together: the palette rework fixes tool-mode
-    /// switching (the cursor button reliably returns to select) and the
-    /// ToolInputLayer coordinate space is declared on the island. Flip to
-    /// `false` for the proven ZStack shell if select/tools misbehave.
-    private let useNativeShell = true
-
     /// Phase B: draw connectors as native CAShapeLayers in the scrolled
     /// container (off → the proven SwiftUI ConnectorsLayer renders them). ENABLED
     /// for the all-phases push: content-space frames match the cards, the layer
@@ -509,13 +489,12 @@ struct CanvasView: View {
                             if state.toolMode == .select { state.deselectAll() }
                         },
                         onPointerMove: { p in
-                            // Native shell feeds the behind-island's spotlight via
-                            // the store (no body churn); legacy uses @State.
-                            if useNativeShell { pointerStore.location = p }
-                            else { pointerLocation = p }
+                            // Feed the behind-island's spotlight via the store
+                            // (no body churn).
+                            pointerStore.location = p
                         },
                         // Native canvas owns pan/zoom — don't consume scroll/magnify.
-                        capturesScrollMagnify: !useNativeCanvas
+                        capturesScrollMagnify: false
                     )
                     .zIndex(-1)
                 }
