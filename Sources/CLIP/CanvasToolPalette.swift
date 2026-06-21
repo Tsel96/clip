@@ -297,7 +297,6 @@ final class CanvasToolPaletteView: NSView {
             committed = true
             // The live preview already set the tint; this commits it (and is the
             // undoable entry). No restore-first — that risked leaving it reverted.
-            NSLog("CLIP pick: committing \(c.hexRGB) to \(targets.count) target(s)")
             self?.onColorPick?(c, targets)
         }
         picker.onDismiss = { [weak self] in
@@ -1167,10 +1166,8 @@ struct _PaletteRepresentable: NSViewRepresentable {
         v.onColorPick = { nsColor, targets in
             let preset = RadialColorPicker.nearestSectionColor(to: nsColor)
             let hex = nsColor.hexRGB
-            NSLog("CLIP onColorPick: \(targets.count) targets, hex=\(hex)")
             for id in targets {
-                guard let n = state.nodes.first(where: { $0.id == id }) else { NSLog("CLIP   id \(id) NOT FOUND"); continue }
-                NSLog("CLIP   id \(id) isFolder=\(n.isFolder) isSection=\(n.isSection)")
+                guard let n = state.nodes.first(where: { $0.id == id }) else { continue }
                 if n.isSection      { state.setSectionColor(id: id, to: preset) }
                 else if n.isFolder  { state.setFolderColor(id: id, hex: hex) }
             }
