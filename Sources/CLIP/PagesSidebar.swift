@@ -293,7 +293,7 @@ struct PagesSidebar: View {
     // MARK: - Rename helpers
 
     private func beginRename(_ page: Page) {
-        renameText = page.name
+        renameText = page.name.uppercased()
         renamingID = page.id
         renameFocused = true
         installRenameDismissMonitor()
