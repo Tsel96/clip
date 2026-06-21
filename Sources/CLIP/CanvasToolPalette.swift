@@ -98,6 +98,9 @@ final class CanvasToolPaletteView: NSView {
         folderBar.onDownload = { [weak self] in self?.onDownloadTap?() }
         folderBar.onColor    = { [weak self] in self?.presentColorFlower() }
         folderBar.onEject    = { [weak self] in self?.onEjectTap?() }
+
+        // Allow the morph's animated Gaussian blur to render on these layers.
+        [mainPill, addPill, folderBar].forEach { $0.layerUsesCoreImageFilters = true }
     }
 
     // MARK: - Layout
@@ -201,10 +204,12 @@ final class CanvasToolPaletteView: NSView {
         for v in toolViews {
             springFade(v.layer, to: on ? 0 : 1, dur: dur)
             CLIPSpring.scale(v, to: on ? 0.90 : 1.0, preset: .surface, key: "morph")
+            morphBlur(v, fadingOut: on, dur: dur)            // SwiftUI-style blur
         }
         (mainShadows + addShadows).forEach { springFade($0, to: on ? 0 : 1, dur: dur) }
         springFade(folderBar.layer, to: on ? 1 : 0, dur: dur)
         CLIPSpring.scale(folderBar, to: on ? 1.0 : 0.90, preset: .surface, key: "morph")
+        morphBlur(folderBar, fadingOut: !on, dur: dur)
         folderShadows.forEach { springFade($0, to: on ? 1 : 0, dur: dur) }
 
         // Drop the faded-out group from hit-testing once the crossfade settles.
@@ -230,6 +235,27 @@ final class CanvasToolPaletteView: NSView {
         layer.add(a, forKey: "morphFade")
     }
 
+    /// Animated Gaussian blur on a morphing view — the SwiftUI "blur material"
+    /// transition feel. Fading-out blurs 0→max; fading-in sharpens max→0. The
+    /// filter is cleared once settled so there's no idle render cost.
+    private func morphBlur(_ view: NSView, fadingOut: Bool, dur: CFTimeInterval) {
+        guard let layer = view.layer, dur > 0, let f = CIFilter(name: "CIGaussianBlur") else {
+            view.layer?.filters = nil; return
+        }
+        let maxR: CGFloat = 7
+        let from: CGFloat = fadingOut ? 0 : maxR
+        let to: CGFloat = fadingOut ? maxR : 0
+        f.name = "blur"
+        f.setValue(to, forKey: "inputRadius")
+        layer.filters = [f]
+        let a = CABasicAnimation(keyPath: "filters.blur.inputRadius")
+        a.fromValue = from; a.toValue = to
+        a.duration = dur
+        a.timingFunction = CLIPSpring.easeOutSoft
+        layer.add(a, forKey: "morphBlur")
+        DispatchQueue.main.asyncAfter(deadline: .now() + dur + 0.06) { [weak view] in view?.layer?.filters = nil }
+    }
+
     /// Bloom the flower color picker above the folder bar's Color (droplet) button.
     func presentColorFlower() {
         guard let window = self.window, let host = window.contentView else { return }
@@ -238,7 +264,8 @@ final class CanvasToolPaletteView: NSView {
         let colorCenterX = folderBar.frame.minX + FolderActionBarView.colorButtonCenterX
         let barTop = folderBar.frame.maxY                 // y-up: top edge of the bar
         let inHost = convert(CGPoint(x: colorCenterX, y: barTop), to: host)
-        picker.present(in: host, at: CGPoint(x: inHost.x, y: inHost.y + 96))   // disc sits above the bar
+        // disc radius 68 + 14pt gap → the disc floats just above the bar, no overlap.
+        picker.present(in: host, at: CGPoint(x: inHost.x, y: inHost.y + 82))
     }
 }
 

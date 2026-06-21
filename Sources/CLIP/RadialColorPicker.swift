@@ -241,27 +241,32 @@ final class RadialColorPicker: NSView {
 
     // MARK: Present / dismiss
 
+    /// Present with the disc centre at `point`. Springs OUT of the bottom (the
+    /// Color button) — scale 0.5→1 anchored at bottom-centre + a 12pt rise + a
+    /// pop — matching the toolbar link-input panel's transition.
     func present(in host: NSView, at point: CGPoint) {
         frame = CGRect(x: point.x - discCenter.x, y: point.y - discCenter.y,
                        width: bounds.width, height: bounds.height)
         host.addSubview(self)
+        let popper = CLIPSpring.Preset(response: 0.34, damping: 0.66)
         if let layer = layer {
-            let small = CATransform3DConcat(
-                CATransform3DConcat(CATransform3DMakeTranslation(-discCenter.x, -discCenter.y, 0),
-                                    CATransform3DMakeScale(0.35, 0.35, 1)),
-                CATransform3DMakeTranslation(discCenter.x, discCenter.y, 0))
+            let pivot = CGPoint(x: discCenter.x, y: 0)        // bottom-centre = the button
+            var small = CATransform3DConcat(CATransform3DMakeTranslation(-pivot.x, -pivot.y, 0),
+                                            CATransform3DMakeScale(0.5, 0.5, 1))
+            small = CATransform3DConcat(small, CATransform3DMakeTranslation(pivot.x, pivot.y, 0))
+            small = CATransform3DConcat(small, CATransform3DMakeTranslation(0, -12, 0))   // 12pt rise
             CATransaction.begin(); CATransaction.setDisableActions(true)
             layer.transform = small; layer.opacity = 0
             CATransaction.commit()
             let a = CASpringAnimation(keyPath: "transform")
             a.fromValue = small; a.toValue = CATransform3DIdentity
-            a.stiffness = CLIPSpring.Preset.settle.stiffness
-            a.damping = CLIPSpring.Preset.settle.caDamping
+            a.stiffness = popper.stiffness
+            a.damping = popper.caDamping
             a.duration = a.settlingDuration
             layer.transform = CATransform3DIdentity
             layer.add(a, forKey: "bloom")
         }
-        CLIPSpring.run(duration: 0.18) { [weak self] in self?.layer?.opacity = 1 }
+        CLIPSpring.run(duration: 0.16) { [weak self] in self?.layer?.opacity = 1 }
         window?.makeFirstResponder(self)
 
         outsideMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] e in
