@@ -10,7 +10,7 @@ import SwiftUI
 /// All chromatic values use semantic colors (Color.primary, etc.) so the
 /// card adapts to light and dark mode automatically.
 struct FigmaCardStyle: ViewModifier {
-    var cornerRadius: CGFloat = 19.375
+    var cornerRadius: CGFloat = 0     // cards are square (Figma 88:329)
     var isElevated: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
@@ -25,8 +25,10 @@ struct FigmaCardStyle: ViewModifier {
             // isn't clipped by the collection item — a SwiftUI `.shadow` here
             // would be cut off at the card's bounds.
             .overlay(
+                // 0.5px inside hairline at 15% so the card edge reads against the
+                // light canvas (matches the native media-card hairline).
                 shape.strokeBorder(
-                    Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                    Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.15),
                     lineWidth: 0.5
                 )
                 .allowsHitTesting(false)
@@ -35,7 +37,7 @@ struct FigmaCardStyle: ViewModifier {
 }
 
 extension View {
-    func figmaCardStyle(cornerRadius: CGFloat = 19.375, isElevated: Bool = false) -> some View {
+    func figmaCardStyle(cornerRadius: CGFloat = 0, isElevated: Bool = false) -> some View {
         modifier(FigmaCardStyle(cornerRadius: cornerRadius, isElevated: isElevated))
     }
 }

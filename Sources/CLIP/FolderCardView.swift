@@ -214,11 +214,8 @@ final class FolderCardView: NSView, NativeCardUpdatable {
                 CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
                                     CATransform3DMakeScale(factor, factor, 1)),
                 CATransform3DMakeTranslation(cx, cy, 0))
-            let anim = CABasicAnimation(keyPath: "transform")
-            anim.fromValue = layer?.presentation()?.transform ?? layer?.transform
-            anim.toValue = target
-            anim.duration = 0.16
-            anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            let anim = CardItemView.liftSpring(
+                from: layer?.presentation()?.transform ?? layer?.transform ?? target, to: target)
             layer?.transform = target
             layer?.add(anim, forKey: "liftScale")
         }

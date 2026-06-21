@@ -743,9 +743,12 @@ final class CardItemView: NSView {
     /// three constant on-screen (÷ magnification). Shown on SELECT only (Figma
     /// 88:336). Folders draw their own curved silhouette outline instead.
     private let outlineLayer = CAShapeLayer()
+    /// Inner hairline (0.5px, 15% black, drawn INSIDE the card edge) on media
+    /// cards — defines the card against the light canvas. Always on.
+    private let innerHairlineLayer = CAShapeLayer()
     /// Hover/selected scale, applied to every canvas object EXCEPT marker
     /// drawings (user spec). Same factor for hover and select (not compounded).
-    static let liftScale: CGFloat = 1.06
+    static let liftScale: CGFloat = 1.04
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -777,6 +780,13 @@ final class CardItemView: NSView {
         outlineLayer.zPosition = 100
         outlineLayer.opacity = 0
         layer?.addSublayer(outlineLayer)
+
+        // Inner card hairline — black 15%, 0.5px, drawn inside the edge.
+        innerHairlineLayer.fillColor = nil
+        innerHairlineLayer.strokeColor = NSColor.black.withAlphaComponent(0.15).cgColor
+        innerHairlineLayer.zPosition = 98
+        innerHairlineLayer.isHidden = true
+        layer?.addSublayer(innerHairlineLayer)
     }
 
     /// Draw the section outline, selection ring + 8 resize handles. Geometry is
@@ -793,8 +803,13 @@ final class CardItemView: NSView {
         let selected = valid && isSelectedNow
         let hovered = valid && isHoveredNow
         let lifted = selected || hovered
-        var isDrawing = false
-        if case .drawing = node?.kind { isDrawing = true }
+        var isDrawing = false, isMediaCard = false
+        switch node?.kind {
+        case .drawing: isDrawing = true
+        case .image, .video: isMediaCard = true
+        default: break
+        }
+        let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
 
         CATransaction.begin(); CATransaction.setDisableActions(true)
 
@@ -812,19 +827,37 @@ final class CardItemView: NSView {
 
         // Selection outline geometry (cards only — folders trace their own
         // silhouette). Always sized so it's correct the instant it fades in.
-        // The gap must clear the lift scale so the 8px is measured from the
-        // SCALED card edge: outset = half·(scale−1) + 8/mag.
+        // Lengths are CONTENT-space (scale with zoom, locked to the card like
+        // Figma — NOT ÷mag), so the outline reads identically at any zoom. 8px
+        // gap to the OUTER edge; the 4px stroke is drawn INSIDE that edge (Figma
+        // border-box) → centreline at gap − 2. The gap clears the lift scale so
+        // the 8px is measured from the SCALED card edge.
         if valid, folderView == nil {
-            let s: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
-            let extraX = bounds.width / 2 * (s - 1)
-            let extraY = bounds.height / 2 * (s - 1)
-            let gap = 8 / mag
-            let rect = bounds.insetBy(dx: -(extraX + gap), dy: -(extraY + gap))
-            let radius = 8 / mag
+            let extraX = bounds.width / 2 * (liftS - 1)
+            let extraY = bounds.height / 2 * (liftS - 1)
+            let lineW: CGFloat = 4, gap: CGFloat = 8
+            let rect = bounds.insetBy(dx: -(extraX + gap - lineW / 2),
+                                      dy: -(extraY + gap - lineW / 2))
+            let radius: CGFloat = 8 - lineW / 2        // outer corner radius = 8
             outlineLayer.path = CGPath(roundedRect: rect, cornerWidth: radius,
                                        cornerHeight: radius, transform: nil)
-            outlineLayer.lineWidth = 4 / mag
-            outlineLayer.shadowRadius = 2 / mag
+            outlineLayer.lineWidth = lineW
+            outlineLayer.shadowRadius = 2
+        }
+
+        // Inner card hairline (media cards): 0.5px black 15%, drawn INSIDE the
+        // (scaled) card edge. Content-space so it scales with the card.
+        if valid, isMediaCard {
+            let sw = bounds.width * liftS, sh = bounds.height * liftS
+            let scaled = CGRect(x: (bounds.width - sw) / 2, y: (bounds.height - sh) / 2,
+                                width: sw, height: sh)
+            let lw: CGFloat = 0.5
+            innerHairlineLayer.path = CGPath(rect: scaled.insetBy(dx: lw / 2, dy: lw / 2),
+                                             transform: nil)
+            innerHairlineLayer.lineWidth = lw
+            innerHairlineLayer.isHidden = false
+        } else {
+            innerHairlineLayer.isHidden = true
         }
         CATransaction.commit()
 
@@ -862,15 +895,27 @@ final class CardItemView: NSView {
         for sv in subviews {
             guard let layer = sv.layer else { continue }
             if animate {
-                let a = CABasicAnimation(keyPath: "transform")
-                a.fromValue = layer.presentation()?.transform ?? layer.transform
-                a.toValue = t
-                a.duration = 0.16
-                a.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                layer.add(a, forKey: "liftScale")
+                layer.add(Self.liftSpring(from: layer.presentation()?.transform ?? layer.transform,
+                                          to: t), forKey: "liftScale")
             }
             layer.transform = t
         }
+    }
+
+    /// The canvas-item scale spring recovered from Spatial (`CanvasItemsAnimator`
+    /// / `resetScaleWithStiffness:damping:`): stiffness 100, mass 1, damping ~18
+    /// (ζ≈0.9 — smooth, a touch of settle, no bounce). Shared by cards + folders.
+    static func liftSpring(from: CATransform3D, to: CATransform3D) -> CASpringAnimation {
+        let a = CASpringAnimation(keyPath: "transform")
+        a.fromValue = from
+        a.toValue = to
+        a.stiffness = 100
+        a.damping = 18
+        a.mass = 1
+        if #available(macOS 14.0, *) { a.allowsOverdamping = true }
+        a.duration = a.settlingDuration
+        a.fillMode = .forwards
+        return a
     }
 
     /// Animate a chrome layer's opacity toward `target` (Spatial-style selection
