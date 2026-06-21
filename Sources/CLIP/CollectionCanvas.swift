@@ -819,12 +819,14 @@ final class CardItemView: NSView {
         // but the stroke is floored at ~1px on screen so it never vanishes far out.
         if valid {
             let w = bounds.width
-            // Stroke CENTRE offset from the unscaled bounds edge (bakes in the
-            // selected card's 1.0417 grow + the 6px gap, Figma 88:340).
-            let out = CardStateSpec.outlineCenterOffsetN * w
-            let lineW = max(CardStateSpec.outlineWidthN * w, 1 / mag)   // ≥1px on screen
-            // Concentric with the lifted (19.375-radius × scale) card corner.
-            let radius = CardChrome.cornerRadius * CardStateSpec.hoverScale + out
+            // CONSTANT screen metrics (NOT scaled with the card, so it looks
+            // identical on every card size): an 8px gap from the (scaled) card
+            // edge, a 4px-thick stroke, an 8px corner radius. ÷mag keeps them a
+            // fixed SCREEN size at any zoom; the card itself is square.
+            let scaledGrow = (CardStateSpec.hoverScale - 1) / 2 * w   // selected card's grow per side
+            let lineW = 4 / mag
+            let out = scaledGrow + 8 / mag + lineW / 2                // stroke centre from bounds edge
+            let radius = 8 / mag
             let rect = bounds.insetBy(dx: -out, dy: -out)
             outlineLayer.path = CGPath(roundedRect: rect, cornerWidth: radius,
                                        cornerHeight: radius, transform: nil)
@@ -980,7 +982,7 @@ final class CardItemView: NSView {
     /// Card corner radius — matches `figmaCardStyle`'s default so the shadow
     /// hugs the rounded card. (Text/sticky use a tighter radius; the small
     /// difference in their shadow corners is imperceptible.)
-    private let shadowCornerRadius: CGFloat = 19.375
+    private let shadowCornerRadius: CGFloat = 0   // cards are square (user spec)
 
     override func layout() {
         super.layout()
@@ -1037,9 +1039,12 @@ final class CardItemView: NSView {
         // Selected outline's soft shadow, traced on the OFFSET-outward outline rect.
         if highlight == .selected {
             let w = bounds.width
-            let out = CardStateSpec.outlineCenterOffsetN * w
+            // Match the outline stroke's constant geometry (8px gap, 4px, r8).
+            let scaledGrow = (CardStateSpec.hoverScale - 1) / 2 * w
+            let lineW = 4 / mag
+            let out = scaledGrow + 8 / mag + lineW / 2
             let oRect = bounds.insetBy(dx: -out, dy: -out)
-            let oRadius = CardChrome.cornerRadius * CardStateSpec.hoverScale + out
+            let oRadius = 8 / mag
             outlineShadow.setHidden(false)
             outlineShadow.update(bounds: oRect, cornerRadius: oRadius,
                                  state: .selected,
