@@ -957,6 +957,10 @@ final class ToolPaletteButton: NSView {
     private var isHovered = false
     private var isPressed = false
     private let iconName: String
+    /// Rest (outlined black template) ↔ selected (solid brand-yellow) artwork —
+    /// swapped on selection so the SHAPE changes, not just the tint (Figma states).
+    private lazy var restImage: NSImage?   = Self.loadIcon(iconName)
+    private lazy var activeImage: NSImage? = Self.loadIcon(iconName + "_active", template: false)
 
     // MARK: - Init
 
@@ -977,8 +981,9 @@ final class ToolPaletteButton: NSView {
         bgLayer.opacity     = 0
         layer?.addSublayer(bgLayer)
 
-        // Icon (template image; tinted black at rest, brand-yellow when selected).
-        iconView.image            = Self.loadIcon(iconName)
+        // Icon: outlined black template at rest; swaps to the solid brand-yellow
+        // `_active` art when selected (see setActive).
+        iconView.image            = restImage
         iconView.imageScaling     = .scaleProportionallyUpOrDown
         iconView.contentTintColor = .black
         iconView.wantsLayer       = true
@@ -1053,8 +1058,12 @@ final class ToolPaletteButton: NSView {
     func setActive(_ active: Bool, animated: Bool) {
         guard active != isActive else { return }
         isActive = active
+        // Swap the SHAPE (outlined → solid). The active art carries its own
+        // #FEF33C; the rest art is a black template. Fall back to a yellow tint
+        // if a tool has no `_active` asset yet.
+        iconView.image = (active ? activeImage : restImage) ?? restImage
         iconView.alphaValue       = active ? 1.0 : iconRestOpacity
-        iconView.contentTintColor = active ? NSColor.fromHex(0xFEF33C) : .black
+        iconView.contentTintColor = (active && activeImage == nil) ? NSColor.fromHex(0xFEF33C) : .black
         applyGlow(active)
         refreshBackground(animated: animated)
     }
@@ -1094,10 +1103,12 @@ final class ToolPaletteButton: NSView {
     /// Returns a 24 × 24 template image for a tool mode.
     /// Uses SF Symbols where possible; falls back to a constructed path image.
     /// Loads a 24×24 template icon (`tool_*.svg`) from the bundle.
-    static func loadIcon(_ name: String) -> NSImage? {
+    static func loadIcon(_ name: String, template: Bool = true) -> NSImage? {
         guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
               let img = NSImage(contentsOf: url) else { return nil }
-        img.isTemplate = true   // the button tints it black (idle) / yellow (active)
+        // Rest icons are black templates (tinted); the selected (`_active`) icons
+        // carry their own brand-yellow colour, so they load non-template.
+        img.isTemplate = template
         img.size = NSSize(width: 24, height: 24)
         return img
     }
