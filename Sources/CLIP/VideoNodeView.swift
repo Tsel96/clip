@@ -96,7 +96,7 @@ struct VideoNodeView: View {
                     url: fileURL,
                     isMuted: $isMuted,
                     isPlaying: .constant(effectivePlaying),
-                    cornerRadius: 19.375,
+                    cornerRadius: 1,
                     timeRange: trimRange
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -876,9 +876,12 @@ final class CardItemView: NSView {
     /// Hover/selected "pop" for every card except marker drawings. Scales the
     /// content subviews (they fill the card) around the card centre — NOT the
     /// item's own layer, which carries the live-drag transform, so the two
-    /// compose cleanly. The transform is re-applied every call so it survives a
-    /// `reloadData` (which recreates the content subviews); it only ANIMATES when
-    /// the factor actually changes.
+    /// compose cleanly. The SAME transform is applied to the selection outline +
+    /// inner hairline + section border (chrome sublayers) so they scale in
+    /// LOCKSTEP with the card — this is what keeps the outline's gap a constant
+    /// 8px from the *visible* (scaled) card edge at any zoom, instead of the card
+    /// poking through it. Re-applied every call so it survives a `reloadData`; it
+    /// only ANIMATES when the factor changes.
     private func applyLiftScale(_ lifted: Bool, kind: CanvasNode.Kind?) {
         guard bounds.width > 1, bounds.height > 1 else { return }
         var isDrawing = false
@@ -891,8 +894,8 @@ final class CardItemView: NSView {
             CATransform3DMakeTranslation(cx, cy, 0))
         let animate = factor != lastLiftFactor
         lastLiftFactor = factor
-        for sv in subviews {
-            guard let layer = sv.layer else { continue }
+        let contentLayers = subviews.compactMap { $0.layer }
+        for layer in contentLayers + [outlineLayer, innerHairlineLayer, sectionLayer] {
             if animate {
                 layer.add(Self.liftSpring(from: layer.presentation()?.transform ?? layer.transform,
                                           to: t), forKey: "liftScale")
@@ -901,16 +904,16 @@ final class CardItemView: NSView {
         }
     }
 
-    /// The canvas-item scale spring, modelled on Spatial's `CanvasItemsAnimator`
-    /// / `resetScaleWithStiffness:damping:` but tuned FAST — Spatial's state
-    /// transitions settle in ≤150ms. stiffness 2000, mass 1, damping 70 (ζ≈0.78)
-    /// settles ~130ms with no bounce. Shared by cards + folders.
+    /// The canvas-item scale spring (Spatial's `CanvasItemsAnimator` /
+    /// `resetScaleWithStiffness:damping:`), tuned to feel *pleasurable* on hover:
+    /// a fast rise with a gentle overshoot that settles cleanly (stiffness 500,
+    /// mass 1, damping 18 → ζ≈0.40). Shared by cards + folders.
     static func liftSpring(from: CATransform3D, to: CATransform3D) -> CASpringAnimation {
         let a = CASpringAnimation(keyPath: "transform")
         a.fromValue = from
         a.toValue = to
-        a.stiffness = 2000
-        a.damping = 70
+        a.stiffness = 500
+        a.damping = 18
         a.mass = 1
         if #available(macOS 14.0, *) { a.allowsOverdamping = true }
         a.duration = a.settlingDuration

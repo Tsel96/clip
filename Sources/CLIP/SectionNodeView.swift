@@ -28,7 +28,7 @@ struct SectionNodeView: View {
     @State private var hovering = false
     @FocusState private var titleFocused: Bool
 
-    static let cornerRadius: CGFloat = 0
+    static let cornerRadius: CGFloat = 1
     private let headerHeight: CGFloat = 28
 
     var body: some View {

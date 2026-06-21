@@ -118,7 +118,7 @@ final class CardSectionContentView: NSView, NativeCardUpdatable {
     private let titleField = NSTextField(labelWithString: "")
     private let icon = NSImageView()
     private let headerHeight: CGFloat = 28
-    private let radius: CGFloat = 0
+    private let radius: CGFloat = 1
 
     init(title: String, color: SectionColor) {
         self.title = title; self.color = color
@@ -186,7 +186,7 @@ final class CardStickyContentView: NSView, NativeCardUpdatable {
     private var content: String
     private var color: StickyColor
     private let textField = NSTextField(wrappingLabelWithString: "")
-    private let radius: CGFloat = 0
+    private let radius: CGFloat = 1
     private let lipHeight: CGFloat = 6
 
     init(content: String, color: StickyColor) {
@@ -519,5 +519,5 @@ final class NativeVideoCache {
 enum CardChrome {
     /// Cards are SQUARE (Figma 88:329/330/336 — the CARD layer has no corner
     /// radius). Sticky/section keep their own small radii in their content views.
-    static let cornerRadius: CGFloat = 0
+    static let cornerRadius: CGFloat = 1
 }

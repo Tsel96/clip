@@ -1,5 +1,17 @@
 import AppKit
 
+/// Lightweight file log for runtime diagnosis (the user reads /tmp/clip_diag.txt
+/// and reports back — we never puppeteer the app). Cheap append, best-effort.
+func clipDiag(_ s: String) {
+    let line = "[\(Date().timeIntervalSince1970)] \(s)\n"
+    let url = URL(fileURLWithPath: "/tmp/clip_diag.txt")
+    if let h = try? FileHandle(forWritingTo: url) {
+        h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close()
+    } else {
+        try? line.data(using: .utf8)?.write(to: url)
+    }
+}
+
 /// The SINGLE owner of all canvas pointer interaction (Spatial's
 /// `CanvasContentView` model). A transparent, flipped NSView sized to the whole
 /// world and layered above the cards, so NO other view competes for a click.
@@ -213,6 +225,9 @@ final class CanvasInputView: NSView {
             resizeStartFrame = CGRect(x: sel.position.x, y: sel.position.y,
                                       width: sel.width, height: sel.height ?? 120)
             return
+        }
+        if let hit = hitNode(at: pt, p) {
+            clipDiag("down kind=\(hit.kind) section=\(hit.isSection) size=\(Int(hit.width))x\(Int(hit.height ?? 0))")
         }
         if let n = hitNode(at: pt, p), !n.isSection {
             // Selection on mouse-DOWN (so a drag moves what you grabbed).

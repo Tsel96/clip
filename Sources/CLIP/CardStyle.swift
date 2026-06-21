@@ -10,7 +10,7 @@ import SwiftUI
 /// All chromatic values use semantic colors (Color.primary, etc.) so the
 /// card adapts to light and dark mode automatically.
 struct FigmaCardStyle: ViewModifier {
-    var cornerRadius: CGFloat = 0     // cards are square (Figma 88:329)
+    var cornerRadius: CGFloat = 1     // cards are square (Figma 88:329)
     var isElevated: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
@@ -37,7 +37,7 @@ struct FigmaCardStyle: ViewModifier {
 }
 
 extension View {
-    func figmaCardStyle(cornerRadius: CGFloat = 0, isElevated: Bool = false) -> some View {
+    func figmaCardStyle(cornerRadius: CGFloat = 1, isElevated: Bool = false) -> some View {
         modifier(FigmaCardStyle(cornerRadius: cornerRadius, isElevated: isElevated))
     }
 }
