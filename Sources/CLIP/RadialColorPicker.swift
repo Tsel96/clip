@@ -23,20 +23,25 @@ final class RadialColorPicker: NSView {
     /// when over no petal / on exit). Drives the folder's live recolour.
     var onHoverPreview: (NSColor?) -> Void = { _ in }
 
-    // MARK: Geometry
-    private let discR: CGFloat = 68
-    private let petalD: CGFloat = 36         // ALL circles share this diameter (core + petals)
+    // MARK: Geometry — Spatial proportions
+    /// Spatial's flower leaves the blossom ~0.78× of the disc, so a dark margin
+    /// rings it before the OFFSET rainbow rim; the white core is a touch larger
+    /// than the leaves and the rings are spread enough that the vibrant outer
+    /// ring is never buried under the pale inner ring.
+    private let discR: CGFloat = 72
+    private let petalR: CGFloat = 15         // inner + outer leaf radius
+    private let coreR: CGFloat = 19          // white centre, slightly larger
     private let pad: CGFloat = 36            // room for the glow + drop shadow (must not clip)
     private var discCenter: CGPoint = .zero
-    private var innerR: CGFloat = 0
-    private var outerR: CGFloat = 0
+    private let innerR: CGFloat = 23
+    private let outerR: CGFloat = 42         // outer leaf edge ≈ 57 → ~15pt dark margin to the rim
 
     // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
     /// Peak scale boost for the hovered circle, the core's extra pop, and the
     /// Gaussian falloff width (pt) over which neighbours react.
-    private let hoverBoost: CGFloat = 0.30
-    private let hoverCoreBoost: CGFloat = 0.45
-    private let hoverSigma: CGFloat = 29
+    private let hoverBoost: CGFloat = 0.24
+    private let hoverCoreBoost: CGFloat = 0.30
+    private let hoverSigma: CGFloat = 22
 
     // MARK: Palette (BlossomColorPicker)
     /// Inner ring — 6 pastels, clockwise from top.
@@ -67,10 +72,6 @@ final class RadialColorPicker: NSView {
         wantsLayer = true
         layerUsesCoreImageFilters = true
         discCenter = CGPoint(x: viewSide / 2, y: viewSide / 2)
-        // Geometric-nesting ring radii (BlossomColorPicker layout.ts).
-        let radii = Self.layerRadii(counts: [innerColors.count, outerColors.count],
-                                    coreSize: petalD, petalSize: petalD)
-        innerR = radii[0]; outerR = radii[1]
         buildHaloDisc()
         buildPetals()
         buildHoverRing()
@@ -202,19 +203,18 @@ final class RadialColorPicker: NSView {
     // MARK: Build — flower
 
     private func buildPetals() {
-        let r = petalD / 2
         // Outer ring (12), valley-rotated 30° — drawn lowest.
         for (i, c) in outerColors.enumerated() {
             let deg = 30 + CGFloat(i) / CGFloat(outerColors.count) * 360
-            addPetal(color: c, center: ringPoint(outerR, deg: deg), r: r, isCore: false, baseZ: zFor(deg, layer: 0))
+            addPetal(color: c, center: ringPoint(outerR, deg: deg), r: petalR, isCore: false, baseZ: zFor(deg, layer: 0))
         }
         // Inner ring (6) — above the outer ring.
         for (i, c) in innerColors.enumerated() {
             let deg = CGFloat(i) / CGFloat(innerColors.count) * 360
-            addPetal(color: c, center: ringPoint(innerR, deg: deg), r: r, isCore: false, baseZ: zFor(deg, layer: 1))
+            addPetal(color: c, center: ringPoint(innerR, deg: deg), r: petalR, isCore: false, baseZ: zFor(deg, layer: 1))
         }
-        // White core — on top.
-        addPetal(color: .white, center: discCenter, r: r, isCore: true, baseZ: 2000)
+        // White core — on top, larger than the leaves.
+        addPetal(color: .white, center: discCenter, r: coreR, isCore: true, baseZ: 2000)
     }
 
     /// Point on a ring at `deg` clockwise from the top (view coords, y-up).
