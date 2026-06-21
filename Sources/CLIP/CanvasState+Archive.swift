@@ -31,7 +31,7 @@ extension CanvasState {
     /// Set `archiveDays` and the matching reverse `cardToDay` index in
     /// one place — every other entry point routes through here so the
     /// two stay in sync.
-    private func setArchiveDays(_ days: [Date: [UUID]]) {
+    func setArchiveDays(_ days: [Date: [UUID]]) {
         archiveDays = days
         var reverse: [UUID: Date] = [:]
         reverse.reserveCapacity(days.values.reduce(0) { $0 + $1.count })
