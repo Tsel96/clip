@@ -517,7 +517,5 @@ final class NativeVideoCache {
 
 /// Shared card-chrome constants so native content + the item chrome agree.
 enum CardChrome {
-    /// Cards are SQUARE (user spec) — the rounded corners live only on the
-    /// selection outline, not the card content.
-    static let cornerRadius: CGFloat = 0
+    static let cornerRadius: CGFloat = 19.375
 }
