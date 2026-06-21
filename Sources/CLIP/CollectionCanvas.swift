@@ -439,6 +439,8 @@ struct CollectionCanvas: NSViewRepresentable {
                 }
             }
             refreshConnectors()
+            // Keep the inline label editor matched to the live zoom/pan.
+            if let cid = editingConnectorID { positionEditor(at: cid) }
         }
 
         /// Phase B native connectors: rebuild content-space node frames and push

@@ -10,8 +10,8 @@ import AppKit
 extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
 
     /// Label font size in CONTENT units (must match `ConnectorOverlayController`).
-    private static let labelContentFontSize: CGFloat = 20
-    private static let labelTextColor = NSColor(srgbRed: 0.1, green: 0.12, blue: 0.1, alpha: 1)
+    private static let labelContentFontSize: CGFloat = 17   // Figma: SF Mono Semibold 17
+    private static let labelTextColor = NSColor.black
     private static let labelBGColor = NSColor(srgbRed: 0.95, green: 0.95, blue: 0.95, alpha: 1)
 
     func beginEditingConnectorLabel(_ cid: UUID) {
@@ -27,7 +27,7 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         field.stringValue = current
         field.placeholderString = "Label"
         // On-screen font = content size × zoom → matches the rendered label.
-        field.font = .systemFont(ofSize: Self.labelContentFontSize * mag, weight: .medium)
+        field.font = .monospacedSystemFont(ofSize: Self.labelContentFontSize * mag, weight: .semibold)
         field.alignment = .center
         field.isBezeled = false
         field.isBordered = false
@@ -59,16 +59,20 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         }
     }
 
-    /// Re-size the field to its text and re-center it on the (live) midpoint —
-    /// keeps it from clipping as you type and keeps it pinned to the line.
-    private func positionEditor(at cid: UUID) {
+    /// Re-size the field to its text and re-center it on the (live) midpoint, and
+    /// re-derive the font from the current zoom — so the editor SCALES WITH the
+    /// canvas (called on open, on every keystroke, and on every zoom/pan via
+    /// `refreshChrome`). Keeps it pinned to the line and matching the label size.
+    func positionEditor(at cid: UUID) {
         guard let field = editingConnectorField,
               let container = container, let host = scroll?.superview,
               let mid = connectorController?.midpoints[cid] else { return }
+        let mag = max(scroll?.magnification ?? 1, 0.0001)
+        field.font = .monospacedSystemFont(ofSize: Self.labelContentFontSize * mag, weight: .semibold)
         let center = container.convert(mid, to: host)
         field.sizeToFit()
-        let w = max(80, field.frame.width + 28)
-        let h = field.frame.height + 8
+        let w = max(40 * mag, field.frame.width + 14 * mag)
+        let h = field.frame.height + 4 * mag
         field.frame = CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
     }
 

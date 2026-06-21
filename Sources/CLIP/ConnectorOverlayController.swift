@@ -38,7 +38,7 @@ final class ConnectorOverlayController {
     private static let selectedLineWidth: CGFloat = 3.5
     private static let arrowLen: CGFloat = 10
     private static let arrowHalf: CGFloat = 4.5
-    private static let labelFontSize: CGFloat = 20   // CONTENT units → scales with zoom (Obsidian-style)
+    private static let labelFontSize: CGFloat = 17   // CONTENT units (Figma: SF Mono Semibold 17) → scales with zoom
     /// Canvas backdrop colour (light theme) — masks the line behind the label.
     private static let labelBackground = NSColor(srgbRed: 0.95, green: 0.95, blue: 0.95, alpha: 1)
 
@@ -221,7 +221,7 @@ final class ConnectorOverlayController {
         b.labelBG.isHidden = false; b.labelText.isHidden = false
 
         let fs = Self.labelFontSize                // content units → scales with zoom
-        let font = NSFont.systemFont(ofSize: fs, weight: .medium)
+        let font = NSFont.monospacedSystemFont(ofSize: fs, weight: .semibold)   // SF Mono Semibold (Figma)
         let measured = (text as NSString).size(withAttributes: [.font: font])
         let padH: CGFloat = 8, padV: CGFloat = 4
         let w = measured.width + padH * 2
@@ -237,7 +237,7 @@ final class ConnectorOverlayController {
                                    width: measured.width, height: measured.height)
         b.labelText.string = NSAttributedString(string: text, attributes: [
             .font: font,
-            .foregroundColor: NSColor(srgbRed: 0.1, green: 0.12, blue: 0.1, alpha: 1)
+            .foregroundColor: NSColor.black            // Figma: pure black
         ])
         b.labelText.contentsScale = 3              // crisp when zoomed in
     }
