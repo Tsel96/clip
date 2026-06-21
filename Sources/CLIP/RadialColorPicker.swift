@@ -24,9 +24,6 @@ final class RadialColorPicker: NSView {
     private let discR: CGFloat = 68
     private let petalD: CGFloat = 36         // ALL circles share this diameter (core + petals)
     private let pad: CGFloat = 18
-    private let gap: CGFloat = 12
-    private let barH: CGFloat = 50
-    private let barW: CGFloat = 170
     private var discCenter: CGPoint = .zero
     private var innerR: CGFloat = 0
     private var outerR: CGFloat = 0
@@ -42,30 +39,26 @@ final class RadialColorPicker: NSView {
         hex(0xB261CC), hex(0x8966DF), hex(0x6586E5), hex(0x69B5E2), hex(0x77C9A2), hex(0xA4D483),
     ]
     private let discColor = NSColor(srgbRed: 0.055, green: 0.055, blue: 0.063, alpha: 1)  // #0E0E10
-    private let barColor  = NSColor(srgbRed: 0.114, green: 0.125, blue: 0.137, alpha: 1)  // #1D2023
-    private let iconColor = NSColor(srgbRed: 0.96, green: 0.97, blue: 0.98, alpha: 1)  // SVGs carry 0.7 opacity → light gray on the bar
 
     private struct Petal { let layer: CAShapeLayer; let color: NSColor; let center: CGPoint; let r: CGFloat; let isCore: Bool; let baseZ: CGFloat }
     private var petals: [Petal] = []
     private var hovered: Int? = nil
     private var tracking: NSTrackingArea?
     private var outsideMonitor: Any?
-    private var iconRects: [CGRect] = []
 
     init() {
-        let viewW = barW + pad * 2
-        let viewH = pad + discR * 2 + gap + barH + pad
-        super.init(frame: CGRect(x: 0, y: 0, width: viewW, height: viewH))
+        // Disc only — the control bar is the candy folder toolbar this blooms ABOVE.
+        let viewSide = discR * 2 + pad * 2
+        super.init(frame: CGRect(x: 0, y: 0, width: viewSide, height: viewSide))
         wantsLayer = true
         layerUsesCoreImageFilters = true
-        discCenter = CGPoint(x: viewW / 2, y: pad + barH + gap + discR)
+        discCenter = CGPoint(x: viewSide / 2, y: viewSide / 2)
         // Geometric-nesting ring radii (BlossomColorPicker layout.ts).
         let radii = Self.layerRadii(counts: [innerColors.count, outerColors.count],
                                     coreSize: petalD, petalSize: petalD)
         innerR = radii[0]; outerR = radii[1]
         buildHaloDisc()
         buildPetals()
-        buildBar()
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
@@ -179,53 +172,6 @@ final class RadialColorPicker: NSView {
         petals.append(Petal(layer: p, color: color, center: center, r: r, isCore: isCore, baseZ: baseZ))
     }
 
-    // MARK: Build — control bar
-
-    private func buildBar() {
-        let barRect = CGRect(x: (bounds.width - barW) / 2, y: pad, width: barW, height: barH)
-        let bar = CALayer()
-        bar.frame = barRect
-        bar.cornerRadius = barH / 2
-        bar.cornerCurve = .continuous
-        bar.backgroundColor = barColor.cgColor
-        bar.shadowColor = NSColor.black.cgColor
-        bar.shadowOpacity = 0.30; bar.shadowRadius = 12
-        bar.shadowOffset = CGSize(width: 0, height: -4)
-        layer?.addSublayer(bar)
-
-        // Exact Figma folder-selection bar icons (Download / Color / Eject).
-        let names = ["Download", "Color", "Eject"]
-        let fracs: [CGFloat] = [0.2, 0.5, 0.8]
-        iconRects = []
-        for (name, f) in zip(names, fracs) {
-            let cx = barRect.minX + barW * f, cy = barRect.midY
-            iconRects.append(CGRect(x: cx - 16, y: cy - 16, width: 32, height: 32))   // hit target
-            let s: CGFloat = 24
-            let icon = CALayer()
-            icon.frame = CGRect(x: cx - s / 2, y: cy - s / 2, width: s, height: s)
-            icon.contentsGravity = .resizeAspect
-            icon.contentsScale = 2
-            icon.contents = Self.barIcon(name, tint: iconColor)
-            layer?.addSublayer(icon)
-        }
-    }
-
-    /// Loads a 24×24 bar icon SVG from the bundle, tinted for the dark bar.
-    private static func barIcon(_ name: String, tint: NSColor) -> CGImage? {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
-              let svg = NSImage(contentsOf: url) else { return nil }
-        let px: CGFloat = 48
-        let img = NSImage(size: NSSize(width: px, height: px))
-        img.lockFocus()
-        let r = NSRect(x: 0, y: 0, width: px, height: px)
-        svg.draw(in: r)
-        tint.set()
-        r.fill(using: .sourceAtop)          // recolor the (template) strokes
-        img.unlockFocus()
-        var rect = r
-        return img.cgImage(forProposedRect: &rect, context: nil, hints: nil)
-    }
-
     // MARK: Hover + pick
 
     override func updateTrackingAreas() {
@@ -258,15 +204,7 @@ final class RadialColorPicker: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        for (i, r) in iconRects.enumerated() where r.contains(p) { barAction(i); return }
         if let idx = nearestPetal(to: p) { pick(petals[idx].color) }
-    }
-
-    private func barAction(_ i: Int) {
-        switch i {
-        case 1:  NSColorSampler().show { [weak self] c in if let c { self?.pick(c) } else { self?.dismiss() } }
-        default: dismiss()
-        }
     }
 
     private func pick(_ color: NSColor) {
