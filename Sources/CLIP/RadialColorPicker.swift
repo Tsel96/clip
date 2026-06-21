@@ -29,12 +29,12 @@ final class RadialColorPicker: NSView {
     /// than the leaves and the rings are spread enough that the vibrant outer
     /// ring is never buried under the pale inner ring.
     private let discR: CGFloat = 72
-    private let petalR: CGFloat = 14         // small leaves, but the rings below still fill the disc
-    private let coreR: CGFloat = 17          // white centre, slightly larger
+    private let petalR: CGFloat = 17         // fills the disc (bigger palette) with solid overlap
+    private let coreR: CGFloat = 20          // white centre, slightly larger
     private let pad: CGFloat = 36            // room for the glow + drop shadow (must not clip)
     private var discCenter: CGPoint = .zero
-    private let innerR: CGFloat = 20
-    private let outerR: CGFloat = 39         // flower fills the disc; small leaves still overlap (no gaps)
+    private let innerR: CGFloat = 24
+    private let outerR: CGFloat = 44         // outer leaf edge ≈ 61 → flower fills ~85% of the disc (like Spatial)
 
     // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
     /// Peak scale boost for the hovered circle, the core's extra pop, and the
@@ -147,13 +147,13 @@ final class RadialColorPicker: NSView {
         // gentle bloom; understated, not the big wash from before).
         let glow = CAGradientLayer()
         glow.type = .conic
-        glow.frame = discRect.insetBy(dx: -8, dy: -8)
+        glow.frame = discRect.insetBy(dx: -11, dy: -11)
         glow.cornerRadius = glow.frame.width / 2
         glow.startPoint = CGPoint(x: 0.5, y: 0.5)
         glow.endPoint = CGPoint(x: 0.5, y: 0)
         glow.colors = conicColors
-        glow.opacity = 0.5
-        if let blur = CIFilter(name: "CIGaussianBlur") { blur.setValue(9, forKey: "inputRadius"); glow.filters = [blur] }
+        glow.opacity = 0.75
+        if let blur = CIFilter(name: "CIGaussianBlur") { blur.setValue(12, forKey: "inputRadius"); glow.filters = [blur] }
         layer?.addSublayer(glow)
 
         // Dark disc backdrop, floating with a soft (neutral) shadow.
@@ -264,14 +264,14 @@ final class RadialColorPicker: NSView {
         hovered = idx
         if idx != nil { CLIPHaptics.snap() }
         // (no cursor change on hover — keep the default arrow)
-        applyHover(idx, animated: false)                  // hover-IN: snap instantly
+        applyHover(idx)                                   // hovered snaps; others ease
         updateHoverRing(for: idx, animated: false)
         if !picked { onHoverPreview(idx.map { petals[$0].color }) }
     }
 
     override func mouseExited(with event: NSEvent) {
         hovered = nil
-        applyHover(nil, animated: true)                   // hover-OUT: smooth flex back
+        applyHover(nil)                                   // hover-OUT: everything eases back
         updateHoverRing(for: nil, animated: true)
         if !picked { onHoverPreview(nil) }
     }
@@ -279,7 +279,7 @@ final class RadialColorPicker: NSView {
     /// Spatial's flower hover: the hovered leaf scales up and physically SHOVES
     /// its neighbours outward (away from it), the shove falling off over ~3 rings
     /// — the whole flower flexes around the hovered colour. All spring-animated.
-    private func applyHover(_ idx: Int?, animated: Bool) {
+    private func applyHover(_ idx: Int?) {
         let hc = idx.map { petals[$0].center }
         for (i, petal) in petals.enumerated() {
             var s: CGFloat = 1, tx: CGFloat = 0, ty: CGFloat = 0
@@ -294,7 +294,10 @@ final class RadialColorPicker: NSView {
                 }
             }
             petal.layer.zPosition = petal.baseZ + (i == idx ? 100_000 : 0)
-            setTransform(petal.layer, scale: s, tx: tx, ty: ty, center: petal.center, animated: animated)
+            // The hovered leaf snaps up INSTANTLY; every other leaf EASES — so the
+            // leaf you just moved off scales back down smoothly, and on exit
+            // (idx == nil) everything eases back.
+            setTransform(petal.layer, scale: s, tx: tx, ty: ty, center: petal.center, animated: i != idx)
         }
     }
 
