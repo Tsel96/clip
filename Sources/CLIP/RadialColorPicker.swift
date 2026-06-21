@@ -39,19 +39,22 @@ final class RadialColorPicker: NSView {
     // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
     /// Peak scale boost for the hovered circle, the core's extra pop, and the
     /// Gaussian falloff width (pt) over which neighbours react.
-    private let hoverBoost: CGFloat = 0.30
-    private let hoverCoreBoost: CGFloat = 0.36
-    private let hoverSigma: CGFloat = 19
+    // Bigger hovered scale + a WIDE falloff so every leaf in the flower responds
+    // to the hover (Spatial's whole-flower "breathing"), not just the neighbours.
+    private let hoverBoost: CGFloat = 0.45
+    private let hoverCoreBoost: CGFloat = 0.50
+    private let hoverSigma: CGFloat = 46
 
     // MARK: Palette (BlossomColorPicker)
     /// Inner ring — 6 pastels, clockwise from top.
-    private let innerColors: [NSColor] = [
-        hex(0xFDF1B6), hex(0xFCE0CA), hex(0xF8C8D4), hex(0xDEC2E9), hex(0xC6DEF5), hex(0xD2ECD0),
+    private let innerColors: [NSColor] = [   // sampled from Spatial — pale pastel inner ring
+        hex(0xDDDFE1), hex(0xFBF9EA), hex(0xE3EDD2), hex(0xDCF1F2), hex(0xEEDCF3), hex(0xFBEBF3),
     ]
-    /// Outer ring — 12 vibrants, clockwise.
+    /// Outer ring — 12 vivids, clockwise (sampled from Spatial; the 3 warm leaves
+    /// under the lifted orange petal reconstructed from the red→orange→yellow run).
     private let outerColors: [NSColor] = [
-        hex(0xFCD752), hex(0xFDBA50), hex(0xFA9C4D), hex(0xF6774F), hex(0xF15656), hex(0xE756A6),
-        hex(0xB261CC), hex(0x8966DF), hex(0x6586E5), hex(0x69B5E2), hex(0x77C9A2), hex(0xA4D483),
+        hex(0xFF976F), hex(0xF8C84F), hex(0xC9CB38), hex(0x51DF62), hex(0x00DFA2), hex(0x21C8E3),
+        hex(0x5990F8), hex(0x9A6AF7), hex(0xEB57CB), hex(0xFF5C97), hex(0xFF6E71), hex(0xFF7E63),
     ]
     private let discColor = NSColor(srgbRed: 0.055, green: 0.055, blue: 0.063, alpha: 1)  // #0E0E10
 

@@ -197,6 +197,9 @@ final class CanvasToolPaletteView: NSView {
     var folderColorReader: ((UUID) -> String?)?
     /// Set a folder's tint WITHOUT undo (live hover preview; nil = restore).
     var folderColorPreviewer: ((UUID, String?) -> Void)?
+    /// The currently-open flower, so a second tap on the Color button toggles it
+    /// CLOSED instead of stacking another picker on top.
+    private weak var activeFlower: RadialColorPicker?
 
     /// Morph between the tool pills and the folder action bar (Figma 72:37017):
     /// a spring crossfade + subtle scale — the Apple-style contextual-toolbar
@@ -270,6 +273,10 @@ final class CanvasToolPaletteView: NSView {
     /// bar with no overlap.
     func presentColorFlower() {
         guard let window = self.window, let host = window.contentView else { return }
+        // Toggle: a second tap on the Color button closes the open flower.
+        if let open = activeFlower, open.superview != nil {
+            open.dismiss(); activeFlower = nil; return
+        }
         let targets = selectionProvider?() ?? []          // capture the selection now
         // Snapshot each target's current tint so a dismiss-without-pick reverts.
         let originals: [UUID: String?] = Dictionary(uniqueKeysWithValues:
@@ -294,9 +301,11 @@ final class CanvasToolPaletteView: NSView {
             self?.onColorPick?(c, targets)
         }
         picker.onDismiss = { [weak self] in
+            self?.activeFlower = nil
             guard !committed else { return }
             for id in targets { self?.folderColorPreviewer?(id, originals[id] ?? nil) }
         }
+        activeFlower = picker
         let btnCenterSelf = CGPoint(x: folderBar.frame.minX + FolderActionBarView.colorButtonCenterX,
                                     y: folderBar.frame.midY)
         let btnScreen = window.convertPoint(toScreen: convert(btnCenterSelf, to: nil))
