@@ -442,7 +442,12 @@ struct CanvasView: View {
                         .onChange(of: worldBounds) { _ in syncOverlayCamera() }
                         .opacity(cardsOpacity)
                         .blur(radius: cardsBlur)
-                        .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
+                        // Interactive in every tool mode — CanvasInputView + the
+                        // tool islands resolve per-mode behaviour (select / hand /
+                        // draw / connect / text / sticker). Only Colorform is a
+                        // read-only view. (Gating this to `.select` silently broke
+                        // every non-select tool: the native canvas got no events.)
+                        .allowsHitTesting(state.canvasMode != .colorform)
                 }
 
                 // (Smart Selection chrome is hosted in CLIPCanvasView's

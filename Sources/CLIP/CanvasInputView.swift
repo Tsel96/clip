@@ -93,11 +93,21 @@ final class CanvasInputView: NSView {
         // (world-sized) view as it scrolls/zooms, so we never track the whole
         // canvas. `.mouseMoved` resolves which card is under the cursor.
         let t = NSTrackingArea(rect: .zero,
-                               options: [.mouseMoved, .mouseEnteredAndExited,
+                               options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate,
                                          .activeInKeyWindow, .inVisibleRect],
                                owner: self, userInfo: nil)
         addTrackingArea(t)
         hoverTracking = t
+    }
+
+    /// Reliable cursor management (NSCursor.set() in mouseMoved gets reset by the
+    /// cursor system). The hand tool shows the open-grab cursor at rest.
+    override func cursorUpdate(with event: NSEvent) {
+        if config?.isHandMode() == true, mode != .pan {
+            NSCursor.openHand.set()
+        } else {
+            super.cursorUpdate(with: event)
+        }
     }
 
     override func mouseMoved(with event: NSEvent) { updateHover(event) }
