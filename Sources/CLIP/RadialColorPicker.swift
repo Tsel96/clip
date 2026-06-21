@@ -143,21 +143,8 @@ final class RadialColorPicker: NSView {
         let d = discR * 2
         let discRect = CGRect(x: discCenter.x - discR, y: discCenter.y - discR, width: d, height: d)
 
-        // 1. Soft coloured outer glow — a blurred conic spilling past the rim.
-        let glow = CAGradientLayer()
-        glow.type = .conic
-        glow.frame = discRect.insetBy(dx: -12, dy: -12)
-        glow.cornerRadius = glow.frame.width / 2
-        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
-        glow.endPoint = CGPoint(x: 0.5, y: 0)
-        glow.colors = conicColors
-        glow.opacity = 0.85
-        if let blur = CIFilter(name: "CIGaussianBlur") {
-            blur.setValue(11, forKey: "inputRadius"); glow.filters = [blur]
-        }
-        layer?.addSublayer(glow)
-
-        // 2. Dark disc backdrop, floating with a soft shadow.
+        // Dark disc backdrop, floating with a soft (neutral) shadow — no coloured
+        // glow around it (per design: the rainbow lives ONLY in the crisp rim).
         let disc = CALayer()
         disc.frame = discRect
         disc.cornerRadius = discR
