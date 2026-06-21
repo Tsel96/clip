@@ -960,7 +960,10 @@ final class ToolPaletteButton: NSView {
     /// Rest (outlined black template) ↔ selected (solid brand-yellow) artwork —
     /// swapped on selection so the SHAPE changes, not just the tint (Figma states).
     private lazy var restImage: NSImage?   = Self.loadIcon(iconName)
-    private lazy var activeImage: NSImage? = Self.loadIcon(iconName + "_active", template: false)
+    // Active art loads as a TEMPLATE too and is tinted brand-yellow — the solid
+    // `_active` SVGs make a filled yellow shape, and NSImage's SVG colour
+    // rendering is unreliable, so tinting a template is the robust path.
+    private lazy var activeImage: NSImage? = Self.loadIcon(iconName + "_active")
 
     // MARK: - Init
 
@@ -1063,7 +1066,7 @@ final class ToolPaletteButton: NSView {
         // if a tool has no `_active` asset yet.
         iconView.image = (active ? activeImage : restImage) ?? restImage
         iconView.alphaValue       = active ? 1.0 : iconRestOpacity
-        iconView.contentTintColor = (active && activeImage == nil) ? NSColor.fromHex(0xFEF33C) : .black
+        iconView.contentTintColor = active ? NSColor.fromHex(0xFEF33C) : .black
         applyGlow(active)
         refreshBackground(animated: animated)
     }
