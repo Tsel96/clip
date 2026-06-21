@@ -257,15 +257,20 @@ final class CanvasToolPaletteView: NSView {
     }
 
     /// Bloom the flower color picker above the folder bar's Color (droplet) button.
+    /// Routed through SCREEN coordinates (always y-up, bottom-left origin) so the
+    /// host view's flipped-ness can't invert "above" — the disc floats above the
+    /// bar with no overlap.
     func presentColorFlower() {
         guard let window = self.window, let host = window.contentView else { return }
         let picker = RadialColorPicker()
         picker.onPick = { [weak self] c in self?.onColorPick?(c) }
-        let colorCenterX = folderBar.frame.minX + FolderActionBarView.colorButtonCenterX
-        let barTop = folderBar.frame.maxY                 // y-up: top edge of the bar
-        let inHost = convert(CGPoint(x: colorCenterX, y: barTop), to: host)
-        // disc radius 68 + 14pt gap → the disc floats just above the bar, no overlap.
-        picker.present(in: host, at: CGPoint(x: inHost.x, y: inHost.y + 82))
+        let btnCenterSelf = CGPoint(x: folderBar.frame.minX + FolderActionBarView.colorButtonCenterX,
+                                    y: folderBar.frame.midY)
+        let btnScreen = window.convertPoint(toScreen: convert(btnCenterSelf, to: nil))
+        // Up in screen space (+y): half-bar 31 + gap 14 + disc radius 68 ≈ 113.
+        let discScreen = CGPoint(x: btnScreen.x, y: btnScreen.y + 113)
+        let discInHost = host.convert(window.convertPoint(fromScreen: discScreen), from: nil)
+        picker.present(in: host, at: discInHost)
     }
 }
 
