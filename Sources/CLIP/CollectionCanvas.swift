@@ -246,6 +246,10 @@ struct CollectionCanvas: NSViewRepresentable {
         var colorKeyMonitor: Any?
         var colorPicker: RadialColorPicker?
         var connectorController: ConnectorOverlayController?
+        // Inline connector-label editor state (used by ConnectorLabelEditor.swift +
+        // CanvasCameraController.swift, both extensions of this Coordinator).
+        var editingConnectorID: UUID?
+        var editingConnectorField: NSTextField?
         var guideController: GuideOverlayController?
         // internal (not private) so the camera-sync seam in
         // CanvasCameraController.swift can read/write the echo-suppression state.
