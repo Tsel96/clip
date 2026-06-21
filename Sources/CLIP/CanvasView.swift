@@ -364,6 +364,15 @@ struct CanvasView: View {
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }
                             },
+                            onDelete: {
+                                // Smart-selection cascade first; else the standard delete.
+                                if state.smartSelection.layout != nil,
+                                   !state.smartSelection.markedIDs.isEmpty {
+                                    state.smartSelection.deleteMarked()
+                                } else {
+                                    state.deleteSelected()
+                                }
+                            },
                             selectedNodeID: state.selectedNodeIDs.count == 1
                                 ? state.selectedNodeIDs.first : nil,
                             selectedNodeIDs: state.selectedNodeIDs,

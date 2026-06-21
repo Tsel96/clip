@@ -175,6 +175,9 @@ struct CanvasConfig {
     let selectedConnectorIDs: Set<UUID>
     /// Empty-canvas click → deselect (cards handle their own selection taps).
     let onBackgroundClick: () -> Void
+    /// Delete the current selection (Delete/⌫ key — driven by a native key
+    /// monitor since the SwiftUI menu shortcut goes stale-disabled).
+    let onDelete: () -> Void
     /// The lone selected node (drives native corner-resize hit-testing in the
     /// item). `nil` when zero or multiple nodes are selected.
     let selectedNodeID: UUID?
@@ -261,6 +264,7 @@ struct CollectionCanvas: NSViewRepresentable {
         var boundsObserver: NSObjectProtocol?
         var escMonitor: Any?
         var colorKeyMonitor: Any?
+        var deleteMonitor: Any?
         var colorPicker: RadialColorPicker?
         var connectorController: ConnectorOverlayController?
         var guideController: GuideOverlayController?
@@ -289,6 +293,7 @@ struct CollectionCanvas: NSViewRepresentable {
             if let o = boundsObserver { NotificationCenter.default.removeObserver(o) }
             if let m = escMonitor { NSEvent.removeMonitor(m) }
             if let m = colorKeyMonitor { NSEvent.removeMonitor(m) }
+            if let m = deleteMonitor { NSEvent.removeMonitor(m) }
         }
 
         /// Show the radial color picker at the cursor and recolor `id` on pick.

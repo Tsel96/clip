@@ -175,6 +175,27 @@ final class CLIPCanvasView: NSView {
             return nil
         }
 
+        // Delete / ⌫ removes the current selection. The SwiftUI menu
+        // `.keyboardShortcut(.delete)` goes stale-disabled (commands don't track
+        // the @StateObject reliably), so own it natively here — but NEVER steal
+        // Delete from a text editor (canvas text edit, search, page rename…).
+        coordinator.deleteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in
+            guard let coordinator,
+                  event.keyCode == 51 || event.keyCode == 117,      // ⌫ / fwd-delete
+                  event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+                  coordinator.config.editingTextNodeID == nil
+            else { return event }
+            // A text field / field-editor has focus → let it handle the key.
+            if let fr = coordinator.scroll?.window?.firstResponder,
+               fr is NSText || (fr as? NSView)?.isKind(of: NSTextView.self) == true {
+                return event
+            }
+            guard !coordinator.config.liveSelection().isEmpty
+                    || !coordinator.config.selectedConnectorIDs.isEmpty else { return event }
+            coordinator.config.onDelete()
+            return nil
+        }
+
         // Start centered on the actual content (not the empty world margin) so
         // pinch-zoom has the cards under the cursor.
         DispatchQueue.main.async { [weak coordinator] in coordinator?.fitContent() }
