@@ -96,12 +96,13 @@ final class RadialColorPicker: NSView {
     /// Trace an always-white ring around the (scaled) hovered petal that GLIDES
     /// between petals with a spring (Spatial's smooth selection ring), fading in
     /// on first hover and out when over no petal.
-    private func updateHoverRing(for idx: Int?) {
+    private func updateHoverRing(for idx: Int?, animated: Bool) {
         guard let idx else {
+            // Release: ease the ring out smoothly.
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = hoverRing.presentation()?.opacity ?? hoverRing.opacity
             fade.toValue = 0
-            fade.duration = 0.16
+            fade.duration = 0.18
             hoverRing.opacity = 0
             hoverRing.add(fade, forKey: "ringFade")
             return
@@ -111,24 +112,21 @@ final class RadialColorPicker: NSView {
         let rect = CGRect(x: petal.center.x - scaled, y: petal.center.y - scaled,
                           width: scaled * 2, height: scaled * 2)
         let newPath = CGPath(ellipseIn: rect, transform: nil)
-        let wasVisible = (hoverRing.presentation()?.opacity ?? hoverRing.opacity) > 0.01
-        let from = hoverRing.presentation()?.path ?? hoverRing.path
-        hoverRing.path = newPath
-        if wasVisible, let from {
-            // Morph the ring from the old petal to the new one — same spring as
-            // the petal lift, so the ring tracks it.
+        if animated {
             let a = CASpringAnimation(keyPath: "path")
-            a.fromValue = from
+            a.fromValue = hoverRing.presentation()?.path ?? hoverRing.path
             a.toValue = newPath
             a.stiffness = CLIPSpring.Preset.control.stiffness
             a.damping = CLIPSpring.Preset.control.caDamping
             a.duration = a.settlingDuration
+            hoverRing.path = newPath
             hoverRing.add(a, forKey: "ringPath")
         } else {
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 0; fade.toValue = 1
-            fade.duration = 0.14
-            hoverRing.add(fade, forKey: "ringFade")
+            // Instant snap to the hovered leaf — hover feedback is immediate.
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            hoverRing.removeAnimation(forKey: "ringPath")
+            hoverRing.path = newPath
+            CATransaction.commit()
         }
         hoverRing.opacity = 1
     }
@@ -186,6 +184,17 @@ final class RadialColorPicker: NSView {
                                                 width: d - rimWidth, height: d - rimWidth), transform: nil)
         rim.mask = rimMask
         layer?.addSublayer(rim)
+
+        // 4. Black ring just OUTSIDE the gradient (offset), defining the bright rim
+        //    against the soft glow — Spatial's dark keyline around the spectrum.
+        let blackRing = CAShapeLayer()
+        blackRing.fillColor = nil
+        blackRing.strokeColor = NSColor.black.cgColor
+        blackRing.lineWidth = 2.5
+        let br = discR + 1.5
+        blackRing.path = CGPath(ellipseIn: CGRect(x: discCenter.x - br, y: discCenter.y - br,
+                                                  width: br * 2, height: br * 2), transform: nil)
+        layer?.addSublayer(blackRing)
     }
 
     // MARK: Build — flower
@@ -220,9 +229,15 @@ final class RadialColorPicker: NSView {
         let p = CAShapeLayer()
         p.path = CGPath(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2), transform: nil)
         p.fillColor = color.cgColor
+        // Spatial: each leaf has a soft outline + a small drop shadow, so the
+        // circles read as distinct glossy chips stacked over one another.
+        p.strokeColor = NSColor.white.withAlphaComponent(0.55).cgColor
+        p.lineWidth = 1
+        p.shadowColor = NSColor.black.cgColor
+        p.shadowOpacity = 0.30
+        p.shadowRadius = 2.5
+        p.shadowOffset = CGSize(width: 0, height: -1.5)   // downward (picker view is y-up)
         p.zPosition = baseZ
-        // No stroke/shadow — overlap + the dark disc behind give the separation,
-        // and a per-petal shadow read as an ugly outline on the hovered (scaled) one.
         layer?.addSublayer(p)
         petals.append(Petal(layer: p, color: color, center: center, r: r, isCore: isCore, baseZ: baseZ))
     }
@@ -243,16 +258,16 @@ final class RadialColorPicker: NSView {
         hovered = idx
         if idx != nil { CLIPHaptics.snap() }
         (idx != nil ? NSCursor.pointingHand : NSCursor.arrow).set()
-        applyHoverScales(hovered: idx)
-        updateHoverRing(for: idx)
+        applyHoverScales(hovered: idx, animated: false)   // instant on hover
+        updateHoverRing(for: idx, animated: false)
         if !picked { onHoverPreview(idx.map { petals[$0].color }) }
     }
 
     override func mouseExited(with event: NSEvent) {
         hovered = nil
         NSCursor.arrow.set()
-        applyHoverScales(hovered: nil)
-        updateHoverRing(for: nil)
+        applyHoverScales(hovered: nil, animated: true)    // smooth on release
+        updateHoverRing(for: nil, animated: true)
         if !picked { onHoverPreview(nil) }
     }
 
@@ -260,11 +275,11 @@ final class RadialColorPicker: NSView {
     /// circle scales by a smooth Gaussian falloff of its distance to it, so the
     /// neighbours swell a little and the picker breathes as one — all on the
     /// snappy control spring.
-    private func applyHoverScales(hovered idx: Int?) {
+    private func applyHoverScales(hovered idx: Int?, animated: Bool) {
         guard let idx else {
             for petal in petals {
                 petal.layer.zPosition = petal.baseZ
-                scale(petal.layer, 1.0, center: petal.center)
+                scale(petal.layer, 1.0, center: petal.center, animated: animated)
             }
             return
         }
@@ -276,7 +291,7 @@ final class RadialColorPicker: NSView {
             // Only the hovered leaf jumps to the front; neighbours keep their
             // resting z so the stack never re-shuffles (that churn read as glitchy).
             petal.layer.zPosition = petal.baseZ + (i == idx ? 100_000 : 0)
-            scale(petal.layer, 1 + boost * g, center: petal.center)
+            scale(petal.layer, 1 + boost * g, center: petal.center, animated: animated)
         }
     }
 
@@ -305,11 +320,21 @@ final class RadialColorPicker: NSView {
         return best
     }
 
-    private func scale(_ layer: CAShapeLayer, _ s: CGFloat, center pivot: CGPoint) {
+    /// Spatial's leaves snap up INSTANTLY on hover and ease back SMOOTHLY on
+    /// release — so `animated` is false while hovering (incl. moving between
+    /// leaves) and true only on exit.
+    private func scale(_ layer: CAShapeLayer, _ s: CGFloat, center pivot: CGPoint, animated: Bool) {
         let to = CATransform3DConcat(
             CATransform3DConcat(CATransform3DMakeTranslation(-pivot.x, -pivot.y, 0),
                                 CATransform3DMakeScale(s, s, 1)),
             CATransform3DMakeTranslation(pivot.x, pivot.y, 0))
+        if !animated {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            layer.removeAnimation(forKey: "hoverScale")
+            layer.transform = to
+            CATransaction.commit()
+            return
+        }
         let a = CASpringAnimation(keyPath: "transform")
         a.fromValue = layer.presentation()?.transform ?? layer.transform
         a.toValue = to
