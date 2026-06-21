@@ -152,6 +152,9 @@ struct CanvasConfig {
     let isDrawMode: () -> Bool
     /// True in connect (connectors) mode — native drag-to-connect in CanvasInputView.
     let isConnectMode: () -> Bool
+    /// True in hand (pan) mode — the above-island passes clicks through so
+    /// `CanvasInputView` grabs-and-pans the scroll view (Figma hand tool).
+    let isHandMode: () -> Bool
     /// Create a connector between two nodes (drag-to-connect commit).
     let onAddConnector: (UUID, UUID) -> Void
     /// Live marker colour + width for the native draw preview.
