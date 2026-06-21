@@ -118,8 +118,10 @@ final class CLIPCanvasView: NSView {
             let host = ToolOverlayHostingView(rootView: above)
             host.isSelectMode = { [weak coordinator] in
                 guard let c = coordinator?.config else { return true }
-                // Draw also passes through → CanvasInputView draws the stroke natively.
-                return c.isSelectMode() || c.isDrawMode()
+                // Draw + connect also pass through → CanvasInputView owns the
+                // native stroke / drag-to-connect (the SwiftUI ToolInputLayer's
+                // connect used the wrong coord space on the scroll canvas).
+                return c.isSelectMode() || c.isDrawMode() || c.isConnectMode()
             }
             host.scrollRef = scroll
             host.frame = bounds
