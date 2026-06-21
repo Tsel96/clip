@@ -1,5 +1,10 @@
 import AppKit
 
+private func hex(_ v: Int) -> NSColor {
+    NSColor(srgbRed: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255,
+            blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+}
+
 // MARK: - Native radial color picker (Spatial's flower color wheel, 1:1)
 
 /// A pixel-faithful copy of Spatial's color selector: a dark disc carrying a
@@ -39,15 +44,11 @@ final class RadialColorPicker: NSView {
         hex(0x2A2A2E), hex(0xFF9770), hex(0xFFC64E), hex(0xBFE84E), hex(0x35EE75), hex(0x00F0C9),
         hex(0x29D1E7), hex(0x60A7FE), hex(0x9A7EFD), hex(0xE86EEA), hex(0xFF6DB7), hex(0xFF7382),
     ]
-    private static func hex(_ v: Int) -> NSColor {
-        NSColor(srgbRed: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255,
-                blue: CGFloat(v & 0xFF) / 255, alpha: 1)
-    }
     private let discColor = NSColor(srgbRed: 0.055, green: 0.055, blue: 0.063, alpha: 1)  // #0E0E10
     private let barColor  = NSColor(srgbRed: 0.114, green: 0.125, blue: 0.137, alpha: 1)  // #1D2023
     private let iconColor = NSColor(srgbRed: 0.62, green: 0.63, blue: 0.64, alpha: 1)
 
-    private struct Petal { let layer: CAShapeLayer; let color: NSColor; let center: CGPoint; let r: CGFloat; let isCenter: Bool }
+    private struct Petal { let layer: CAShapeLayer; let color: NSColor; let center: CGPoint; let r: CGFloat; let isCenter: Bool; let baseZ: CGFloat }
     private var petals: [Petal] = []
     private var hovered: Int? = nil
     private var tracking: NSTrackingArea?
@@ -151,7 +152,7 @@ final class RadialColorPicker: NSView {
             p.shadowOpacity = 0.22; p.shadowRadius = 4
         }
         layer?.addSublayer(p)
-        petals.append(Petal(layer: p, color: color, center: center, r: r, isCenter: isCenter))
+        petals.append(Petal(layer: p, color: color, center: center, r: r, isCenter: isCenter, baseZ: z))
     }
 
     // MARK: Build — control bar
@@ -219,6 +220,7 @@ final class RadialColorPicker: NSView {
             (idx != nil ? NSCursor.pointingHand : NSCursor.arrow).set()
             for (i, petal) in petals.enumerated() {
                 let s: CGFloat = i == idx ? (petal.isCenter ? 1.9 : 1.42) : 1.0
+                petal.layer.zPosition = petal.baseZ + (i == idx ? 40 : 0)
                 scale(petal.layer, s, center: petal.center)
             }
         }
@@ -259,7 +261,7 @@ final class RadialColorPicker: NSView {
         var best: Int? = nil; var bestZ: CGFloat = -1
         for (i, petal) in petals.enumerated() {
             if hypot(p.x - petal.center.x, p.y - petal.center.y) <= petal.r,
-               petal.layer.zPosition >= bestZ { best = i; bestZ = petal.layer.zPosition }
+               petal.baseZ >= bestZ { best = i; bestZ = petal.baseZ }
         }
         return best
     }
@@ -277,7 +279,6 @@ final class RadialColorPicker: NSView {
         a.duration = a.settlingDuration
         layer.transform = to
         layer.add(a, forKey: "hoverScale")
-        layer.zPosition += (s > 1 ? 20 : -20)
     }
 
     // MARK: Present / dismiss
