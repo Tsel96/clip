@@ -142,6 +142,10 @@ struct CanvasConfig {
     /// True in draw (marker) mode — the above-island ALSO passes clicks through
     /// then, so `CanvasInputView` draws the stroke natively (no SwiftUI gesture).
     let isDrawMode: () -> Bool
+    /// True in connect (connectors) mode — native drag-to-connect in CanvasInputView.
+    let isConnectMode: () -> Bool
+    /// Create a connector between two nodes (drag-to-connect commit).
+    let onAddConnector: (UUID, UUID) -> Void
     /// Live marker colour + width for the native draw preview.
     let drawColor: () -> NSColor
     let drawWidth: () -> CGFloat

@@ -17,7 +17,7 @@ final class CanvasInputView: NSView {
     override var isFlipped: Bool { true }
     weak var coordinator: CollectionCanvas.Coordinator?
 
-    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw }
+    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw, pendingConnect, connect }
     /// Which edges a resize drag moves. A corner moves two (one H + one V); an
     /// edge moves one — matching Spatial's corner + edge resize handles.
     private struct Grip {
@@ -47,6 +47,7 @@ final class CanvasInputView: NSView {
     private var moveStartPos: [UUID: CGPoint] = [:] // world coords
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
+    private var connectSourceID: UUID?              // drag-to-connect origin node
     private var didBegin = false
     private var clickedSelectedNoShift: UUID?       // collapse-to-one on a no-drag click
 
@@ -140,6 +141,17 @@ final class CanvasInputView: NSView {
         if p.isDrawMode() {
             mode = .draw
             drawPoints = [pt]
+            return
+        }
+
+        // Native drag-to-connect (connectors tool): drag from one card to another.
+        if p.isConnectMode() {
+            if let n = hitNode(at: pt, p), !n.isSection {
+                mode = .pendingConnect
+                connectSourceID = n.id
+            } else {
+                mode = .idle
+            }
             return
         }
 
@@ -261,6 +273,15 @@ final class CanvasInputView: NSView {
         case .draw:
             drawPoints.append(pt)
             updateDrawPreview(p)
+        case .pendingConnect, .connect:
+            mode = .connect
+            guard let srcID = connectSourceID,
+                  let src = p.nodes.first(where: { $0.id == srcID }) else { break }
+            let hovered = hitNode(at: pt, p)
+            let target = (hovered != nil && hovered!.id != srcID && !hovered!.isSection) ? hovered : nil
+            let srcRect = contentFrame(src, p)
+            let tgtRect = target.map { contentFrame($0, p) } ?? CGRect(x: pt.x, y: pt.y, width: 0, height: 0)
+            coordinator?.connectorController?.setPreview(sourceRect: srcRect, targetRect: tgtRect, magnification: mag)
         case .idle: break
         }
     }
@@ -294,9 +315,17 @@ final class CanvasInputView: NSView {
                     CGPoint(x: $0.x + wb.minX, y: $0.y + wb.minY)
                 })
             }
-        case .marquee, .idle:
-            break
+        case .connect:
+            let pt = convert(event.locationInWindow, from: nil)
+            if let srcID = connectSourceID, let hovered = hitNode(at: pt, p),
+               hovered.id != srcID, !hovered.isSection {
+                p.onAddConnector(srcID, hovered.id)
+            }
+            coordinator?.connectorController?.clearPreview()
+        case .pendingConnect, .marquee, .idle:
+            coordinator?.connectorController?.clearPreview()
         }
+        connectSourceID = nil
         coordinator?.refreshChrome()
         reset()
     }

@@ -83,6 +83,42 @@ final class ConnectorOverlayController {
         CATransaction.commit()
     }
 
+    // MARK: - Drag-to-connect preview
+
+    private var previewLine: CAShapeLayer?
+    private var previewArrow: CAShapeLayer?
+
+    /// Draw the in-flight drag-to-connect bezier (dashed green) from `sourceRect`
+    /// to `targetRect` (a 0-size rect at the cursor when not hovering a node).
+    func setPreview(sourceRect: CGRect, targetRect: CGRect, magnification: CGFloat) {
+        let mag = max(magnification, 0.0001)
+        if previewLine == nil {
+            let line = CAShapeLayer()
+            line.fillColor = nil
+            line.lineCap = .round
+            line.strokeColor = Self.green.cgColor
+            line.zPosition = 60
+            let arrow = CAShapeLayer()
+            arrow.strokeColor = nil
+            arrow.fillColor = Self.green.cgColor
+            arrow.zPosition = 60
+            root.addSublayer(line); root.addSublayer(arrow)
+            previewLine = line; previewArrow = arrow
+        }
+        let route = ConnectorPathMath.route(source: sourceRect, target: targetRect)
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        previewLine?.path = route.path
+        previewLine?.lineWidth = Self.screenLineWidth / mag
+        previewLine?.lineDashPattern = [NSNumber(value: 5 / mag), NSNumber(value: 4 / mag)]
+        previewArrow?.path = arrowPath(tip: route.arrowTip, from: route.arrowFrom, mag: mag)
+        CATransaction.commit()
+    }
+
+    func clearPreview() {
+        previewLine?.removeFromSuperlayer(); previewLine = nil
+        previewArrow?.removeFromSuperlayer(); previewArrow = nil
+    }
+
     /// The connector whose line passes within `tolerance` (content units) of
     /// `point` — used by CanvasInputView to select / edit / delete a connector.
     func hitTest(_ point: CGPoint, tolerance: CGFloat) -> UUID? {

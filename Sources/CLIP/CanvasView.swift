@@ -392,6 +392,8 @@ struct CanvasView: View {
                             ) : nil,
                             isSelectMode: { state.toolMode == .select },
                             isDrawMode: { state.toolMode == .draw },
+                            isConnectMode: { state.toolMode == .connect },
+                            onAddConnector: { src, dst in state.addConnector(from: src, to: dst) },
                             drawColor: {
                                 let c = state.drawColor
                                 return NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green),
