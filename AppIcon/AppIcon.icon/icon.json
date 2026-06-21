@@ -10,7 +10,7 @@
           "image-name" : "Union.svg",
           "name" : "Union",
           "position" : {
-            "scale" : 1.0,
+            "scale" : 1.4,
             "translation-in-points" : [
               0,
               0
@@ -25,7 +25,7 @@
           "image-name" : "Union (Stroke).svg",
           "name" : "Union (Stroke)",
           "position" : {
-            "scale" : 1.0,
+            "scale" : 1.4,
             "translation-in-points" : [
               0,
               0
