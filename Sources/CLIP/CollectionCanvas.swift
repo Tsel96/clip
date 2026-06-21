@@ -444,15 +444,16 @@ struct CollectionCanvas: NSViewRepresentable {
         /// them into the CAShapeLayer controller. Driven from `refreshChrome`, so
         /// it tracks node changes (apply → refreshChrome) AND zoom (bounds
         /// observer → refreshChrome). No-op unless `useNativeConnectors`.
-        func refreshConnectors(offsets: [UUID: CGPoint] = [:]) {
+        func refreshConnectors() {
             guard let cc = connectorController else { return }
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
             var frames: [UUID: CGRect] = [:]
             for n in config.nodes {
-                let o = offsets[n.id] ?? .zero
-                frames[n.id] = CGRect(x: n.position.x - minX + o.x, y: n.position.y - minY + o.y,
+                frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
                                       width: max(1, n.width), height: max(1, n.height ?? 120))
             }
+            // Committed frames only; live drag offsets live in the controller
+            // (`setLiveDragOffsets`) and are re-applied on every redraw.
             cc.update(connectors: config.connectors, nodeFrames: frames,
                       selected: config.selectedConnectorIDs,
                       magnification: scroll?.magnification ?? 1)
@@ -478,12 +479,13 @@ struct CollectionCanvas: NSViewRepresentable {
                 cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = t
             }
             CATransaction.commit()
-            // Native connectors track the dragged cards live (no per-tick model
-            // write — the model commits on mouse-up; this feeds the offset directly).
-            if connectorController != nil {
+            // Native connectors track the dragged cards live: feed the offset to
+            // the controller, which re-applies it on every redraw (so nothing can
+            // reset the lines mid-drag). Model commits on mouse-up.
+            if let cc = connectorController {
                 var offs: [UUID: CGPoint] = [:]
                 for id in startPos.keys { offs[id] = CGPoint(x: dx, y: dy) }
-                refreshConnectors(offsets: offs)
+                cc.setLiveDragOffsets(offs)
             }
         }
 
@@ -505,6 +507,21 @@ struct CollectionCanvas: NSViewRepresentable {
                 // Clear the live drag transform explicitly (don't rely on reloadData
                 // to discard it — required if item recycling is ever enabled).
                 cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = CATransform3DIdentity
+            }
+            // Redraw connectors at the COMMITTED positions and clear the live
+            // drag offset in one shot (avoids a double-offset / snap-back flicker
+            // before SwiftUI's updateNSView round-trips the new model positions).
+            if let cc = connectorController {
+                var frames: [UUID: CGRect] = [:]
+                for n in nodes {
+                    let p = startPos[n.id].map { CGPoint(x: $0.x + dx, y: $0.y + dy) } ?? n.position
+                    frames[n.id] = CGRect(x: p.x - minX, y: p.y - minY,
+                                          width: max(1, n.width), height: max(1, n.height ?? 120))
+                }
+                cc.setLiveDragOffsets([:])
+                cc.update(connectors: config.connectors, nodeFrames: frames,
+                          selected: config.selectedConnectorIDs,
+                          magnification: scroll?.magnification ?? 1)
             }
             layout.invalidateLayout()
             cv.reloadData()

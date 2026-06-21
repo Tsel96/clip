@@ -20,8 +20,18 @@ final class ConnectorOverlayController {
     private var bundles: [UUID: Bundle] = [:]
 
     /// Midpoint of each connector in content space — used by the double-click
-    /// label editor to position its field. Refreshed every `update`.
+    /// label editor to position its field. Refreshed every `redraw`.
     private(set) var midpoints: [UUID: CGPoint] = [:]
+
+    // Cached inputs from the last full `update`, so a live card drag can redraw
+    // from them + `liveOffsets` without rebuilding from the committed model.
+    private var lastConnectors: [Connector] = []
+    private var lastFrames: [UUID: CGRect] = [:]
+    private var lastSelected: Set<UUID> = []
+    private var lastMag: CGFloat = 1
+    /// Per-node visual offsets while a card is being dragged (content units).
+    /// Applied on EVERY redraw so a stray refresh can't reset the lines mid-drag.
+    private var liveOffsets: [UUID: CGPoint] = [:]
 
     // Base on-screen sizes (divided by magnification each refresh).
     private static let screenLineWidth: CGFloat = 2
@@ -42,22 +52,40 @@ final class ConnectorOverlayController {
 
     func removeFromSuperlayer() { root.removeFromSuperlayer() }
 
-    /// `nodeFrames`: content-space frames keyed by node id. `selected`: selected
-    /// connector ids. Recomputes every bezier (cheap) so live drag offsets and
-    /// zoom changes both flow through one path.
+    /// Full refresh from the model: cache the inputs, then redraw (applying any
+    /// active live drag offsets). `nodeFrames` are the committed content-space
+    /// frames (no drag offset — that's `liveOffsets`).
     func update(connectors: [Connector],
                 nodeFrames: [UUID: CGRect],
                 selected: Set<UUID>,
                 magnification: CGFloat) {
-        let mag = max(magnification, 0.0001)
+        lastConnectors = connectors
+        lastFrames = nodeFrames
+        lastSelected = selected
+        lastMag = max(magnification, 0.0001)
+        redraw()
+    }
+
+    /// Set per-node drag offsets and redraw immediately. Called every drag tick
+    /// (`liveReposition`) so the lines track the cards live; persists across any
+    /// other `update`/`redraw` until cleared with `[:]` on drop.
+    func setLiveDragOffsets(_ offsets: [UUID: CGPoint]) {
+        liveOffsets = offsets
+        redraw()
+    }
+
+    private func redraw() {
+        let mag = lastMag
         var seen = Set<UUID>()
         var mids: [UUID: CGPoint] = [:]
 
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        for c in connectors {
-            guard let s = nodeFrames[c.sourceID], let t = nodeFrames[c.targetID] else { continue }
+        for c in lastConnectors {
+            guard var s = lastFrames[c.sourceID], var t = lastFrames[c.targetID] else { continue }
+            if let o = liveOffsets[c.sourceID] { s.origin.x += o.x; s.origin.y += o.y }
+            if let o = liveOffsets[c.targetID] { t.origin.x += o.x; t.origin.y += o.y }
             seen.insert(c.id)
-            let isSel = selected.contains(c.id)
+            let isSel = lastSelected.contains(c.id)
             let route = ConnectorPathMath.route(source: s, target: t)
             mids[c.id] = route.midpoint
 
