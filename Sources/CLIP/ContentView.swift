@@ -29,6 +29,16 @@ struct ContentView: View {
                 // top (traffic lights float over the sidebar, not the canvas).
                 .ignoresSafeArea(.container, edges: .top)
                 .frame(minWidth: 480, minHeight: 480)
+                // The sidebar's rightward drop shadow is clipped by the split-view
+                // column, so render it at the canvas's leading edge instead (not
+                // clipped here) — a soft fade matching Figma's `4 0 / blur 15`.
+                .overlay(alignment: .leading) {
+                    LinearGradient(colors: [Color.black.opacity(0.12), .clear],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 14)
+                        .allowsHitTesting(false)
+                        .ignoresSafeArea()
+                }
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $state.isAddSheetPresented) {
                     AddToCanvasSheet(
