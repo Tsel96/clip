@@ -525,7 +525,7 @@ private final class MainPillView: NSView {
     // Marker:   x=117  (overflows above rim by 12)
     // Stickers: x=176  (overflows above rim by 6)
     private static let markerX: CGFloat   = 117
-    private static let markerY: CGFloat   = -12
+    private static let markerY: CGFloat   = -8    // base sits flush with the pill bottom (no gap)
     private static let stickersX: CGFloat = 176
     private static let stickersY: CGFloat = -6
 
