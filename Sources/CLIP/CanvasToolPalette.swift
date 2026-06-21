@@ -46,10 +46,21 @@ final class CanvasToolPaletteView: NSView {
     private let mainShadows = makeCandyShadowLayers()
     private let addShadows  = makeCandyShadowLayers()
 
+    /// The folder-selection action bar (Download / Color / Eject) the toolbar
+    /// morphs INTO when a folder is selected (Figma 72:37017). Same candy skin,
+    /// narrower capsule; crossfades with the tool pills via `setFolderMode`.
+    private let folderBar = FolderActionBarView()
+    private let folderShadows = makeCandyShadowLayers()
+    private var folderMode = false
+
     /// Callback injected by `configure(active:onTap:)`.
     var onToolTap: ((ToolMode) -> Void)?
     var onAddTap: (() -> Void)?
     var onFolderTap: (() -> Void)?
+    // Folder-bar actions (only live while morphed in).
+    var onColorTap: (() -> Void)?
+    var onDownloadTap: (() -> Void)?
+    var onEjectTap: (() -> Void)?
 
     // MARK: - Init
 
@@ -68,7 +79,7 @@ final class CanvasToolPaletteView: NSView {
         layer?.masksToBounds = false
 
         // Shadow layers go behind the pill subviews (zPosition keeps them back).
-        (mainShadows + addShadows).forEach {
+        (mainShadows + addShadows + folderShadows).forEach {
             $0.zPosition = -1
             layer?.addSublayer($0)
         }
@@ -79,6 +90,15 @@ final class CanvasToolPaletteView: NSView {
         mainPill.onToolTap   = { [weak self] tool in self?.onToolTap?(tool) }
         mainPill.onFolderTap = { [weak self] in self?.onFolderTap?() }
         addPill.onTap        = { [weak self] in self?.onAddTap?() }
+
+        // Folder bar starts hidden + slightly shrunk (springs in on morph).
+        addSubview(folderBar)
+        folderBar.alphaValue = 0
+        folderBar.isHidden = true
+        folderShadows.forEach { $0.opacity = 0 }
+        folderBar.onDownload = { [weak self] in self?.onDownloadTap?() }
+        folderBar.onColor    = { [weak self] in self?.onColorTap?() }
+        folderBar.onEject    = { [weak self] in self?.onEjectTap?() }
     }
 
     // MARK: - Layout
@@ -142,6 +162,14 @@ final class CanvasToolPaletteView: NSView {
                            radius: Self.contentH / 2, downSign: -1)
         layoutCandyShadows(addShadows, capsule: addCapsule,
                            radius: Self.contentH / 2, downSign: -1)
+
+        // Folder bar — centered on the whole toolbar (so the morph collapses to
+        // the row's centre), same bottom + height as the pills.
+        let folderRect = NSRect(x: b.width / 2 - FolderActionBarView.outerW / 2, y: bottomY,
+                                width: FolderActionBarView.outerW, height: Self.contentH)
+        folderBar.frame = folderRect
+        layoutCandyShadows(folderShadows, capsule: folderRect,
+                           radius: Self.contentH / 2, downSign: -1)
     }
 
     // MARK: - State
@@ -153,6 +181,65 @@ final class CanvasToolPaletteView: NSView {
     /// Drives the "+" button's green selected skin (link input open/closed).
     func setAddSelected(_ on: Bool) {
         addPill.setSelected(on)
+    }
+
+    // MARK: - Folder-bar morph
+
+    /// Called from `RadialColorPicker.onPick` (wired by the bridge).
+    var onColorPick: ((NSColor) -> Void)?
+
+    /// Morph between the tool pills and the folder action bar (Figma 72:37017):
+    /// a spring crossfade + subtle scale — the Apple-style contextual-toolbar
+    /// swap. The candy skin is shared, so it reads as one bar changing contents.
+    func setFolderMode(_ on: Bool, animated: Bool = true) {
+        guard on != folderMode else { return }
+        folderMode = on
+        let dur: CFTimeInterval = animated ? 0.30 : 0
+        let toolViews: [NSView] = [mainPill, addPill]
+
+        if on { folderBar.isHidden = false } else { mainPill.isHidden = false; addPill.isHidden = false }
+
+        for v in toolViews {
+            springFade(v.layer, to: on ? 0 : 1, dur: dur)
+            CLIPSpring.scale(v, to: on ? 0.90 : 1.0, preset: .surface, key: "morph")
+        }
+        (mainShadows + addShadows).forEach { springFade($0, to: on ? 0 : 1, dur: dur) }
+        springFade(folderBar.layer, to: on ? 1 : 0, dur: dur)
+        CLIPSpring.scale(folderBar, to: on ? 1.0 : 0.90, preset: .surface, key: "morph")
+        folderShadows.forEach { springFade($0, to: on ? 1 : 0, dur: dur) }
+
+        // Drop the faded-out group from hit-testing once the crossfade settles.
+        let target = on
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(dur, 0.01) + 0.05) { [weak self] in
+            guard let self, self.folderMode == target else { return }
+            self.mainPill.isHidden = target
+            self.addPill.isHidden = target
+            self.folderBar.isHidden = !target
+        }
+    }
+
+    private func springFade(_ layer: CALayer?, to v: CGFloat, dur: CFTimeInterval) {
+        guard let layer else { return }
+        if dur <= 0 { layer.removeAnimation(forKey: "morphFade"); layer.opacity = Float(v); return }
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = layer.presentation()?.opacity ?? layer.opacity
+        a.toValue = v
+        a.duration = dur
+        a.timingFunction = CLIPSpring.easeOutSoft
+        a.fillMode = .forwards
+        layer.opacity = Float(v)
+        layer.add(a, forKey: "morphFade")
+    }
+
+    /// Bloom the flower color picker above the folder bar's Color (droplet) button.
+    func presentColorFlower() {
+        guard let window = self.window, let host = window.contentView else { return }
+        let picker = RadialColorPicker()
+        picker.onPick = { [weak self] c in self?.onColorPick?(c) }
+        let colorCenterX = folderBar.frame.minX + FolderActionBarView.colorButtonCenterX
+        let barTop = folderBar.frame.maxY                 // y-up: top edge of the bar
+        let inHost = convert(CGPoint(x: colorCenterX, y: barTop), to: host)
+        picker.present(in: host, at: CGPoint(x: inHost.x, y: inHost.y + 96))   // disc sits above the bar
     }
 }
 
