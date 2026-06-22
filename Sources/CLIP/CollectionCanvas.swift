@@ -1150,6 +1150,7 @@ final class CardItemView: NSView {
         let n = liveNode
         let lifted = isSelectedNow || isHoveredNow
         applyLiftScale(lifted, kind: n?.kind, angle: angle ?? (n?.rotation ?? 0))
+        updateShadow()      // re-bake the rotated shadow silhouette live
     }
 
     private var lastLiftFactor: CGFloat = 1.0
@@ -1194,24 +1195,9 @@ final class CardItemView: NSView {
                 CATransaction.commit()
             }
         }
-        // The shadow layer's frame is OFFSET by the blur margin, so its rotation
-        // pivot (the item centre) sits at `(W/2 + m, H/2 + m)` in the shadow's own
-        // coordinate space — same composed pivot as above, shifted by the margin.
-        // It rotates with the card but doesn't lift-scale (steady-size float).
-        let m = Self.shadowMargin
-        let scx = bounds.width / 2 + m, scy = bounds.height / 2 + m
-        var st = CATransform3DMakeTranslation(-scx, -scy, 0)
-        if angle != 0 { st = CATransform3DConcat(st, CATransform3DMakeRotation(angle, 0, 0, 1)) }
-        st = CATransform3DConcat(st, CATransform3DMakeTranslation(scx, scy, 0))
-        if animateLift {
-            shadowLayer.add(Self.liftSpring(from: shadowLayer.presentation()?.transform ?? shadowLayer.transform,
-                                            to: st), forKey: "rot")
-            shadowLayer.transform = st
-        } else {
-            CATransaction.begin(); CATransaction.setDisableActions(true)
-            shadowLayer.transform = st
-            CATransaction.commit()
-        }
+        // The shadow does NOT use a layer transform (its offset frame +
+        // anchorPoint made every pivot slide it). Its rotation is baked straight
+        // into the `shadowPath` in `updateShadow` instead — bulletproof.
     }
 
     /// The canvas-item scale spring (Spatial's `CanvasItemsAnimator` /
@@ -1370,9 +1356,21 @@ final class CardItemView: NSView {
         shadowLayer.shadowOpacity = baseOpacity         // baked (fade is on .opacity)
         shadowLayer.shadowRadius = radius
         shadowLayer.shadowOffset = CGSize(width: 0, height: offsetY)
-        shadowLayer.shadowPath = CGPath(roundedRect: shadowRect,
-                                        cornerWidth: shadowR, cornerHeight: shadowR,
-                                        transform: nil)
+        // Bake the card's rotation INTO the silhouette path (rotated about its own
+        // centre) — so the shadow matches the rotated card and stays put. No layer
+        // transform (which kept sliding it). `liveRotationOverride` makes it track
+        // the live handle drag.
+        let basePath = CGPath(roundedRect: shadowRect,
+                              cornerWidth: shadowR, cornerHeight: shadowR, transform: nil)
+        let angle = liveRotationOverride ?? n.rotation
+        if angle != 0 {
+            let cx = shadowRect.midX, cy = shadowRect.midY
+            var t = CGAffineTransform(translationX: cx, y: cy)
+                .rotated(by: angle).translatedBy(x: -cx, y: -cy)
+            shadowLayer.shadowPath = basePath.copy(using: &t) ?? basePath
+        } else {
+            shadowLayer.shadowPath = basePath
+        }
         CATransaction.commit()
     }
 }
