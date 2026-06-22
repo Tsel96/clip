@@ -21,7 +21,7 @@ final class CanvasInputView: NSView {
     override var acceptsFirstResponder: Bool { true }
     weak var coordinator: CollectionCanvas.Coordinator?
 
-    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw, pendingConnect, connect, moveLabel, pan }
+    private enum Mode { case idle, pendingMove, move, resize, rotate, pendingMarquee, marquee, draw, pendingConnect, connect, moveLabel, pan }
     /// Which edges a resize drag moves. A corner moves two (one H + one V); an
     /// edge moves one — matching Spatial's corner + edge resize handles.
     private struct Grip {
@@ -52,6 +52,7 @@ final class CanvasInputView: NSView {
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
     private var optionDuplicated = false            // Option-drag duplicated this drag already
+    private var rotateNodeID: UUID?                 // node being rotated by the handle
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
     private var labelDragID: UUID?                  // connector whose label is being dragged
@@ -184,8 +185,18 @@ final class CanvasInputView: NSView {
         CGRect(x: n.position.x - p.worldBounds.minX, y: n.position.y - p.worldBounds.minY,
                width: n.width, height: n.height ?? 120)
     }
+    /// Inverse-rotate a content-space point around the node's centre, so a rotated
+    /// node can be hit-tested / gripped against its upright (axis-aligned) frame.
+    private func localPoint(_ pt: NSPoint, in n: CanvasNode, _ p: CanvasConfig) -> NSPoint {
+        guard n.rotation != 0 else { return pt }
+        let f = contentFrame(n, p)
+        let cx = f.midX, cy = f.midY
+        let dx = pt.x - cx, dy = pt.y - cy
+        let ca = cos(-n.rotation), sa = sin(-n.rotation)
+        return NSPoint(x: cx + dx * ca - dy * sa, y: cy + dx * sa + dy * ca)
+    }
     private func hitNode(at pt: NSPoint, _ p: CanvasConfig) -> CanvasNode? {
-        p.nodes.reversed().first { contentFrame($0, p).contains(pt) }   // topmost-first
+        p.nodes.reversed().first { contentFrame($0, p).contains(localPoint(pt, in: $0, p)) }
     }
     private func isResizable(_ n: CanvasNode) -> Bool {
         if case .text = n.kind { return false }
@@ -202,16 +213,41 @@ final class CanvasInputView: NSView {
     /// zoom but is capped so the grips never cover the whole card.
     private func grip(at pt: NSPoint, of n: CanvasNode, _ p: CanvasConfig) -> Grip? {
         let f = contentFrame(n, p)
+        let lp = localPoint(pt, in: n, p)          // upright-frame space
         let r = min(26 / mag, min(f.width, f.height) * 0.25)
         var g = Grip()
-        g.left   = pt.x <= f.minX + r
-        g.right  = pt.x >= f.maxX - r
-        g.top    = pt.y <= f.minY + r
-        g.bottom = pt.y >= f.maxY - r
+        g.left   = lp.x <= f.minX + r
+        g.right  = lp.x >= f.maxX - r
+        g.top    = lp.y <= f.minY + r
+        g.bottom = lp.y >= f.maxY - r
         // Must be within the frame (plus a hair) and touch at least one edge.
-        guard f.insetBy(dx: -r, dy: -r).contains(pt),
+        guard f.insetBy(dx: -r, dy: -r).contains(lp),
               g.left || g.right || g.top || g.bottom else { return nil }
         return g
+    }
+
+    /// Snap rotation to the nearest cardinal (0 / 90 / 180 / 270°) within ~7°, so
+    /// the user can easily restore a node to upright. ⌘ frees it (no snapping).
+    private func snapRotation(_ a: CGFloat, freeForm: Bool) -> CGFloat {
+        let twoPi = CGFloat.pi * 2
+        var x = a.truncatingRemainder(dividingBy: twoPi)
+        if x < 0 { x += twoPi }
+        guard !freeForm else { return x }
+        let thresh: CGFloat = 7 * .pi / 180
+        for s in stride(from: CGFloat(0), through: twoPi, by: .pi / 2) where abs(x - s) < thresh {
+            return s.truncatingRemainder(dividingBy: twoPi)   // 2π → 0
+        }
+        return x
+    }
+
+    /// True when `pt` (content space) lands on the node's rotate handle (the dot
+    /// above its rotated top-middle). Tested in the node's upright space.
+    private func rotateHandleHit(_ pt: NSPoint, of n: CanvasNode, _ p: CanvasConfig) -> Bool {
+        let f = contentFrame(n, p)
+        let lp = localPoint(pt, in: n, p)
+        let geo = CardItemView.rotateHandleGeometry(mag: mag)
+        let h = CGPoint(x: f.midX, y: f.minY - geo.gap - geo.stem)
+        return hypot(lp.x - h.x, lp.y - h.y) <= geo.dot + 9 / mag
     }
 
     /// The input view shields the cards from clicks (it owns interaction). The
@@ -334,6 +370,13 @@ final class CanvasInputView: NSView {
             labelDragStartOffset = coordinator?.connectorController?.storedLabelOffset(cid) ?? .zero
             return
         }
+        // Rotate handle on the single selected node (not sections/folders) → rotate.
+        if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
+           !sel.isSection, !sel.isFolder, rotateHandleHit(pt, of: sel, p) {
+            mode = .rotate; rotateNodeID = selID
+            beginIfNeeded(p, primary: selID)
+            return
+        }
         // Corner / edge resize on the single selected resizable node.
         if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
            isResizable(sel), let g = grip(at: pt, of: sel, p) {
@@ -382,6 +425,15 @@ final class CanvasInputView: NSView {
         case .resize:
             beginIfNeeded(p, primary: nil)
             applyResize(dx: dx, dy: dy, event: event, p: p)
+        case .rotate:
+            guard let id = rotateNodeID, let n = p.nodes.first(where: { $0.id == id }) else { return }
+            let f = contentFrame(n, p)
+            let c = CGPoint(x: f.midX, y: f.midY)
+            // The card's "up" points at the cursor: rotation = pointer angle + 90°.
+            var ang = atan2(pt.y - c.y, pt.x - c.x) + .pi / 2
+            ang = snapRotation(ang, freeForm: event.modifierFlags.contains(.command))
+            p.onRotate(id, ang)
+            coordinator?.refreshChrome()
         case .pendingMove, .move:
             if mode == .pendingMove {
                 if abs(dx) < 1 && abs(dy) < 1 { return }     // not a real drag yet
@@ -515,6 +567,8 @@ final class CanvasInputView: NSView {
             coordinator?.endLiveReposition(moveStartPos, dx: moveDelta.x, dy: moveDelta.y)
         case .resize:
             if didBegin { p.onInteractionEnded() }
+        case .rotate:
+            if didBegin { p.onInteractionEnded() }
         case .draw:
             if drawPoints.count >= 2 {
                 let wb = p.worldBounds
@@ -566,6 +620,7 @@ final class CanvasInputView: NSView {
         mode = .idle; resizeGrip = nil; resizeNodeID = nil
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
         optionDuplicated = false
+        rotateNodeID = nil
     }
 
     private func beginIfNeeded(_ p: CanvasConfig, primary: UUID?) {

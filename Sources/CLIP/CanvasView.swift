@@ -427,6 +427,9 @@ struct CanvasView: View {
                             onResize: { id, frame in
                                 state.resize(id: id, frame: frame)
                             },
+                            onRotate: { id, radians in
+                                state.setRotation(id: id, to: radians)
+                            },
                             onActivate: { id in
                                 guard state.toolMode == .select else { return }
                                 if let node = state.nodes.first(where: { $0.id == id }) {

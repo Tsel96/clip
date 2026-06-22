@@ -213,6 +213,8 @@ struct CanvasConfig {
     let onMove: (UUID, CGPoint) -> Void
     /// Resize a node to a new WORLD frame (per drag tick).
     let onResize: (UUID, CGRect) -> Void
+    /// Rotate a node (radians around its centre) — per drag tick of the handle.
+    let onRotate: (UUID, CGFloat) -> Void
     /// Double-click a node → activate (text edit / stack focus / lightbox).
     let onActivate: (UUID) -> Void
     /// Commit an inline folder rename: (folder id, new title).
