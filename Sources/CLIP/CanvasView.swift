@@ -359,6 +359,7 @@ struct CanvasView: View {
                             drawWidth: { state.drawWidth },
                             onCommitStroke: { world in state.commitStroke(worldPoints: world) },
                             connectors: state.connectors,
+                            showConnectors: state.showConnectors,
                             useNativeConnectors: useNativeConnectors,
                             onSelectConnector: { state.selectConnector($0) },
                             onSetConnectorLabel: { id, text in state.setConnectorLabel(id, text) },
@@ -601,10 +602,13 @@ struct CanvasView: View {
         // Bottom-LEFT: connectors / grid / play toggles (Figma 51:12692).
         .overlay(alignment: .bottomLeading) {
             if state.canvasMode != .archive {
-                CanvasControlsBar()
-                    .fixedSize()
-                    .padding(.leading, 18)
-                    .padding(.bottom, 18)
+                HStack(spacing: 10) {
+                    SidebarToggleButton()
+                    CanvasControlsBar()
+                }
+                .fixedSize()
+                .padding(.leading, 18)
+                .padding(.bottom, 18)
             }
         }
         // Unfolded-folder back chip (top-centre): re-fold to the main canvas.

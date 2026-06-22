@@ -137,6 +137,10 @@ final class ConnectorOverlayController {
 
     func removeFromSuperlayer() { root.removeFromSuperlayer() }
 
+    /// Show/hide ALL connector chrome (lines, ports, labels) — driven by the
+    /// `showConnectors` toggle in the bottom-left control bar.
+    func setVisible(_ visible: Bool) { root.isHidden = !visible }
+
     /// Full refresh from the model: cache the inputs, then redraw (applying any
     /// active live drag offsets). `nodeFrames` are the committed content-space
     /// frames (no drag offset — that's `liveOffsets`).

@@ -167,6 +167,8 @@ struct CanvasConfig {
     /// true, `ConnectorOverlayController` draws these as CAShapeLayers in the
     /// scrolled container and the SwiftUI ConnectorsLayer overlay is left empty.
     let connectors: [Connector]
+    /// Whether the connector overlay is shown (bottom-left controls toggle).
+    let showConnectors: Bool
     let useNativeConnectors: Bool
     /// Select (or clear) a connector — native connector click-select.
     let onSelectConnector: (UUID?) -> Void
@@ -484,6 +486,7 @@ struct CollectionCanvas: NSViewRepresentable {
         /// observer → refreshChrome). No-op unless `useNativeConnectors`.
         func refreshConnectors() {
             guard let cc = connectorController else { return }
+            cc.setVisible(config.showConnectors)        // honour the show/hide toggle
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
             var frames: [UUID: CGRect] = [:]
             for n in config.nodes {

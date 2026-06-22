@@ -57,13 +57,6 @@ struct ContentView: View {
                     InboxSetupGuide()
                 }
         }
-        // Floating sidebar show/hide toggle (Figma 74:25877/74:13420), top-left of
-        // the canvas — clears the macOS traffic lights when the sidebar is hidden.
-        .overlay(alignment: .topLeading) {
-            SidebarToggleButton()
-                .padding(.top, 14)
-                .padding(.leading, state.showSidebar ? 212 : 80)
-        }
         .frame(minWidth: 700, minHeight: 480)
         // Fill under the hidden title bar (traffic lights float over the sidebar).
         .ignoresSafeArea(.container, edges: .top)
