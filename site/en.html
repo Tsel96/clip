@@ -1,17 +1,17 @@
 <!doctype html>
-<html lang="cs">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>CLIP BETA — nekonečné plátno pro macOS</title>
-<meta name="description" content="CLIP je první lokálně běžící open-source aplikace pro macOS, která promění vaše uložené reely, tweety, piny a poznámky na nekonečné plátno." />
+<title>CLIP BETA — infinite canvas for macOS</title>
+<meta name="description" content="CLIP is the first locally-running open-source app for macOS that transforms your saved reels, tweets, pins and notes into an infinite canvas." />
 <link rel="icon" href="icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="index.css" />
-<meta property="og:title" content="CLIP BETA — nekonečné plátno pro macOS" />
-<meta property="og:description" content="Lokálně běžící open-source aplikace pro macOS. Apple Silicon (M1+)." />
+<meta property="og:title" content="CLIP BETA — infinite canvas for macOS" />
+<meta property="og:description" content="Locally-running open-source app for macOS. Apple Silicon (M1+)." />
 <meta property="og:image" content="assets/mark.png" />
 <!-- mark JS-on synchronously so entrance elements start hidden (no flash) -->
 <script>document.documentElement.classList.add('js');</script>
@@ -27,7 +27,7 @@
   </div>
 
   <!-- Top-left brand -->
-  <a class="ui-brand enter" href="/">CLIP&nbsp;BeTA</a>
+  <a class="ui-brand enter" href="/en">CLIP&nbsp;BeTA</a>
 
   <!-- Top-right: platform label + download pill -->
   <div class="ui-top-right">
@@ -38,50 +38,50 @@
       <span class="ui-pill-icon">
         <img src="assets/qr-icon.svg" alt="" />
       </span>
-      <span class="ui-pill-label">Stahnout</span>
+      <span class="ui-pill-label">Download</span>
     </a>
   </div>
 
   <!-- Download modal — slides in from the right -->
   <div class="modal-backdrop" id="modalBackdrop" hidden></div>
   <aside class="modal" id="downloadModal" role="dialog" aria-modal="true"
-         aria-label="Stáhnout CLIP" hidden>
-    <button class="modal-close" id="modalClose" type="button" aria-label="Zavřít">
+         aria-label="Download CLIP" hidden>
+    <button class="modal-close" id="modalClose" type="button" aria-label="Close">
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
         <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
       </svg>
     </button>
     <div class="modal-qr">
-      <img src="assets/qr-code.svg" alt="QR kód pro instalaci CLIP" id="qrImage" />
+      <img src="assets/qr-code.svg" alt="QR code for CLIP installation" id="qrImage" />
     </div>
     <div class="modal-text">
-      <h2 class="install-title m-reveal">Instalace</h2>
+      <h2 class="install-title m-reveal">Installation</h2>
       <ol class="install-steps" role="list">
         <li class="install-step m-reveal">
           <span class="install-bullet" aria-hidden="true">1</span>
           <div class="install-body">
-            <p class="install-heading">Stažení</p>
-            <p class="install-desc">Na svém Macu otevřete <a class="install-url" href="https://clip-umprum.vercel.app">clip-umprum.vercel.app</a> a klikněte na Stáhnout. Stáhne se soubor CLIP.dmg.</p>
+            <p class="install-heading">Download</p>
+            <p class="install-desc">On your Mac, open <a class="install-url" href="https://clip-umprum.vercel.app/en">clip-umprum.vercel.app</a> and click Download. The file CLIP.dmg will download.</p>
           </div>
         </li>
         <li class="install-step m-reveal">
           <span class="install-bullet" aria-hidden="true">2</span>
           <div class="install-body">
-            <p class="install-heading">Instalace</p>
-            <p class="install-desc">Otevřete CLIP.dmg a přetáhněte ikonu CLIP do složky Aplikace.</p>
+            <p class="install-heading">Install</p>
+            <p class="install-desc">Open CLIP.dmg and drag the CLIP icon into the Applications folder.</p>
           </div>
         </li>
         <li class="install-step m-reveal">
           <span class="install-bullet" aria-hidden="true">3</span>
           <div class="install-body">
-            <p class="install-heading">První spuštění</p>
-            <p class="install-desc">CLIP vytvořil nezávislý autor, takže si macOS nechá jednou potvrdit:</p>
+            <p class="install-heading">First launch</p>
+            <p class="install-desc">CLIP was made by an independent developer, so macOS will ask you to confirm once:</p>
             <ol class="install-substeps">
-              <li>Otevřete složku Aplikace a dvakrát klikněte na CLIP.</li>
-              <li>Objeví se hláška, že aplikaci nelze otevřít&nbsp;— klikněte na Hotovo.</li>
-              <li>Otevřete &#63743;&thinsp;menu → Nastavení systému → Soukromí a zabezpečení.</li>
-              <li>Sjeďte dolů k Zabezpečení. Vedle „CLIP byl zablokován…" → Přesto otevřít.</li>
-              <li>Klikněte znovu na Přesto otevřít a potvrďte přes Touch ID nebo heslo.</li>
+              <li>Open the Applications folder and double-click CLIP.</li>
+              <li>A message will appear saying the app can't be opened&nbsp;— click Done.</li>
+              <li>Open &#63743;&thinsp;menu → System Settings → Privacy &amp; Security.</li>
+              <li>Scroll down to Security. Next to "CLIP was blocked…" → Open Anyway.</li>
+              <li>Click Open Anyway again and confirm with Touch ID or your password.</li>
             </ol>
           </div>
         </li>
@@ -91,15 +91,15 @@
 
   <!-- Bottom-left description -->
   <p class="ui-description enter">
-    CLIP je první lokálně běžící open-source aplikace pro macOS,
-    která promění vaše uložené reely, tweety, piny a poznámky
-    na nekonečné plátno.
+    CLIP is the first locally-running open-source app for macOS
+    that transforms your saved reels, tweets, pins and notes
+    into an infinite canvas.
   </p>
 
   <!-- Bottom-right: language switcher + GitHub link -->
   <div class="ui-bottom-right">
-    <a class="ui-git enter" href="/en">English</a>
-    <a class="ui-git enter" href="https://github.com/Tsel96/clip">GIT repozitář</a>
+    <a class="ui-git enter" href="/">Česky</a>
+    <a class="ui-git enter" href="https://github.com/Tsel96/clip">GIT repository</a>
   </div>
 
   <script type="module" src="index.js"></script>

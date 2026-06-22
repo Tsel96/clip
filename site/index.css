@@ -85,8 +85,7 @@ html, body {
 .ui-brand,
 .ui-platform,
 .ui-pill-label,
-.ui-description,
-.ui-git {
+.ui-description {
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   font-size: var(--fs);
   font-weight: 400;
@@ -97,6 +96,16 @@ html, body {
   line-height: 1;
   position: fixed;
   z-index: 10;
+}
+/* Git / language links share typography but sit inside .ui-bottom-right (not fixed individually) */
+.ui-git {
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--fs);
+  font-weight: 400;
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
+  color: var(--ink);
+  line-height: 1;
 }
 
 /* Entrance: hide overlay UI before Motion animates it in (no flash).
@@ -409,10 +418,18 @@ html, body {
   .m-reveal { opacity: 1 !important; transform: none !important; filter: none !important; }
 }
 
-/* ── Git link — bottom right ── */
-.ui-git {
+/* ── Bottom-right cluster (git + language switcher) ── */
+.ui-bottom-right {
+  position: fixed;
   bottom: clamp(14px, calc(38 / 2340 * 100vw), 56px);
   right: var(--gap);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, calc(20 / 2340 * 100vw), 32px);
+}
+.ui-git {
+  position: static;   /* overrides the shared position:fixed from the group selector */
   text-decoration: underline;
   text-decoration-color: rgba(0, 0, 0, 0.20);
   text-decoration-thickness: 1.5px;
