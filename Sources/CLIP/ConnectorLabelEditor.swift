@@ -9,13 +9,13 @@ import AppKit
 extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
 
     private static let fieldFontSize: CGFloat = 17       // SF Mono Semibold (Figma link input)
-    private static let innerHeight: CGFloat   = 34       // white input pill height
-    private static let pillPadding: CGFloat   = 4        // green border around the white pill
-    private static let innerPadL: CGFloat      = 14
-    private static let innerPadR: CGFloat      = 9
-    private static let enterSize: CGFloat      = 18
-    private static let enterGap: CGFloat       = 8
-    private static let minInnerWidth: CGFloat  = 80
+    private static let innerHeight: CGFloat   = 50       // white input pill (Figma 88-423 h-50)
+    private static let pillPadding: CGFloat   = 4        // green border (→ 58 outer)
+    private static let innerPadL: CGFloat      = 19
+    private static let innerPadR: CGFloat      = 13
+    private static let enterSize: CGFloat      = 22
+    private static let enterGap: CGFloat       = 10
+    private static let minInnerWidth: CGFloat  = 90
     /// #3DA726 pill, #16181A text.
     private static let pillGreen = NSColor(srgbRed: 0.239, green: 0.655, blue: 0.149, alpha: 1)
     private static let labelTextColor = NSColor(srgbRed: 0.086, green: 0.094, blue: 0.102, alpha: 1)
@@ -33,17 +33,23 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         pill.layer?.backgroundColor = Self.pillGreen.cgColor
         pill.layer?.cornerCurve = .continuous
         pill.layer?.masksToBounds = false
-        pill.layer?.shadowColor = NSColor(srgbRed: 0, green: 0.36, blue: 0.008, alpha: 1).cgColor
-        pill.layer?.shadowOpacity = 0.22
-        pill.layer?.shadowRadius = 6
-        pill.layer?.shadowOffset = CGSize(width: 0, height: 4)
+        pill.layer?.shadowColor = NSColor(srgbRed: 0, green: 0.361, blue: 0.008, alpha: 1).cgColor
+        pill.layer?.shadowOpacity = 0.20      // soft green pool (Figma 4-layer ≈ this)
+        pill.layer?.shadowRadius = 8
+        pill.layer?.shadowOffset = CGSize(width: 0, height: 8)
 
-        // White input pill.
+        // White input pill — subtle #EFEFEF→white gradient (Figma 88-423 embossed look).
         let inner = NSView()
+        let grad = CAGradientLayer()
+        grad.colors = [NSColor(srgbRed: 0.937, green: 0.937, blue: 0.937, alpha: 1).cgColor,
+                       NSColor.white.cgColor]
+        grad.locations = [0, 0.43]
+        grad.startPoint = CGPoint(x: 0.5, y: 1)   // top
+        grad.endPoint = CGPoint(x: 0.5, y: 0)     // bottom
+        grad.cornerCurve = .continuous
+        grad.masksToBounds = true
+        inner.layer = grad
         inner.wantsLayer = true
-        inner.layer?.backgroundColor = NSColor.white.cgColor
-        inner.layer?.cornerCurve = .continuous
-        inner.layer?.masksToBounds = true
         pill.addSubview(inner)
 
         let field = NSTextField()
@@ -63,7 +69,7 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         let enter = NSImageView()
         enter.image = NSImage(systemSymbolName: "return.left", accessibilityDescription: "Enter")
         enter.symbolConfiguration = .init(pointSize: Self.enterSize * 0.85, weight: .semibold)
-        enter.contentTintColor = NSColor(white: 0.55, alpha: 1)
+        enter.contentTintColor = Self.labelTextColor   // #16181A (Figma)
         enter.imageScaling = .scaleProportionallyDown
         inner.addSubview(enter)
 

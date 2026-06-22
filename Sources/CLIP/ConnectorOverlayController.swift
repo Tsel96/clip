@@ -40,7 +40,8 @@ final class ConnectorOverlayController {
     private static let arrowLen: CGFloat = 10
     private static let arrowHalf: CGFloat = 4.5
     private static let labelFontSize: CGFloat = 18   // SCREEN-constant (÷mag)
-    private static let dotDiameter: CGFloat = 7      // yellow source dot (Figma 88-441), screen-constant
+    private static let dotDiameter: CGFloat = 14     // source port — green ring + yellow centre (Figma 88-480, same as hover)
+    private static let dotRing: CGFloat = 3
     private static let hoverDotDiameter: CGFloat = 16  // connect-hover port (Figma 100-297)
     private static let hoverDotRing: CGFloat = 3
     /// Canvas backdrop colour (light theme #EDF0F1) — masks the line behind the label.
@@ -140,8 +141,9 @@ final class ConnectorOverlayController {
             b.arrow.path = arrowPath(tip: route.arrowTip, from: route.arrowFrom, mag: mag)
             b.arrow.fillColor = color
 
-            // Yellow source dot (Figma 88-441), screen-constant.
+            // Source port (Figma 88-480): green ring + yellow centre, screen-constant.
             let d = Self.dotDiameter / mag
+            b.dot.lineWidth = Self.dotRing / mag
             b.dot.path = CGPath(ellipseIn: CGRect(x: route.sourceAnchor.x - d / 2,
                                                   y: route.sourceAnchor.y - d / 2,
                                                   width: d, height: d), transform: nil)
@@ -219,8 +221,8 @@ final class ConnectorOverlayController {
         arrow.strokeColor = nil
 
         let dot = CAShapeLayer()
-        dot.fillColor = Self.dotYellow.cgColor
-        dot.strokeColor = nil
+        dot.fillColor = Self.dotYellow.cgColor       // yellow centre
+        dot.strokeColor = Self.green.cgColor         // green ring (matches the hover port)
 
         let labelBG = CALayer()
         labelBG.backgroundColor = Self.labelBackground.cgColor
