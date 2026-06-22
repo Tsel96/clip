@@ -12,12 +12,14 @@ import QuartzCore
 /// is GPU compositing (the big blurred shadows scaled by magnification), so the
 /// fix is fading/capping shadows at high zoom. If `refreshChrome` is expensive →
 /// the cost is main-thread path rebuilds (cards/connectors per tick).
-@MainActor
-final class ZoomProfiler {
-    static let shared = ZoomProfiler()
+/// All access happens on the main thread (display-link is added to the main
+/// run-loop; `noteZoom` is called from the magnify callback), so the shared
+/// mutable state is safe despite not being actor-isolated.
+final class ZoomProfiler: NSObject {
+    nonisolated(unsafe) static let shared = ZoomProfiler()
     private let path = "/tmp/clip_diag.txt"
 
-    private var link: CADisplayLink?
+    private var link: AnyObject?            // CADisplayLink at runtime (macOS 14+)
     private var running = false
     private var frames = 0
     private var windowStart = CACurrentMediaTime()
@@ -37,6 +39,10 @@ final class ZoomProfiler {
         link = l
     }
 
+    private func setPaused(_ paused: Bool) {
+        if #available(macOS 14.0, *) { (link as? CADisplayLink)?.isPaused = paused }
+    }
+
     /// Call once per magnify tick with the just-measured refresh cost + scene.
     func noteZoom(refreshMs: Double, mag: CGFloat, items: Int, connectors: Int) {
         if !running { startWindow() }
@@ -53,7 +59,7 @@ final class ZoomProfiler {
         lastTick = windowStart
         refreshSamples.removeAll(keepingCapacity: true)
         minMag = .greatestFiniteMagnitude; maxMag = 0
-        link?.isPaused = false
+        setPaused(false)
     }
 
     @objc private func onFrame() {
@@ -63,7 +69,7 @@ final class ZoomProfiler {
 
     private func flush() {
         running = false
-        link?.isPaused = true
+        setPaused(true)
         let dur = CACurrentMediaTime() - windowStart
         guard dur > 0.1, !refreshSamples.isEmpty else { return }
         let fps = Double(frames) / dur
