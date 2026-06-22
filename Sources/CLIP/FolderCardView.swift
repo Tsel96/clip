@@ -185,8 +185,10 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         addSubview(lidView)
 
         countField.textColor = NSColor(white: 0, alpha: 0.4)
+        countField.wantsLayer = true
         addSubview(countField)
         titleField.textColor = .black
+        titleField.wantsLayer = true
         addSubview(titleField)
 
         iconChip.wantsLayer = true
@@ -348,6 +350,24 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         ao.timingFunction = CAMediaTimingFunction(name: .easeOut)
         dropArrow.layer?.opacity = hovering ? 1 : 0
         dropArrow.layer?.add(ao, forKey: "arrowFade")
+
+        // Slide the labels DOWN 3pt and the arrow DOWN 5pt on hover (animated).
+        slideY(countField.layer, to: hovering ? 3 : 0)
+        slideY(titleField.layer, to: hovering ? 3 : 0)
+        slideY(dropArrow.layer,  to: hovering ? 5 : 0)
+    }
+
+    /// Spring a layer's vertical translation (the hover slide-down).
+    private func slideY(_ layer: CALayer?, to ty: CGFloat) {
+        guard let layer else { return }
+        let target = CATransform3DMakeTranslation(0, ty, 0)
+        let a = CASpringAnimation(keyPath: "transform")
+        a.fromValue = layer.presentation()?.transform ?? layer.transform
+        a.toValue = target
+        a.stiffness = 320; a.damping = 26; a.mass = 1
+        a.duration = a.settlingDuration
+        layer.transform = target
+        layer.add(a, forKey: "slideY")
     }
 
     // MARK: - Inline rename (double-click the name label, Figma 104:688)
@@ -459,9 +479,9 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         iconChip.layer?.cornerRadius = chip * 0.28
         iconView.frame = iconChip.bounds.insetBy(dx: chip * 0.26, dy: chip * 0.26)
 
-        // Up-arrow drop affordance — its Figma sub-rect, nudged 5pt LOWER.
+        // Up-arrow drop affordance — its Figma sub-rect (slides +5 on hover).
         dropArrow.frame = CGRect(x: (Self.arrowRect.minX - Self.folderRect.minX) * sx,
-                                 y: (Self.arrowRect.minY - Self.folderRect.minY) * sy + 5,
+                                 y: (Self.arrowRect.minY - Self.folderRect.minY) * sy,
                                  width: Self.arrowRect.width * sx,
                                  height: Self.arrowRect.height * sy)
     }

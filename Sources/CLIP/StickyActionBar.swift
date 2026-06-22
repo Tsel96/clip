@@ -1,10 +1,51 @@
 import SwiftUI
 import AppKit
 
-/// Figma 104:651 — the action bar shown above a SELECTED sticky note: Download ·
-/// Color · Folder, rendered in the app's green-outer / yellow-inner pill (the
-/// toolbar family). Color opens a swatch popover; Folder creates a folder and
-/// tucks the sticker in; Download exports the sticker as a PNG.
+/// Shared green-outer / yellow-inner pill style for the sticky bars (Figma
+/// 104:651 / 104:593) — the same toolbar family as the bottom tool palette.
+enum StickyBarStyle {
+    static let green  = Color(rgb: 0x3DA726)
+    static let topY   = Color(rgb: 0xFFF53B)
+    static let botY   = Color(rgb: 0xF8DE47)
+    static let border = Color(rgb: 0xFFFCA9)
+    static let shadow = Color(rgb: 0x005C02)
+}
+
+extension View {
+    func stickyBarPill() -> some View {
+        self
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 50, style: .continuous)
+                    .fill(LinearGradient(colors: [StickyBarStyle.topY, StickyBarStyle.botY],
+                                         startPoint: .top, endPoint: .bottom))
+                    .overlay(RoundedRectangle(cornerRadius: 50, style: .continuous)
+                        .strokeBorder(StickyBarStyle.border, lineWidth: 1.5))
+            )
+            .padding(2)
+            .background(StickyBarStyle.green, in: Capsule(style: .continuous))
+            .shadow(color: StickyBarStyle.shadow.opacity(0.12), radius: 1.5, y: 2)
+            .shadow(color: StickyBarStyle.shadow.opacity(0.10), radius: 3, y: 6)
+            .shadow(color: StickyBarStyle.shadow.opacity(0.06), radius: 4, y: 14)
+            .fixedSize()
+    }
+}
+
+private func stickyBarButton(_ symbol: String, _ help: String,
+                             action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        Image(systemName: symbol)
+            .font(.system(size: 20, weight: .medium))
+            .foregroundStyle(.black.opacity(0.82))
+            .frame(width: 52, height: 52)
+            .contentShape(Rectangle())
+    }
+    .buttonStyle(.hover)
+    .help(help)
+}
+
+/// Figma 104:651 — shown in the BOTTOM toolbar when a sticky is selected:
+/// Download · Color · Folder.
 struct StickyActionBar: View {
     let current: StickyColor
     let onDownload: () -> Void
@@ -12,44 +53,14 @@ struct StickyActionBar: View {
     let onFolder: () -> Void
     @State private var showColors = false
 
-    private static let green  = Color(rgb: 0x3DA726)
-    private static let topY   = Color(rgb: 0xFFF53B)
-    private static let botY   = Color(rgb: 0xF8DE47)
-    private static let border = Color(rgb: 0xFFFCA9)
-    private static let shadow = Color(rgb: 0x005C02)
-
     var body: some View {
         HStack(spacing: 0) {
-            barButton("square.and.arrow.down", "Download image", action: onDownload)
-            barButton("drop", "Colour") { showColors.toggle() }
-                .popover(isPresented: $showColors, arrowEdge: .bottom) { palette }
-            barButton("folder.badge.plus", "Add to a new folder", action: onFolder)
+            stickyBarButton("square.and.arrow.down", "Download image", action: onDownload)
+            stickyBarButton("drop", "Colour") { showColors.toggle() }
+                .popover(isPresented: $showColors, arrowEdge: .top) { palette }
+            stickyBarButton("folder.badge.plus", "Add to a new folder", action: onFolder)
         }
-        .padding(2)
-        .background(
-            RoundedRectangle(cornerRadius: 50, style: .continuous)
-                .fill(LinearGradient(colors: [Self.topY, Self.botY], startPoint: .top, endPoint: .bottom))
-                .overlay(RoundedRectangle(cornerRadius: 50, style: .continuous)
-                    .strokeBorder(Self.border, lineWidth: 1.5))
-        )
-        .padding(2)
-        .background(Self.green, in: Capsule(style: .continuous))
-        .shadow(color: Self.shadow.opacity(0.12), radius: 1.5, y: 2)
-        .shadow(color: Self.shadow.opacity(0.10), radius: 3, y: 6)
-        .shadow(color: Self.shadow.opacity(0.06), radius: 4, y: 14)
-        .fixedSize()
-    }
-
-    private func barButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(.black.opacity(0.82))
-                .frame(width: 52, height: 52)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.hover)
-        .help(help)
+        .stickyBarPill()
     }
 
     private var palette: some View {
@@ -69,29 +80,22 @@ struct StickyActionBar: View {
     }
 }
 
-/// Mounts the selected-sticky bar floating above the single selected sticky.
-/// Observes the camera so ONLY this small view repositions on pan/zoom (the
-/// canvas body doesn't re-render).
-struct StickyBarHost: View {
-    @EnvironmentObject var state: CanvasState
-    @EnvironmentObject var cameraStore: CameraStore
-
+/// Figma 104:593 — shown in the BOTTOM toolbar while EDITING a sticky's text:
+/// Bold · Italic · Underline · Strike · Eraser. Actions go to the live field
+/// editor via the responder chain (best-effort until sticky rich-text lands).
+struct StickyTextEditBar: View {
     var body: some View {
-        GeometryReader { _ in
-            if state.canvasMode == .canvas, state.editingTextNodeID == nil,
-               state.selectedNodeIDs.count == 1, let id = state.selectedNodeIDs.first,
-               let n = state.nodeByID[id], case .stickyNote(_, let color) = n.kind {
-                let cam = cameraStore.camera
-                StickyActionBar(
-                    current: color,
-                    onDownload: { state.exportSticker(id) },
-                    onPickColor: { state.setStickyColor(id: id, to: $0) },
-                    onFolder: { state.addStickerToNewFolder(id) }
-                )
-                .position(x: (n.position.x + n.width / 2) * cam.zoom + cam.x,
-                          y: n.position.y * cam.zoom + cam.y - 44)
-            }
+        HStack(spacing: 0) {
+            stickyBarButton("bold", "Bold") { send("toggleBold:") }
+            stickyBarButton("italic", "Italic") { send("toggleItalic:") }
+            stickyBarButton("underline", "Underline") { send("underline:") }
+            stickyBarButton("strikethrough", "Strikethrough") { send("toggleStrikethrough:") }
+            stickyBarButton("eraser", "Clear formatting") { send("removeAttributes:") }
         }
+        .stickyBarPill()
+    }
+    private func send(_ selector: String) {
+        NSApp.sendAction(Selector((selector)), to: nil, from: nil)
     }
 }
 
