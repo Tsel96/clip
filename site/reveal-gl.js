@@ -608,13 +608,14 @@ export function revealImage(img, opts = {}) {
       const canvas = document.createElement('canvas');
       canvas.className = 'reveal-gl';
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const rect = img.getBoundingClientRect();
+      // Measure the host (not the img) so we capture the final laid-out size.
+      // Do NOT set canvas.style.width/height — let CSS inset:0 stretch the
+      // canvas to always fill the parent exactly, so it never snaps on removal.
+      const rect = host.getBoundingClientRect();
       const cssW = Math.max(1, Math.round(rect.width));
       const cssH = Math.max(1, Math.round(rect.height));
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
-      canvas.style.width = cssW + 'px';
-      canvas.style.height = cssH + 'px';
 
       const gl = canvas.getContext('webgl2', {
         premultipliedAlpha: true, alpha: true, antialias: true,

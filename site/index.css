@@ -4,7 +4,7 @@
    All sizing is vw-relative so it scales from 1080p → 4K.
    ========================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -309,9 +309,10 @@ html, body {
 .install-title {
   display: inline-block;
   font-size: clamp(18px, calc(36 / 2340 * 100vw), 50px);
-  font-weight: 600;
+  font-weight: 400;
   color: var(--green);
-  letter-spacing: -0.04em;
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
   line-height: 1;
   transform: rotate(-0.71deg);
   transform-origin: left center;
@@ -344,8 +345,8 @@ html, body {
   align-items: center;
   justify-content: center;
   font-size: clamp(8px, calc(12 / 2340 * 100vw), 14px);
-  font-weight: 500;
-  letter-spacing: -0.04em;
+  font-weight: 400;
+  letter-spacing: 0;   /* single digit — no tracking shift */
   line-height: 1;
   margin-top: 0.1em;
 }
@@ -360,8 +361,9 @@ html, body {
 
 .install-heading {
   font-size: var(--fs);
-  font-weight: 600;
-  letter-spacing: -0.04em;
+  font-weight: 400;
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
   color: var(--ink);
   line-height: 1;
 }
@@ -369,7 +371,8 @@ html, body {
 .install-desc {
   font-size: var(--fs);
   font-weight: 400;
-  letter-spacing: -0.04em;
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
   color: var(--ink);
   line-height: 1.5;
 }
@@ -394,7 +397,8 @@ html, body {
 .install-substeps li {
   font-size: var(--fs);
   font-weight: 400;
-  letter-spacing: -0.04em;
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
   color: var(--ink);
   line-height: 1.45;
 }
