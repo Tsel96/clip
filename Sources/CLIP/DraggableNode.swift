@@ -277,7 +277,10 @@ struct DraggableNode: View {
         // re-positions the item smoothly (no reload), so the card follows the
         // cursor. A no-movement click falls through to the canvas's click
         // recognizer (select / deselect).
-        .gesture(dragGesture, including: isTrimming ? .subviews : .all)
+        // While this node's text is being edited, DISABLE the card's own drag
+        // gesture (`.subviews` = only subview gestures fire) so the embedded
+        // NSTextView gets the mouse to drag-SELECT text instead of moving the card.
+        .gesture(dragGesture, including: (isTrimming || isEditingThisNode) ? .subviews : .all)
         // Double-click on a stack head opens focus mode (Apple Photos
         // album style). Wired BEFORE the single-tap so SwiftUI's tap
         // coalescer correctly distinguishes single vs double — without
@@ -408,6 +411,10 @@ struct DraggableNode: View {
     /// would require re-rendering on zoom, which is the gesture-boundary blink.
     /// The SwiftUI canvas keeps the viewport/size-aware gate.
     private var liveGate: Bool { positioned ? state.isLive(node) : true }
+
+    /// This node's inline text editor is active → suppress the card drag so the
+    /// text view can drag-select.
+    private var isEditingThisNode: Bool { state.editingTextNodeID == node.id }
 
     @ViewBuilder
     private var nodeContent: some View {

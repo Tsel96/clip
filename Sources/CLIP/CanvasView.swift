@@ -668,17 +668,19 @@ struct CanvasView: View {
             if state.canvasMode == .canvas, let fid = state.focusedFolderID,
                case .folder(let title, _, _)? = state.nodeByID[fid]?.kind {
                 Button { state.exitFolderFocus() } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.backward")
+                            .font(.system(size: 13, weight: .semibold))
                         Text(title.isEmpty ? "Untitled" : title).lineLimit(1)
+                            .font(.system(size: 13, weight: .medium))
                     }
-                    .font(.system(size: 13, weight: .medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+                    .foregroundStyle(.primary.opacity(0.7))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hover)
+                .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
                 .padding(.top, 18)
                 .padding(.leading, 18)
             }

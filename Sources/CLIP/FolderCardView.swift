@@ -7,8 +7,17 @@ import CoreImage
 /// icon natively so they update. The SVG's shadow margin bleeds *outside* the
 /// node bounds so the folder itself fills the node. Refreshes in place via
 /// `NativeCardUpdatable`.
+/// A clip container that shares FolderCardView's flipped (top-left) geometry so
+/// the erase-art aligns with the body art.
+final class FolderClipView: NSView { override var isFlipped: Bool { true } }
+
 final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
     private let shapeView = NSImageView()
+    /// Clips `eraseArt` to the lower-left text band — hides the count art's BAKED
+    /// "Untitled"+count (outlined paths) while keeping its peeking-card preview,
+    /// so the dynamic, renamable labels are the only text shown there.
+    private let eraseClip = FolderClipView()
+    private let eraseArt = NSImageView()
     /// Single silhouette shadow caster stacked BEHIND `shapeView`, deriving its
     /// shape from the clean folder alpha. Driven by the GLOBAL object-shadow
     /// settings (see `updateShadow`) so folders lift/zoom-fade exactly like cards.
@@ -72,10 +81,15 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
     private var isDropHovered = false
     /// Folder art for an item count — the card-peek is baked into each SVG.
     private static func art(forCount count: Int) -> NSImage? {
-        // ALWAYS the text-free art: the 1/2/3-item SVGs bake in "Untitled" + a
-        // count as outlined paths, which can't reflect a renamed folder (the live
-        // name + count come from the dynamic countField/titleField instead).
-        restImage
+        // Count art keeps the peeking-card PREVIEW; its baked "Untitled" + count
+        // text is erased by `eraseArt` (a clipped overlay of the text-free art) so
+        // the dynamic, renamable labels are the only text shown.
+        switch count {
+        case 0:  return restImage
+        case 1:  return oneItemImage
+        case 2:  return twoItemsImage
+        default: return threeItemsImage
+        }
     }
 
     /// White OFFSET-outline ring of each art (cached) — the selection outline: a
@@ -86,7 +100,12 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
     private static let twoRing   = whiteRing(of: twoItemsImage)
     private static let threeRing = whiteRing(of: threeItemsImage)
     private static func ring(forCount count: Int) -> NSImage? {
-        restRing   // matches the always-rest art above
+        switch count {
+        case 0:  return restRing
+        case 1:  return oneRing
+        case 2:  return twoRing
+        default: return threeRing
+        }
     }
 
     /// A thin WHITE ring offset a gap OUTSIDE `image`'s silhouette: dilate the folder
@@ -171,6 +190,16 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         shapeView.wantsLayer = true
         shapeView.layer?.masksToBounds = false
         addSubview(shapeView)
+
+        // Text-erase overlay: the text-free art, drawn at the SAME position as
+        // `shapeView` but clipped to the text band, so the count art's baked text
+        // is replaced with clean body. Above the body, below the dynamic labels.
+        eraseClip.wantsLayer = true
+        eraseClip.layer?.masksToBounds = true
+        eraseArt.image = Self.restImage
+        eraseArt.imageScaling = .scaleAxesIndependently
+        eraseClip.addSubview(eraseArt)
+        addSubview(eraseClip)
 
         // Open-lid overlay — hidden at rest, fades + lifts in on drop-hover. Sits
         // ABOVE the body but BELOW the text/icon (added next).

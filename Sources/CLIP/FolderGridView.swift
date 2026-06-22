@@ -156,7 +156,7 @@ struct FolderNameField: View {
         }
         .padding(.horizontal, 18)
         .frame(height: 38)
-        .frame(minWidth: 150)
+        .fixedSize()                 // hug the text (Figma 105-755)
         .background(whiteField)
         .padding(4)
         .background(greenWrapper)
