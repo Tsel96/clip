@@ -201,18 +201,16 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         iconChip.addSubview(iconView)
         addSubview(iconChip)
 
-        // Up-arrow drop affordance — ABOVE everything (incl. the lid), shown on hover.
+        // Up-arrow drop affordance (Figma 104:675) — ABOVE everything, shown on
+        // hover. A SUBTLE translucent-dark circle (Figma 4% black, a touch darker)
+        // + a thin up-arrow; NOT an opaque white chip.
         dropArrow.wantsLayer = true
-        dropArrow.layer?.backgroundColor = NSColor.white.cgColor
-        dropArrow.layer?.shadowColor = NSColor.black.cgColor
-        dropArrow.layer?.shadowOpacity = 0.16
-        dropArrow.layer?.shadowRadius = 8
-        dropArrow.layer?.shadowOffset = CGSize(width: 0, height: -2)
-        dropArrow.layer?.masksToBounds = false
+        dropArrow.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.06).cgColor
+        dropArrow.layer?.masksToBounds = true
         dropArrow.layer?.opacity = 0
         dropArrowGlyph.image = NSImage(systemSymbolName: "arrow.up", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 40, weight: .bold))
-        dropArrowGlyph.contentTintColor = NSColor.black.withAlphaComponent(0.78)
+            .withSymbolConfiguration(.init(pointSize: 40, weight: .medium))
+        dropArrowGlyph.contentTintColor = NSColor.black.withAlphaComponent(0.50)   // a bit darker
         dropArrowGlyph.imageScaling = .scaleProportionallyDown
         dropArrow.addSubview(dropArrowGlyph)
         addSubview(dropArrow)
@@ -415,13 +413,15 @@ final class FolderCardView: NSView, NativeCardUpdatable {
                                width: Self.lidRect.width * sx,
                                height: Self.lidRect.height * sy)
 
-        // Live text, lower-left (the baked text sat at ≈12% in, 69%/77% down).
-        let pad = w * 0.118
-        countField.font = .systemFont(ofSize: max(8, h * 0.060), weight: .light)
-        titleField.font = NSFont.monospacedSystemFont(ofSize: max(9, h * 0.077), weight: .medium)
+        // Live text — Figma 104:673 "No items" (SF Pro Display Light, 40%) +
+        // 104:674 "Untitled" (SF Mono Medium, black), both ≈ h·0.0714, at the
+        // Figma positions (x 0.109w; No items 0.688h, Untitled 0.768h).
+        let pad = w * 0.109
+        countField.font = .systemFont(ofSize: max(8, h * 0.0714), weight: .light)
+        titleField.font = NSFont.monospacedSystemFont(ofSize: max(9, h * 0.0714), weight: .medium)
         countField.sizeToFit(); titleField.sizeToFit()
-        titleField.frame.origin = CGPoint(x: pad, y: h * 0.775)
-        countField.frame.origin = CGPoint(x: pad, y: h * 0.775 - countField.frame.height - h * 0.005)
+        countField.frame.origin = CGPoint(x: pad, y: h * 0.688)
+        titleField.frame.origin = CGPoint(x: pad, y: h * 0.768)
 
         // Identity-icon chip, lower-right.
         let chip = min(w, h) * 0.20
@@ -429,13 +429,14 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         iconChip.layer?.cornerRadius = chip * 0.28
         iconView.frame = iconChip.bounds.insetBy(dx: chip * 0.26, dy: chip * 0.26)
 
-        // Up-arrow drop affordance — its Figma sub-rect, a perfect circle.
+        // Up-arrow drop affordance — its Figma sub-rect, a perfect circle, nudged
+        // 5pt LOWER (per the user). Glyph ≈ 53% of the circle (Figma).
         dropArrow.frame = CGRect(x: (Self.arrowRect.minX - Self.folderRect.minX) * sx,
-                                 y: (Self.arrowRect.minY - Self.folderRect.minY) * sy,
+                                 y: (Self.arrowRect.minY - Self.folderRect.minY) * sy + 5,
                                  width: Self.arrowRect.width * sx,
                                  height: Self.arrowRect.height * sy)
         dropArrow.layer?.cornerRadius = dropArrow.frame.width / 2
-        dropArrowGlyph.frame = dropArrow.bounds.insetBy(dx: dropArrow.frame.width * 0.30,
-                                                        dy: dropArrow.frame.height * 0.30)
+        dropArrowGlyph.frame = dropArrow.bounds.insetBy(dx: dropArrow.frame.width * 0.24,
+                                                        dy: dropArrow.frame.height * 0.24)
     }
 }
