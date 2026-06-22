@@ -277,22 +277,58 @@ html, body {
 
 .modal-footer {
   flex-shrink: 0;
-  padding: clamp(12px, calc(20 / 2340 * 100vw), 28px) calc(99 / 2340 * 100vw);
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  /* gradient fades from transparent → white so the button floats above scroll content */
+  background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, #fff 42%);
+  padding: clamp(36px, calc(64 / 2340 * 100vw), 88px) calc(99 / 2340 * 100vw) clamp(20px, calc(32 / 2340 * 100vw), 44px);
+  margin-top: clamp(-36px, calc(-64 / 2340 * 100vw), -20px);
+  position: relative;
+  z-index: 2;
+  pointer-events: none;   /* gradient area doesn't block scroll */
+}
+.modal-footer > * {
+  pointer-events: auto;
 }
 
 .modal-download {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--pill-h);
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   font-size: var(--fs);
   font-weight: 400;
   letter-spacing: var(--ls);
   text-transform: uppercase;
   color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: rgba(0, 0, 0, 0.20);
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 0.15em;
-  line-height: 1;
+  text-decoration: none;
+  background: linear-gradient(180deg, #F6F22A, #E4E000);
+  border-radius: 9999px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    0 1px 1px rgba(80,74,0,.16),
+    0 5px 16px -5px rgba(61,167,38,.48),
+    0 0 0 1px var(--green);
+  transition: box-shadow .13s ease;
+}
+.modal-download:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    0 2px 2px rgba(80,74,0,.14),
+    0 9px 22px -6px rgba(61,167,38,.50),
+    0 0 0 1px var(--green);
+}
+.modal-download:active {
+  box-shadow:
+    inset 0 2px 5px rgba(80,74,0,.22),
+    0 1px 2px rgba(61,167,38,.35),
+    0 0 0 1px var(--green);
+}
+.modal-download:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
 }
 
 .modal-close {

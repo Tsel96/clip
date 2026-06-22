@@ -126,7 +126,7 @@
     function draw(W,H){
       while(svg.firstChild)svg.removeChild(svg.firstChild);
       svg.setAttribute("viewBox","0 0 "+W+" "+H);
-      var F=Math.max(12,Math.min(Math.min(W,H)*0.014,22)),Rout=F*1.9,Rin=F*1.1;
+      var F=Math.max(32,Math.min(Math.min(W,H)*0.04,60)),Rout=F*1.6,Rin=F*0.9;
       var mx=F,my=F,mw=W-2*F,mh=H-2*F,mr=mx+mw,mb=my+mh;
       var defs=el("defs",{});
       var grad=el("radialGradient",{id:"matg",cx:"42%",cy:"38%",r:"78%"},defs);

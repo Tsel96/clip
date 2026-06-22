@@ -97,15 +97,15 @@ function gestures() {
     });
   }
 
-  // Modal download link — underline deepens on hover, same as .ui-git
+  // Modal download — pill-style lift on hover, tactile press
   const modalDownload = document.getElementById('modalDownloadBtn');
   if (modalDownload) {
     hover(modalDownload, () => {
-      animate(modalDownload, { textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
-      return () => animate(modalDownload, { textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
+      animate(modalDownload, { y: -2 }, SPRING_HOVER);
+      return () => animate(modalDownload, { y: 0 }, SPRING_HOVER);
     });
     press(modalDownload, () => {
-      animate(modalDownload, { scale: 0.98 }, SPRING_PRESS);
+      animate(modalDownload, { scale: 0.97 }, SPRING_PRESS);
       return () => animate(modalDownload, { scale: 1 }, SPRING_BACK);
     });
   }
