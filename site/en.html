@@ -108,6 +108,67 @@
     <a class="ui-git enter" href="https://github.com/Tsel96/clip">GIT repository</a>
   </div>
 
+  <!-- Mat canvas grain texture — inline SVG so feTurbulence actually renders -->
+  <svg class="mat-texture" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+    <filter id="matNoise" x="0" y="0" width="100%" height="100%" color-interpolation-filters="linearRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="4" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+    </filter>
+    <rect width="100%" height="100%" filter="url(#matNoise)" opacity="0.18"/>
+  </svg>
+
+  <svg id="mat" style="position:fixed;inset:0;width:100%;height:100%;z-index:2;pointer-events:none" aria-hidden="true"></svg>
+  <script>
+  (function(){
+    var NS="http://www.w3.org/2000/svg",svg=document.getElementById("mat"),COL="255,255,255",CELL=38;
+    function el(n,a,p){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e;}
+    function txt(s,a,p){var t=el("text",a,p);t.textContent=s;return t;}
+    var p2=function(n){return String(n).padStart(2,"0");};
+    function draw(W,H){
+      while(svg.firstChild)svg.removeChild(svg.firstChild);
+      svg.setAttribute("viewBox","0 0 "+W+" "+H);
+      var F=Math.max(12,Math.min(Math.min(W,H)*0.014,22)),Rout=F*1.9,Rin=F*1.1;
+      var mx=F,my=F,mw=W-2*F,mh=H-2*F,mr=mx+mw,mb=my+mh;
+      var defs=el("defs",{});
+      var grad=el("radialGradient",{id:"matg",cx:"42%",cy:"38%",r:"78%"},defs);
+      el("stop",{offset:"0%","stop-color":"#1f9c82"},grad);
+      el("stop",{offset:"58%","stop-color":"#168a6f"},grad);
+      el("stop",{offset:"100%","stop-color":"#117a61"},grad);
+      var clip=el("clipPath",{id:"matclip"},defs);
+      el("rect",{x:mx,y:my,width:mw,height:mh,rx:Rin},clip);
+      var fil=el("filter",{id:"tex"},defs);
+      el("feTurbulence",{type:"fractalNoise",baseFrequency:"0.9",numOctaves:"2",stitchTiles:"stitch",result:"n"},fil);
+      el("feColorMatrix",{in:"n",type:"matrix",values:"0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.55 0"},fil);
+      el("rect",{x:0,y:0,width:W,height:H,rx:Rout,fill:"#0d4d3b"});
+      el("rect",{x:mx,y:my,width:mw,height:mh,rx:Rin,fill:"url(#matg)"});
+      var g=el("g",{"clip-path":"url(#matclip)"});
+      el("rect",{x:mx,y:my,width:mw,height:mh,filter:"url(#tex)",opacity:"0.06"},g);
+      var ox=mx,oy=mb,cols=Math.ceil(mw/CELL),rows=Math.ceil(mh/CELL),L=Math.hypot(mw,mh);
+      var gMin=el("g",{stroke:"rgba("+COL+",0.08)","stroke-width":1},g);
+      var gMaj=el("g",{stroke:"rgba("+COL+",0.22)","stroke-width":1.3},g);
+      for(var i=0;i<=cols;i++){var x=ox+i*CELL;if(x>mr+0.5)break;el("line",{x1:x,y1:my,x2:x,y2:mb},i%5?gMin:gMaj);}
+      for(var j=0;j<=rows;j++){var y=oy-j*CELL;if(y<my-0.5)break;el("line",{x1:mx,y1:y,x2:mr,y2:y},j%5?gMin:gMaj);}
+      var dec=el("g",{fill:"none",stroke:"rgba("+COL+",0.28)","stroke-width":1.3},g);
+      [30,45,60].forEach(function(deg){var a=deg*Math.PI/180;el("line",{x1:ox,y1:oy,x2:ox+Math.cos(a)*L,y2:oy-Math.sin(a)*L},dec);});
+      el("line",{x1:mx,y1:mb,x2:mr,y2:my},dec);
+      el("line",{x1:mx,y1:my,x2:mr,y2:mb,stroke:"rgba("+COL+",0.16)","stroke-dasharray":"7 6"},dec);
+      for(var r=5;r*CELL<L;r+=5){var rr=r*CELL;el("path",{d:"M "+(ox+rr)+" "+oy+" A "+rr+" "+rr+" 0 0 1 "+ox+" "+(oy-rr),stroke:"rgba("+COL+",0.16)",fill:"none"},dec);}
+      [[30,"30°"],[45,"45°"],[60,"60°"]].forEach(function(p){var a=p[0]*Math.PI/180,d=CELL*6;txt(p[1],{x:ox+Math.cos(a)*d+5,y:oy-Math.sin(a)*d+4,"font-size":12,fill:"rgba("+COL+",0.82)","font-family":"monospace"},g);});
+      var rul=el("g",{},g);
+      function tick(x1,y1,x2,y2){el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"rgba("+COL+",0.3)","stroke-width":1},rul);}
+      for(var i=0;i<=cols;i++){var x=ox+i*CELL;if(x>mr)break;if(i>0)txt(p2(i),{x:x+2.5,y:mb-4,"font-size":10,fill:"rgba("+COL+",0.8)","font-family":"monospace"},rul);for(var mm=0;mm<10;mm++){var xx=x+mm*CELL/10;if(xx>mr)break;tick(xx,mb,xx,mb-(mm===0?8:mm===5?5:3));}}
+      for(var j=0;j<=rows;j++){var y=oy-j*CELL;if(y<my)break;if(j>0)txt(p2(j),{x:mx+5,y:y-3,"font-size":10,fill:"rgba("+COL+",0.8)","font-family":"monospace"},rul);for(var mm=0;mm<10;mm++){var yy=y-mm*CELL/10;if(yy<my)break;tick(mx,yy,mx+(mm===0?8:mm===5?5:3),yy);}}
+      for(var i=1;i<=cols;i++){var x=ox+i*CELL;if(x>mr)break;txt(p2(i),{x:x+2.5,y:my+11,"font-size":9,fill:"rgba("+COL+",0.5)","font-family":"monospace"},rul);}
+      for(var j=1;j<=rows;j++){var y=oy-j*CELL;if(y<my)break;txt(p2(j),{x:mr-4,y:y-3,"font-size":9,"text-anchor":"end",fill:"rgba("+COL+",0.5)","font-family":"monospace"},rul);}
+      txt("00",{x:ox+5,y:mb-12,"font-size":9,fill:"rgba("+COL+",0.75)","font-family":"monospace"},rul);
+      txt("cm",{x:ox+5,y:mb-2,"font-size":8,fill:"rgba("+COL+",0.45)","font-family":"monospace"},rul);
+    }
+    var raf=0;
+    window.addEventListener("resize",function(){cancelAnimationFrame(raf);raf=requestAnimationFrame(function(){draw(window.innerWidth,window.innerHeight);});});
+    draw(window.innerWidth,window.innerHeight);
+  })();
+  </script>
+
   <script type="module" src="index.js"></script>
 
   <!-- Agentation visual-feedback toolbar — localhost only, never ships to prod -->
