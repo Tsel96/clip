@@ -455,10 +455,10 @@ private final class PropButton: NSView {
     override func layout() {
         super.layout()
         // Keep the lift through a relayout (flipped view → negative y is up).
-        imageView.frame = CGRect(x: 0, y: markerLifted ? -markerLift : 0,
-                                 width: bounds.width, height: bounds.height)
+        let off: CGFloat = markerLifted ? -markerLift : 0
+        imageView.frame = CGRect(x: 0, y: off, width: bounds.width, height: bounds.height)
         hoverImageView.frame = bounds
-        selectedImageView.frame = bounds
+        selectedImageView.frame = CGRect(x: 0, y: off, width: bounds.width, height: bounds.height)
     }
 
     // MARK: Hover tracking
@@ -487,8 +487,7 @@ private final class PropButton: NSView {
 
     private func refresh() {
         if usesMarkerStates {
-            refreshMarker()                                        // slide-lift + glow crossfade
-            CLIPSpring.scale(self, to: isPressed ? 0.94 : 1.0, key: "xform")
+            refreshMarker()                                        // 3 states only: rest / hover / selected — no press scale
         } else if usesStateImages {
             crossfadeHover(isHovered)                              // rest ↔ hover artwork
             CLIPSpring.scale(self, to: isPressed ? 0.94 : 1.0, key: "xform")  // subtle press only
@@ -515,7 +514,12 @@ private final class PropButton: NSView {
             ctx.duration = 0.18
             ctx.timingFunction = CLIPSpring.easeOutSoft
             ctx.allowsImplicitAnimation = true
-            imageView.animator().setFrameOrigin(CGPoint(x: 0, y: markerLifted ? -markerLift : 0))
+            let o = CGPoint(x: 0, y: markerLifted ? -markerLift : 0)
+            imageView.animator().setFrameOrigin(o)
+            selectedImageView.animator().setFrameOrigin(o)          // same lift → no jump
+            // Selected shows ONLY the selected art; hide the base so the two
+            // don't render as two overlapping markers.
+            imageView.animator().alphaValue = isActive ? 0 : 1
             selectedImageView.animator().alphaValue = isActive ? 1 : 0
         }
     }
