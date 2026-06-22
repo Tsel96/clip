@@ -106,11 +106,16 @@ struct ArchiveListView: View {
     private func reveal(_ node: CanvasNode) {
         state.setMode(.canvas)
         state.select(node.id)
-        let rect = CGRect(
-            x: node.position.x, y: node.position.y,
-            width: node.width, height: state.renderedHeight(of: node)
-        )
-        state.frameRect(rect, padding: 120)
+        // Frame the card on the NEXT runloop: `exitArchive` restores the
+        // pre-archive camera inside its own animation transaction, so framing
+        // synchronously here would be overwritten. Deferring lands us on the card.
+        DispatchQueue.main.async {
+            let rect = CGRect(
+                x: node.position.x, y: node.position.y,
+                width: node.width, height: state.renderedHeight(of: node)
+            )
+            state.frameRect(rect, padding: 120)
+        }
     }
 
     // MARK: - Empty state

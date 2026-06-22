@@ -528,13 +528,23 @@ private final class SegmentHitZone: NSView {
 /// indicator via `updateNSView`.
 struct _TopSegmentedRepresentable: NSViewRepresentable {
     let state: CanvasState
+    /// Value field so SwiftUI diffs it → `updateNSView` fires on EXTERNAL mode
+    /// changes (e.g. tapping an Archive row jumps to canvas). Without this the
+    /// reference-type `state` looks identical every render and the indicator
+    /// stays stuck on the old segment.
+    let mode: CanvasMode
+
+    init(state: CanvasState) {
+        self.state = state
+        self.mode = state.canvasMode
+    }
 
     func makeNSView(context: Context) -> CanvasTopSegmentedControlView {
         let v = CanvasTopSegmentedControlView()
-        v.setSelectedIndex(Self.index(for: state.canvasMode), animated: false)
+        v.setSelectedIndex(Self.index(for: mode), animated: false)
         v.onSelect = { idx in
-            let mode = Self.mode(for: idx)
-            withAnimation(Motion.feedback) { state.setMode(mode) }
+            let m = Self.mode(for: idx)
+            withAnimation(Motion.feedback) { state.setMode(m) }
         }
         return v
     }
@@ -542,10 +552,10 @@ struct _TopSegmentedRepresentable: NSViewRepresentable {
     func updateNSView(_ nsView: CanvasTopSegmentedControlView, context: Context) {
         // Re-wire (captures the current `state`) and reflect external changes.
         nsView.onSelect = { idx in
-            let mode = Self.mode(for: idx)
-            withAnimation(Motion.feedback) { state.setMode(mode) }
+            let m = Self.mode(for: idx)
+            withAnimation(Motion.feedback) { state.setMode(m) }
         }
-        nsView.setSelectedIndex(Self.index(for: state.canvasMode), animated: true)
+        nsView.setSelectedIndex(Self.index(for: mode), animated: true)
     }
 
     func makeCoordinator() -> Void { }
