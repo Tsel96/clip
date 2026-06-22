@@ -50,12 +50,13 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private static let oneItemImage   = loadSVG("Folder_1-item")
     private static let twoItemsImage  = loadSVG("Folder_2-items")
     private static let threeItemsImage = loadSVG("Folder_3-items")
-    /// Open-lid art shown while a card is held over the folder (drop-hover): empty
-    /// vs WITH a card peeking inside (Figma 104:679 / 104:670). Both are 1163×1099
-    /// (taller than the 1044 rest art — the open lid extends upward).
-    private static let hoveredImage       = loadSVG("Folder_Hovered")
-    private static let hoveredObjectImage = loadSVG("Folder_HoveredObject")
-    private static let hoveredArtHeight: CGFloat = 1099
+    /// Open-lid art (Figma 104:672 "Opened part of folder") — a SEPARATE overlay at
+    /// (73, 256.23, 1017×685) in the 1163×1044 folder frame, faded + lifted in on
+    /// drop-hover so ONLY the lid animates (the body art stays put).
+    private static let openLidImage = loadSVG("Folder_OpenedLid")
+    private let lidView = NSImageView()
+    /// Figma rect of the open lid within the folder frame.
+    private static let lidRect = CGRect(x: 73, y: 256.2256, width: 1017, height: 685)
     /// Current folder tint (so the open-lid art is recoloured to match).
     private var nodeColorHex: String?
     private var isDropHovered = false
@@ -168,6 +169,15 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         shapeView.layer?.masksToBounds = false
         addSubview(shapeView)
 
+        // Open-lid overlay — hidden at rest, fades + lifts in on drop-hover. Sits
+        // ABOVE the body but BELOW the text/icon (added next).
+        lidView.image = Self.openLidImage
+        lidView.imageScaling = .scaleAxesIndependently
+        lidView.wantsLayer = true
+        lidView.layer?.masksToBounds = false
+        lidView.layer?.opacity = 0
+        addSubview(lidView)
+
         countField.textColor = NSColor(white: 0, alpha: 0.4)
         addSubview(countField)
         titleField.textColor = .black
@@ -275,23 +285,40 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     func setDropHover(_ hovering: Bool) {
         guard hovering != isDropHovered else { return }
         isDropHovered = hovering
-        if hovering {
-            // Open lid: with-object art if the folder already has items, else empty.
-            let base = currentCount >= 1 ? Self.hoveredObjectImage : Self.hoveredImage
-            shapeView.image = tintedIfNeeded(base)
-            shadowView.image = base
-            currentArtHeight = Self.hoveredArtHeight        // taller art → lid lifts up
-        } else {
-            refreshArt()                                    // back to per-count art (1044)
-        }
-        // Lid open/close = a soft crossfade of the folder art (the open-lid shape).
-        let fade = CATransition()
-        fade.type = .fade
-        fade.duration = 0.20
-        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        shapeView.layer?.add(fade, forKey: "lid")
-        if let copy = fade.copy() as? CATransition { shadowView.layer?.add(copy, forKey: "lid") }
-        needsLayout = true                                  // remap the (taller) art frame
+        lidView.image = tintedIfNeeded(Self.openLidImage)
+        // ONLY the lid animates (the body art stays put): the open-lid overlay fades
+        // + springs UP out of the folder front on enter, and back on exit.
+        let cx = lidView.bounds.width / 2, cy = lidView.bounds.height / 2
+        let closed = CATransform3DConcat(
+            CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
+                                CATransform3DMakeScale(0.94, 0.94, 1)),
+            CATransform3DMakeTranslation(cx, cy + cy * 0.10, 0))    // sunk into the front
+        let to = hovering ? CATransform3DIdentity : closed
+        let s = CASpringAnimation(keyPath: "transform")
+        s.fromValue = lidView.layer?.presentation()?.transform ?? lidView.layer?.transform ?? to
+        s.toValue = to
+        s.stiffness = 320; s.damping = 26; s.mass = 1
+        s.duration = s.settlingDuration
+        lidView.layer?.transform = to
+        lidView.layer?.add(s, forKey: "lidOpen")
+
+        let o = CABasicAnimation(keyPath: "opacity")
+        o.fromValue = lidView.layer?.presentation()?.opacity ?? lidView.layer?.opacity
+        o.toValue = hovering ? 1 : 0
+        o.duration = 0.18
+        o.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        lidView.layer?.opacity = hovering ? 1 : 0
+        lidView.layer?.add(o, forKey: "lidFade")
+
+        // Outline — IDENTICAL to the selected state (kept on if genuinely selected).
+        let op: Float = hovering ? 1 : (showsSelectionOutline ? 1 : 0)
+        let ho = CABasicAnimation(keyPath: "opacity")
+        ho.fromValue = haloView.layer?.presentation()?.opacity ?? haloView.layer?.opacity
+        ho.toValue = op
+        ho.duration = 0.16
+        ho.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        haloView.layer?.opacity = op
+        haloView.layer?.add(ho, forKey: "fade")
     }
 
     /// Apply the folder tint to an art image if one is set.
@@ -351,6 +378,11 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         // Selection outline: the ring image already bakes in the gap + thickness
         // (dilated in art space), so it shares the folder art frame exactly.
         haloView.frame = shapeView.frame
+        // Open-lid overlay — its own Figma sub-rect of the folder frame.
+        lidView.frame = CGRect(x: (Self.lidRect.minX - Self.folderRect.minX) * sx,
+                               y: (Self.lidRect.minY - Self.folderRect.minY) * sy,
+                               width: Self.lidRect.width * sx,
+                               height: Self.lidRect.height * sy)
 
         // Live text, lower-left (the baked text sat at ≈12% in, 69%/77% down).
         let pad = w * 0.118
