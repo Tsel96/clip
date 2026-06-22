@@ -143,6 +143,9 @@ extension CanvasState {
                 nodes[idx].kind = .stickyNote(content: plain, color: color)
             case .text(_, let fontSize):
                 nodes[idx].kind = .text(content: plain, fontSize: fontSize)
+                let s = Self.textPillSize(content: plain, fontSize: fontSize)   // keep the pill sized
+                nodes[idx].width = s.width
+                nodes[idx].height = s.height
             default: break
             }
         }

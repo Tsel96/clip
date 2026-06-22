@@ -292,6 +292,7 @@ struct DraggableNode: View {
             // `pendingFocusNodeID` and enters edit mode).
             if case .text = node.kind {
                 state.select(node.id)
+                state.editingTextNodeID = node.id
                 state.pendingFocusNodeID = node.id
                 return
             }

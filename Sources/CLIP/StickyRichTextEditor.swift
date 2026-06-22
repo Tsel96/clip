@@ -35,10 +35,31 @@ struct StickyRichTextEditor: NSViewRepresentable {
     let node: CanvasNode
     let isEditing: Bool
     let textColor: NSColor
+    /// Base typing font (defaults to the sticky's SF Mono Medium 17).
+    var font: NSFont = NSFont.monospacedSystemFont(ofSize: 17, weight: .medium)
+    var alignment: NSTextAlignment = .left
+    var kern: CGFloat = -0.17
+    var inset: NSSize = NSSize(width: 22, height: 24)
+    /// Fired on every text change (used by text nodes to live-resize the pill).
+    var onTextChange: ((String) -> Void)? = nil
     let onCommit: (NSAttributedString) -> Void
     let onEndEditing: () -> Void
 
-    /// SF Mono Medium 17, sticky text colour, ≈22pt line height (Figma 88-415).
+    /// The base (unformatted) attributes for THIS editor.
+    func attributes() -> [NSAttributedString.Key: Any] {
+        let para = NSMutableParagraphStyle()
+        para.lineSpacing = 2
+        para.alignment = alignment
+        return [
+            .font: font,
+            .foregroundColor: textColor,
+            .paragraphStyle: para,
+            .kern: kern,
+        ]
+    }
+
+    /// Fallback base attributes (sticky SF Mono) for the eraser when the active
+    /// text view didn't record its own.
     static func defaultAttributes(_ color: NSColor) -> [NSAttributedString.Key: Any] {
         let para = NSMutableParagraphStyle()
         para.lineSpacing = 2
@@ -83,13 +104,15 @@ struct StickyRichTextEditor: NSViewRepresentable {
         tv.allowsUndo = true
         tv.drawsBackground = false
         tv.backgroundColor = .clear
-        tv.textContainerInset = NSSize(width: 22, height: 24)
+        tv.textContainerInset = inset
         tv.textContainer?.lineFragmentPadding = 0
         tv.insertionPointColor = textColor
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.isAutomaticTextReplacementEnabled = false
-        tv.typingAttributes = Self.defaultAttributes(textColor)
+        tv.alignment = alignment
+        tv.typingAttributes = attributes()
+        tv.baseAttributes = attributes()        // for the eraser (clear formatting)
         tv.selectedTextAttributes = [
             .backgroundColor: NSColor.selectedTextBackgroundColor,
             .foregroundColor: NSColor.selectedTextColor,
@@ -139,15 +162,20 @@ struct StickyRichTextEditor: NSViewRepresentable {
 
         func load(node: CanvasNode, textColor: NSColor) {
             guard let tv = textView else { return }
+            let base = parent.attributes()
             let attr: NSAttributedString
             if let rich = node.richText, rich.length > 0 {
                 attr = rich
             } else {
-                attr = NSAttributedString(string: node.plainText,
-                                          attributes: StickyRichTextEditor.defaultAttributes(textColor))
+                attr = NSAttributedString(string: node.plainText, attributes: base)
             }
             tv.textStorage?.setAttributedString(attr)
-            tv.typingAttributes = StickyRichTextEditor.defaultAttributes(textColor)
+            tv.typingAttributes = base
+            (tv as? StickyTextView)?.baseAttributes = base
+        }
+
+        func textDidChange(_ notification: Notification) {
+            if let s = textView?.string { parent.onTextChange?(s) }
         }
 
         func textDidEndEditing(_ notification: Notification) {
@@ -188,9 +216,11 @@ struct StickyRichTextEditor: NSViewRepresentable {
 /// `NSTextView`). Used by the bottom toolbar's text-format buttons — no responder
 /// `toggleBold:` selectors (NSTextView doesn't implement them); we toggle the font
 /// traits / underline / strike directly, then `didChangeText()` for undo.
-/// Sticky editor text view. Accepts first-mouse so a click selects even when the
-/// window just became key.
+/// Sticky / text-node editor text view. Accepts first-mouse so a click selects
+/// even when the window just became key, and records its base (unformatted)
+/// attributes so the eraser can restore the correct font/colour/alignment.
 final class StickyTextView: NSTextView {
+    var baseAttributes: [NSAttributedString.Key: Any] = [:]
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
@@ -299,7 +329,10 @@ enum StickyTextFormatting {
     static func clearFormatting() {
         guard let tv = activeTextView(), let storage = tv.textStorage else { return }
         let color = (tv.typingAttributes[.foregroundColor] as? NSColor) ?? .black
-        let attrs = StickyRichTextEditor.defaultAttributes(color)
+        // Restore the editor's own base attributes (right font/colour/alignment).
+        let attrs = (tv as? StickyTextView)?.baseAttributes.isEmpty == false
+            ? (tv as! StickyTextView).baseAttributes
+            : StickyRichTextEditor.defaultAttributes(color)
         let range = tv.selectedRange()
         if range.length == 0 { tv.typingAttributes = attrs; notifyChanged(); return }
         storage.beginEditing()
