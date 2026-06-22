@@ -50,13 +50,16 @@ struct ConnectorsLayer: View {
 
     // MARK: - Live preview (drag-to-connect)
 
+    /// Brand green (#3DA726) — matches the native committed connectors.
+    private static let connectorGreen = Color(.sRGB, red: 0.239, green: 0.655, blue: 0.149)
+
     @ViewBuilder
     private var livePreview: some View {
         if let pending = state.pendingConnector,
            let route = livePreviewRoute(for: pending) {
-            route.path
+            Path(route.path)
                 .stroke(
-                    Color.accentColor.opacity(0.85),
+                    Self.connectorGreen.opacity(0.9),
                     style: StrokeStyle(
                         lineWidth: 2,
                         lineCap: .round,
@@ -68,34 +71,29 @@ struct ConnectorsLayer: View {
                     ArrowheadShape(
                         tip: route.arrowTip,
                         from: route.arrowFrom,
-                        length: 11,
-                        halfWidth: 5
+                        length: 10,
+                        halfWidth: 4.5
                     )
-                    .fill(Color.accentColor.opacity(0.9))
+                    .fill(Self.connectorGreen)
                 )
         }
     }
 
-    private func livePreviewRoute(for pending: PendingConnector) -> ElbowRoute? {
-        guard let source = state.nodeByID[pending.sourceID] else {
-            return nil
-        }
+    /// Obsidian-style bezier preview (screen space). Returns a `BezierRoute`
+    /// whose `path` is a `CGPath` (wrapped in a SwiftUI `Path` to draw).
+    private func livePreviewRoute(for pending: PendingConnector) -> BezierRoute? {
+        guard let source = state.nodeByID[pending.sourceID] else { return nil }
         let sourceScreen = screenRect(of: source)
 
         if let targetID = pending.hoveredTargetID,
            let target = state.nodeByID[targetID] {
-            return ElbowRoute.build(
-                source: sourceScreen,
-                target: screenRect(of: target),
-                cornerRadius: 14
-            )
+            return ConnectorPathMath.route(source: sourceScreen, target: screenRect(of: target))
         }
 
-        // Free cursor — make a 0-sized phantom rect at the cursor so the
-        // elbow router still produces a Z-shape that points at the cursor.
+        // Free cursor — a 0-sized phantom rect at the cursor; bestSide aims at it.
         let cursor = state.worldToScreen(pending.cursorWorld)
         let phantom = CGRect(x: cursor.x, y: cursor.y, width: 0, height: 0)
-        return ElbowRoute.build(source: sourceScreen, target: phantom, cornerRadius: 14)
+        return ConnectorPathMath.route(source: sourceScreen, target: phantom)
     }
 
     // MARK: - World → screen rect

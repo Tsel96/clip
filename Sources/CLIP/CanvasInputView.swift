@@ -15,9 +15,13 @@ import AppKit
 /// the left mouse-button events; scroll/magnify pass through to the scroll view.
 final class CanvasInputView: NSView {
     override var isFlipped: Bool { true }
+    // Accept first responder so a click on the canvas pulls focus away from any
+    // lingering SwiftUI TextField field-editor (search / rename / hidden fields).
+    // Without this the field-editor keeps focus forever and swallows Delete/⌫.
+    override var acceptsFirstResponder: Bool { true }
     weak var coordinator: CollectionCanvas.Coordinator?
 
-    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw }
+    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw, pendingConnect, connect, moveLabel, pan }
     /// Which edges a resize drag moves. A corner moves two (one H + one V); an
     /// edge moves one — matching Spatial's corner + edge resize handles.
     private struct Grip {
@@ -47,8 +51,15 @@ final class CanvasInputView: NSView {
     private var moveStartPos: [UUID: CGPoint] = [:] // world coords
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
+    private var connectSourceID: UUID?              // drag-to-connect origin node
+    private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
+    private var labelDragID: UUID?                  // connector whose label is being dragged
+    private var labelDragStart: NSPoint = .zero     // content-space grab point
+    private var labelDragStartOffset: CGPoint = .zero
     private var didBegin = false
     private var clickedSelectedNoShift: UUID?       // collapse-to-one on a no-drag click
+    private var panStartContent: NSPoint = .zero    // hand-tool grab anchor (content coords)
+    private var pannedCursorPushed = false          // closed-hand cursor pushed for the pan
 
     private lazy var marqueeLayer: CAShapeLayer = {
         let l = CAShapeLayer()
@@ -69,6 +80,10 @@ final class CanvasInputView: NSView {
         return l
     }()
     private var drawPoints: [NSPoint] = []
+    /// Tracks the cursor to drive object HOVER (the input view owns all pointer
+    /// interaction, so hover is resolved here — not via per-item tracking areas,
+    /// which fight this view's top-of-stack ownership).
+    private var hoverTracking: NSTrackingArea?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -77,6 +92,89 @@ final class CanvasInputView: NSView {
         layer?.addSublayer(drawLayer)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    // MARK: - Hover tracking
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = hoverTracking { removeTrackingArea(t) }
+        // `.inVisibleRect` keeps the area pinned to the visible portion of this
+        // (world-sized) view as it scrolls/zooms, so we never track the whole
+        // canvas. `.mouseMoved` resolves which card is under the cursor.
+        let t = NSTrackingArea(rect: .zero,
+                               options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate,
+                                         .activeInKeyWindow, .inVisibleRect],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t)
+        hoverTracking = t
+    }
+
+    /// Reliable cursor management (NSCursor.set() in mouseMoved gets reset by the
+    /// cursor system). The hand tool shows the open-grab cursor at rest.
+    override func cursorUpdate(with event: NSEvent) {
+        guard let p = config, mode != .pan else { return }   // pan owns it (pushed grab cursor)
+        if p.isHandMode() { NSCursor.openHand.set(); return }
+        // Select mode: resize cursor over a selected node's grip, else the arrow
+        // (this also resets the grab cursor when you switch off the Hand tool).
+        let pt = convert(event.locationInWindow, from: nil)
+        if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
+           isResizable(sel), let g = grip(at: pt, of: sel, p) {
+            g.cursor.set()
+        } else {
+            NSCursor.arrow.set()
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) { updateHover(event) }
+    override func mouseEntered(with event: NSEvent) { updateHover(event) }
+    override func mouseExited(with event: NSEvent) { setHovered(nil) }
+
+    /// Resolve the topmost hoverable node under the cursor → coordinator. Only in
+    /// select mode and when idle (a drag/resize/marquee owns the gesture instead).
+    private func updateHover(_ event: NSEvent) {
+        guard let p = config, mode == .idle else { setHovered(nil); hideConnectDot(); return }
+        // Hand tool: no card hover (cursorUpdate shows the grab cursor).
+        if p.isHandMode() { setHovered(nil); hideConnectDot(); return }
+        let pt = convert(event.locationInWindow, from: nil)
+        // Connector tool: show the green/yellow connect-port dot on the side of the
+        // hovered card nearest the cursor (Figma 100-297) — "drag a connector here".
+        if p.isConnectMode() {
+            if let n = hitNode(at: pt, p), !n.isSection {
+                let rect = contentFrame(n, p)
+                let side = nearestSide(of: rect, to: pt)
+                let c = ConnectorPathMath.sideCenter(of: rect, side)
+                coordinator?.connectorController?.showHoverDot(at: c, mag: mag)
+            } else {
+                hideConnectDot()
+            }
+            setHovered(nil)
+            return
+        }
+        hideConnectDot()
+        guard p.isSelectMode() else { setHovered(nil); return }
+        let n = hitNode(at: pt, p)
+        // Sections aren't hoverable (they're background frames, like for selection).
+        setHovered((n != nil && !n!.isSection) ? n!.id : nil)
+    }
+
+    private func hideConnectDot() { coordinator?.connectorController?.hideHoverDot() }
+
+    /// The side of `r` whose edge is closest to `pt` (for the connect-hover port).
+    private func nearestSide(of r: CGRect, to pt: CGPoint) -> ConnSide {
+        let dl = abs(pt.x - r.minX), dr = abs(r.maxX - pt.x)
+        let dt = abs(pt.y - r.minY), db = abs(r.maxY - pt.y)
+        let m = min(dl, dr, dt, db)
+        if m == dl { return .left }
+        if m == dr { return .right }
+        if m == dt { return .top }
+        return .bottom
+    }
+
+    private func setHovered(_ id: UUID?) {
+        guard coordinator?.hoveredNodeID != id else { return }
+        coordinator?.hoveredNodeID = id
+        coordinator?.refreshChrome()
+    }
 
     private var config: CanvasConfig? { coordinator?.config }
     private var mag: CGFloat { max(enclosingScrollView?.magnification ?? 1, 0.0001) }
@@ -94,7 +192,7 @@ final class CanvasInputView: NSView {
     }
     private func locksAspect(_ n: CanvasNode) -> Bool {
         switch n.kind {
-        case .image, .video, .tweet, .instagram, .youtube, .webclip: return true
+        case .image, .video, .tweet, .instagram, .youtube, .webclip, .folder: return true
         default: return false
         }
     }
@@ -130,11 +228,26 @@ final class CanvasInputView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let p = config else { return }
+        // Take focus from any text field so the canvas owns the keyboard (Delete,
+        // etc.). Clicks INSIDE an editing text node never reach here (hitTest
+        // passes them to the field), so this won't interrupt active text editing.
+        if window?.firstResponder !== self { window?.makeFirstResponder(self) }
         let pt = convert(event.locationInWindow, from: nil)
         startPt = pt
         didBegin = false
         clickedSelectedNoShift = nil
         let shift = event.modifierFlags.contains(.shift)
+
+        // Hand (pan) tool: grab the canvas and pan it 1:1 with the cursor
+        // (Figma hand tool). Anchors the content point under the cursor.
+        if p.isHandMode() {
+            mode = .pan
+            panStartContent = pt
+            // Push (not set) the grab cursor so scroll ticks can't reset it mid-pan
+            // (that reset↔set fight is the "blinking cursor").
+            if !pannedCursorPushed { NSCursor.closedHand.push(); pannedCursorPushed = true }
+            return
+        }
 
         // Native draw (marker): collect content-space points; commit on mouse-up.
         if p.isDrawMode() {
@@ -143,9 +256,53 @@ final class CanvasInputView: NSView {
             return
         }
 
+        // Native drag-to-connect (connectors tool): drag from one card to another.
+        if p.isConnectMode() {
+            // Double-click a connector → edit its midpoint label.
+            if event.clickCount == 2, p.useNativeConnectors,
+               let cid = coordinator?.connectorController?.hitTest(pt, tolerance: 16 / mag) {
+                coordinator?.beginEditingConnectorLabel(cid)
+                mode = .idle
+                return
+            }
+            // Single click ON a label → grab it to reposition (takes priority over
+            // starting a connection, so a label sitting over a card is draggable).
+            if p.useNativeConnectors,
+               let cid = coordinator?.connectorController?.labelHitTest(pt) {
+                mode = .moveLabel
+                labelDragID = cid
+                labelDragStart = pt
+                labelDragStartOffset = coordinator?.connectorController?.storedLabelOffset(cid) ?? .zero
+                return
+            }
+            if let n = hitNode(at: pt, p), !n.isSection {
+                mode = .pendingConnect
+                connectSourceID = n.id
+                // Pin the source to the side nearest the grab so the origin doesn't
+                // drift to an auto-picked side later.
+                connectSourceSide = nearestSide(of: contentFrame(n, p), to: pt)
+            } else if p.useNativeConnectors,
+                      let cid = coordinator?.connectorController?.hitTest(pt, tolerance: 16 / mag) {
+                // Click a connector line (not a card) → select it (so it's deletable).
+                p.onSelectConnector(cid)
+                coordinator?.refreshChrome()
+                mode = .idle
+            } else {
+                mode = .idle
+            }
+            return
+        }
+
         // Double-click → activate (text edit / stack focus / lightbox).
         if event.clickCount == 2, let n = hitNode(at: pt, p), !n.isSection {
             p.onActivate(n.id); mode = .idle; return
+        }
+        // Double-click on a connector → edit its midpoint label (Obsidian-style).
+        if event.clickCount == 2, p.useNativeConnectors,
+           let cid = coordinator?.connectorController?.hitTest(pt, tolerance: 16 / mag) {
+            coordinator?.beginEditingConnectorLabel(cid)
+            mode = .idle
+            return
         }
         // Corner / edge resize on the single selected resizable node.
         if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
@@ -254,6 +411,31 @@ final class CanvasInputView: NSView {
         case .draw:
             drawPoints.append(pt)
             updateDrawPreview(p)
+        case .pendingConnect, .connect:
+            mode = .connect
+            guard let srcID = connectSourceID,
+                  let src = p.nodes.first(where: { $0.id == srcID }) else { break }
+            let hovered = hitNode(at: pt, p)
+            let target = (hovered != nil && hovered!.id != srcID && !hovered!.isSection) ? hovered : nil
+            let srcRect = contentFrame(src, p)
+            let tgtRect = target.map { contentFrame($0, p) } ?? CGRect(x: pt.x, y: pt.y, width: 0, height: 0)
+            coordinator?.connectorController?.setPreview(sourceRect: srcRect, targetRect: tgtRect, magnification: mag)
+        case .moveLabel:
+            guard let id = labelDragID else { break }
+            let off = CGPoint(x: labelDragStartOffset.x + (pt.x - labelDragStart.x),
+                              y: labelDragStartOffset.y + (pt.y - labelDragStart.y))
+            coordinator?.connectorController?.setLiveLabelOffset(id: id, offset: off)
+        case .pan:
+            // Grab-pan (Figma hand tool): scroll the clip view by the slip of the
+            // grabbed content point so it stays glued under the cursor 1:1.
+            if let scroll = enclosingScrollView {
+                let clip = scroll.contentView
+                var o = clip.bounds.origin
+                o.x += panStartContent.x - pt.x
+                o.y += panStartContent.y - pt.y
+                clip.scroll(to: o)
+                scroll.reflectScrolledClipView(clip)
+            }
         case .idle: break
         }
     }
@@ -287,14 +469,39 @@ final class CanvasInputView: NSView {
                     CGPoint(x: $0.x + wb.minX, y: $0.y + wb.minY)
                 })
             }
-        case .marquee, .idle:
-            break
+        case .connect:
+            let pt = convert(event.locationInWindow, from: nil)
+            if let srcID = connectSourceID, let hovered = hitNode(at: pt, p),
+               hovered.id != srcID, !hovered.isSection {
+                // Attach to the side of the target the user dragged onto; keep the
+                // source pinned to where the drag began.
+                let side = nearestSide(of: contentFrame(hovered, p), to: pt)
+                p.onAddConnector(srcID, hovered.id, connectSourceSide, side)
+            }
+            coordinator?.connectorController?.clearPreview()
+        case .moveLabel:
+            let pt = convert(event.locationInWindow, from: nil)
+            if let id = labelDragID {
+                let off = CGPoint(x: labelDragStartOffset.x + (pt.x - labelDragStart.x),
+                                  y: labelDragStartOffset.y + (pt.y - labelDragStart.y))
+                let moved = abs(off.x - labelDragStartOffset.x) > 1 || abs(off.y - labelDragStartOffset.y) > 1
+                if moved { p.onMoveConnectorLabel(id, off) } else { p.onSelectConnector(id) }
+                coordinator?.connectorController?.clearLiveLabelOffset()
+            }
+        case .pendingConnect, .marquee, .idle, .pan:
+            coordinator?.connectorController?.clearPreview()
         }
+        connectSourceID = nil
+        connectSourceSide = nil
+        labelDragID = nil
         coordinator?.refreshChrome()
         reset()
+        // Re-resolve hover from the drop point (no mouseMoved fires during a drag).
+        updateHover(event)
     }
 
     private func reset() {
+        if pannedCursorPushed { NSCursor.pop(); pannedCursorPushed = false }
         marqueeLayer.isHidden = true; marqueeLayer.path = nil
         drawLayer.isHidden = true; drawLayer.path = nil; drawPoints = []
         coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
@@ -343,24 +550,6 @@ final class CanvasInputView: NSView {
         p.onResize(id, CGRect(x: ox, y: oy, width: w, height: h))
     }
 
-    override func resetCursorRects() {
-        guard let p = config, let selID = p.selectedNodeID,
-              let sel = p.nodes.first(where: { $0.id == selID }), isResizable(sel) else { return }
-        let f = contentFrame(sel, p)
-        let r = min(26 / mag, min(f.width, f.height) * 0.25)
-        // Corner + edge cursor rects.
-        let specs: [(CGRect, Grip)] = [
-            (CGRect(x: f.minX, y: f.minY, width: r, height: r), Grip(left: true, top: true)),
-            (CGRect(x: f.maxX - r, y: f.minY, width: r, height: r), Grip(right: true, top: true)),
-            (CGRect(x: f.minX, y: f.maxY - r, width: r, height: r), Grip(left: true, bottom: true)),
-            (CGRect(x: f.maxX - r, y: f.maxY - r, width: r, height: r), Grip(right: true, bottom: true)),
-            (CGRect(x: f.minX + r, y: f.minY, width: f.width - 2*r, height: r), Grip(top: true)),
-            (CGRect(x: f.minX + r, y: f.maxY - r, width: f.width - 2*r, height: r), Grip(bottom: true)),
-            (CGRect(x: f.minX, y: f.minY + r, width: r, height: f.height - 2*r), Grip(left: true)),
-            (CGRect(x: f.maxX - r, y: f.minY + r, width: r, height: f.height - 2*r), Grip(right: true)),
-        ]
-        for (rect, g) in specs where rect.width > 0 && rect.height > 0 {
-            addCursorRect(rect, cursor: g.cursor)
-        }
-    }
+    // Cursor management is handled entirely in `cursorUpdate(with:)` (hand /
+    // resize-grip / arrow) — no cursor rects, so the two mechanisms can't fight.
 }

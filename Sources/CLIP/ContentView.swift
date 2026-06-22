@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var state: CanvasState
-    @State private var columnVisibility: NavigationSplitViewVisibility = .doubleColumn
     @Environment(\.colorScheme) private var systemScheme
 
     /// The appearance actually in effect — the forced mode, or the system's
@@ -16,19 +15,18 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        // Sidebar laid out directly (NOT a NavigationSplitView column). The split
+        // view drew its own default sidebar material behind our custom panel — a
+        // second "panel under" that read as weird — and its column hard-clipped the
+        // panel's drop shadow. As a sibling in an HStack with a higher zIndex, our
+        // panel is the ONLY one and its real shadow spills over the canvas.
+        HStack(spacing: 0) {
             PagesSidebar()
-                .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 280)
-        } detail: {
+                .frame(width: 200)
+                .frame(maxHeight: .infinity)
+                .zIndex(1)
             CanvasView()
-                // Soft floor only. A hard 720 here exceeded (window − sidebar)
-                // at small sizes, so the split view shoved the sidebar off the
-                // window's left edge (its labels clipped on the leading side).
-                // 480 always leaves room for the sidebar's 180–280.
-                // Fill under the hidden title bar so no blank strip shows at the
-                // top (traffic lights float over the sidebar, not the canvas).
-                .ignoresSafeArea(.container, edges: .top)
-                .frame(minWidth: 480, minHeight: 480)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $state.isAddSheetPresented) {
                     AddToCanvasSheet(
@@ -56,6 +54,9 @@ struct ContentView: View {
                     InboxSetupGuide()
                 }
         }
+        .frame(minWidth: 700, minHeight: 480)
+        // Fill under the hidden title bar (traffic lights float over the sidebar).
+        .ignoresSafeArea(.container, edges: .top)
         // Drain any links the iPhone Shortcut dropped while the app was in
         // the background / closed.
         .onReceive(NotificationCenter.default.publisher(

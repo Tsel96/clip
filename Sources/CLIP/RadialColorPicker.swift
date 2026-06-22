@@ -1,104 +1,251 @@
 import AppKit
 
-// MARK: - Native radial color picker (Spatial's flower color wheel)
+private func hex(_ v: Int) -> NSColor {
+    NSColor(srgbRed: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255,
+            blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+}
 
-/// A self-contained native color picker shaped like Spatial's flower wheel: two
-/// rings of hue petals (saturated outer, lighter inner) around a white center,
-/// on a dark glowing disc. Hovering a petal scales it + fires a soft haptic;
-/// clicking picks. Springs in/out. No SwiftUI — pure CALayer + AppKit events.
+// MARK: - Native radial color picker (Spatial's flower wheel, 1:1)
+
+/// Spatial's color selector: a dark disc carrying a tightly-packed "flower" of
+/// equal-sized colour circles (white core + 6 pastel inner ring + 12 vibrant
+/// outer ring), wrapped in a crisp rainbow rim + soft glow, with a dark
+/// `#1D2023` control bar below (save / eyedropper / eject).
+///
+/// Flower geometry follows the BlossomColorPicker "geometric nesting" algorithm
+/// (equal circles, valley-staggered rings, aggressive overlap) so the petals
+/// pack densely like Spatial's — not the sparse, uneven ring of the first pass.
 final class RadialColorPicker: NSView {
 
     var onPick: (NSColor) -> Void = { _ in }
     var onDismiss: () -> Void = {}
+    /// Live preview as the cursor sweeps the petals: the hovered colour (or `nil`
+    /// when over no petal / on exit). Drives the folder's live recolour.
+    var onHoverPreview: (NSColor?) -> Void = { _ in }
 
-    private struct Petal { let layer: CAShapeLayer; let color: NSColor; let center: CGPoint }
+    // MARK: Geometry — Spatial proportions
+    /// Spatial's flower leaves the blossom ~0.78× of the disc, so a dark margin
+    /// rings it before the OFFSET rainbow rim; the white core is a touch larger
+    /// than the leaves and the rings are spread enough that the vibrant outer
+    /// ring is never buried under the pale inner ring.
+    private let discR: CGFloat = 72
+    private let petalR: CGFloat = 17         // fills the disc (bigger palette) with solid overlap
+    private let coreR: CGFloat = 20          // white centre, slightly larger
+    private let pad: CGFloat = 36            // room for the glow + drop shadow (must not clip)
+    private var discCenter: CGPoint = .zero
+    private let innerR: CGFloat = 24
+    private let outerR: CGFloat = 44         // outer leaf edge ≈ 61 → flower fills ~85% of the disc (like Spatial)
+
+    // MARK: Hover falloff (Spatial: "each leaf interacts with nearby leaves")
+    /// Peak scale boost for the hovered circle, the core's extra pop, and the
+    /// Gaussian falloff width (pt) over which neighbours react.
+    // Spatial: the hovered leaf scales up and physically SHOVES its neighbours
+    // outward, falling off over ~3 rings — the whole flower flexes around it.
+    private let hoverBoost: CGFloat = 0.62
+    private let hoverCoreBoost: CGFloat = 0.66
+    private let pushMax: CGFloat = 10        // outward shove for the closest neighbours (pt)
+    private let pushSigma: CGFloat = 26      // falloff reach (~3 rings of the smaller flower)
+
+    // MARK: Palette (BlossomColorPicker)
+    /// Inner ring — 6 pastels, clockwise from top.
+    private let innerColors: [NSColor] = [   // sampled from Spatial — pale pastel inner ring
+        hex(0xDDDFE1), hex(0xFBF9EA), hex(0xE3EDD2), hex(0xDCF1F2), hex(0xEEDCF3), hex(0xFBEBF3),
+    ]
+    /// Outer ring — 12 vivids, clockwise (sampled from Spatial; the 3 warm leaves
+    /// under the lifted orange petal reconstructed from the red→orange→yellow run).
+    private let outerColors: [NSColor] = [
+        hex(0xFF976F), hex(0xF8C84F), hex(0xC9CB38), hex(0x51DF62), hex(0x00DFA2), hex(0x21C8E3),
+        hex(0x5990F8), hex(0x9A6AF7), hex(0xEB57CB), hex(0xFF5C97), hex(0xFF6E71), hex(0xFF7E63),
+    ]
+    private let discColor = NSColor(srgbRed: 0.055, green: 0.055, blue: 0.063, alpha: 1)  // #0E0E10
+
+    private struct Petal { let layer: CAShapeLayer; let color: NSColor; let center: CGPoint; let r: CGFloat; let isCore: Bool; let baseZ: CGFloat }
     private var petals: [Petal] = []
-    private let disc = CALayer()
-    private let centerDot = CAShapeLayer()
-    private var tracking: NSTrackingArea?
     private var hovered: Int? = nil
+    private var tracking: NSTrackingArea?
+    private var outsideMonitor: Any?
+    /// Crisp outline traced around the hovered petal (above everything).
+    private let hoverRing = CAShapeLayer()
+    /// Once a colour is picked, stop reverting the live preview on the way out.
+    private var picked = false
 
-    private let diameter: CGFloat
-
-    init(diameter: CGFloat = 168) {
-        self.diameter = diameter
-        super.init(frame: CGRect(x: 0, y: 0, width: diameter, height: diameter))
+    init() {
+        // Disc only — the control bar is the candy folder toolbar this blooms ABOVE.
+        let viewSide = discR * 2 + pad * 2
+        super.init(frame: CGRect(x: 0, y: 0, width: viewSide, height: viewSide))
         wantsLayer = true
-        buildDisc()
+        layerUsesCoreImageFilters = true
+        discCenter = CGPoint(x: viewSide / 2, y: viewSide / 2)
+        buildHaloDisc()
         buildPetals()
+        buildHoverRing()
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    private var center: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
-    private var R: CGFloat { diameter / 2 }
-
-    private let halo = CAGradientLayer()
-
-    private func buildDisc() {
-        // Rainbow conic halo behind the dark disc (the colorful glow ring in
-        // Spatial's picker). The dark disc on top leaves a thin spectrum ring.
-        halo.type = .conic
-        halo.frame = bounds.insetBy(dx: -7, dy: -7)
-        halo.cornerRadius = halo.frame.width / 2
-        halo.startPoint = CGPoint(x: 0.5, y: 0.5)
-        halo.endPoint = CGPoint(x: 0.5, y: 0)
-        halo.colors = (0...12).map { NSColor(hue: CGFloat($0) / 12, saturation: 0.9, brightness: 1, alpha: 1).cgColor }
-        halo.shadowColor = NSColor.black.cgColor
-        halo.shadowOpacity = 0.30
-        halo.shadowRadius = 20
-        halo.shadowOffset = CGSize(width: 0, height: 8)
-        layer?.addSublayer(halo)
-
-        disc.frame = bounds
-        disc.cornerRadius = R
-        disc.backgroundColor = NSColor(white: 0.10, alpha: 0.96).cgColor   // halo provides the drop shadow
-        layer?.addSublayer(disc)
-        // White center "pick neutral" dot.
-        let cr = R * 0.17
-        centerDot.path = CGPath(ellipseIn: CGRect(x: center.x - cr, y: center.y - cr,
-                                                  width: cr * 2, height: cr * 2), transform: nil)
-        centerDot.fillColor = NSColor.white.cgColor
-        centerDot.shadowColor = NSColor.black.cgColor
-        centerDot.shadowOpacity = 0.25
-        centerDot.shadowRadius = 3
-        layer?.addSublayer(centerDot)
+    /// A single reusable ring layer, drawn above every petal, that traces the
+    /// hovered circle. Hidden until a petal is hovered.
+    private func buildHoverRing() {
+        hoverRing.fillColor = nil
+        hoverRing.lineWidth = 2.5
+        hoverRing.strokeColor = NSColor.white.cgColor
+        hoverRing.zPosition = 2_000_000          // above the lifted petal (baseZ + 100000)
+        hoverRing.opacity = 0
+        hoverRing.shadowColor = NSColor.black.cgColor
+        hoverRing.shadowOpacity = 0.45           // keyline so the ring reads on light petals too
+        hoverRing.shadowRadius = 1.5
+        hoverRing.shadowOffset = .zero
+        layer?.addSublayer(hoverRing)
     }
+
+    /// Trace an always-white ring around the (scaled) hovered petal that GLIDES
+    /// between petals with a spring (Spatial's smooth selection ring), fading in
+    /// on first hover and out when over no petal.
+    private func updateHoverRing(for idx: Int?, animated: Bool) {
+        guard let idx else {
+            // Release: ease the ring out smoothly.
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = hoverRing.presentation()?.opacity ?? hoverRing.opacity
+            fade.toValue = 0
+            fade.duration = 0.18
+            hoverRing.opacity = 0
+            hoverRing.add(fade, forKey: "ringFade")
+            return
+        }
+        let petal = petals[idx]
+        let scaled = petal.r * (1 + (petal.isCore ? hoverCoreBoost : hoverBoost)) + 1.5
+        let rect = CGRect(x: petal.center.x - scaled, y: petal.center.y - scaled,
+                          width: scaled * 2, height: scaled * 2)
+        let newPath = CGPath(ellipseIn: rect, transform: nil)
+        if animated {
+            let a = CASpringAnimation(keyPath: "path")
+            a.fromValue = hoverRing.presentation()?.path ?? hoverRing.path
+            a.toValue = newPath
+            a.stiffness = CLIPSpring.Preset.control.stiffness
+            a.damping = CLIPSpring.Preset.control.caDamping
+            a.duration = a.settlingDuration
+            hoverRing.path = newPath
+            hoverRing.add(a, forKey: "ringPath")
+        } else {
+            // Instant snap to the hovered leaf — hover feedback is immediate.
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            hoverRing.removeAnimation(forKey: "ringPath")
+            hoverRing.path = newPath
+            CATransaction.commit()
+        }
+        hoverRing.opacity = 1
+    }
+
+    // MARK: Build — halo + disc
+
+    private var conicColors: [CGColor] { (outerColors + [outerColors[0]]).map { $0.cgColor } }
+
+    private func buildHaloDisc() {
+        let d = discR * 2
+        let discRect = CGRect(x: discCenter.x - discR, y: discCenter.y - discR, width: d, height: d)
+
+        // Subtle coloured glow — a soft conic halo just past the rim (Spatial has a
+        // gentle bloom; understated, not the big wash from before).
+        let glow = CAGradientLayer()
+        glow.type = .conic
+        glow.frame = discRect.insetBy(dx: -11, dy: -11)
+        glow.cornerRadius = glow.frame.width / 2
+        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
+        glow.endPoint = CGPoint(x: 0.5, y: 0)
+        glow.colors = conicColors
+        glow.opacity = 0.75
+        if let blur = CIFilter(name: "CIGaussianBlur") { blur.setValue(12, forKey: "inputRadius"); glow.filters = [blur] }
+        layer?.addSublayer(glow)
+
+        // Dark disc backdrop, floating with a soft (neutral) shadow.
+        let disc = CALayer()
+        disc.frame = discRect
+        disc.cornerRadius = discR
+        disc.backgroundColor = discColor.cgColor
+        disc.shadowColor = NSColor.black.cgColor
+        disc.shadowOpacity = 0.34; disc.shadowRadius = 22   // soft float, fits in `pad`
+        disc.shadowOffset = CGSize(width: 0, height: -8)
+        layer?.addSublayer(disc)
+
+        // 3. CRISP bright rainbow rim — a conic gradient masked to a thin stroked
+        //    circle right at the disc edge, OFFSET from the blossom by the dark
+        //    margin (Spatial's glowing ring). A full conic disc would be hidden by
+        //    the dark disc; the ring mask reveals only the 4pt edge band.
+        let rimWidth: CGFloat = 2.5
+        let rim = CAGradientLayer()
+        rim.type = .conic
+        rim.frame = discRect
+        rim.cornerRadius = discR
+        rim.startPoint = CGPoint(x: 0.5, y: 0.5)
+        rim.endPoint = CGPoint(x: 0.5, y: 0)
+        rim.colors = conicColors
+        let rimMask = CAShapeLayer()
+        rimMask.frame = rim.bounds
+        rimMask.fillColor = nil
+        rimMask.strokeColor = NSColor.black.cgColor
+        rimMask.lineWidth = rimWidth
+        rimMask.path = CGPath(ellipseIn: CGRect(x: rimWidth / 2, y: rimWidth / 2,
+                                                width: d - rimWidth, height: d - rimWidth), transform: nil)
+        rim.mask = rimMask
+        layer?.addSublayer(rim)
+
+        // 4. Black ring just OUTSIDE the gradient (offset), defining the bright rim
+        //    against the soft glow — Spatial's dark keyline around the spectrum.
+        let blackRing = CAShapeLayer()
+        blackRing.fillColor = nil
+        blackRing.strokeColor = NSColor.black.cgColor
+        blackRing.lineWidth = 2
+        let br = discR + 1
+        blackRing.path = CGPath(ellipseIn: CGRect(x: discCenter.x - br, y: discCenter.y - br,
+                                                  width: br * 2, height: br * 2), transform: nil)
+        layer?.addSublayer(blackRing)
+    }
+
+    // MARK: Build — flower
 
     private func buildPetals() {
-        let count = 12
-        // ring: (innerR, outerR, saturation, brightness)
-        let rings: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
-            (R * 0.50, R * 0.95, 0.90, 0.96),   // outer — saturated
-            (R * 0.20, R * 0.52, 0.52, 1.00),   // inner — light tints
-        ]
-        for (innerR, outerR, sat, bri) in rings {
-            for i in 0..<count {
-                let angle = (CGFloat(i) / CGFloat(count)) * .pi * 2 - .pi / 2
-                let color = NSColor(hue: CGFloat(i) / CGFloat(count),
-                                    saturation: sat, brightness: bri, alpha: 1)
-                let mid = CGPoint(x: center.x + cos(angle) * (innerR + outerR) / 2,
-                                  y: center.y + sin(angle) * (innerR + outerR) / 2)
-                let p = CAShapeLayer()
-                p.path = petalPath(angle: angle, innerR: innerR, outerR: outerR, count: count)
-                p.fillColor = color.cgColor
-                p.strokeColor = NSColor.black.withAlphaComponent(0.10).cgColor
-                p.lineWidth = 0.5
-                layer?.addSublayer(p)
-                petals.append(Petal(layer: p, color: color, center: mid))
-            }
+        // Outer ring (12), valley-rotated 30° — drawn lowest.
+        for (i, c) in outerColors.enumerated() {
+            let deg = 30 + CGFloat(i) / CGFloat(outerColors.count) * 360
+            addPetal(color: c, center: ringPoint(outerR, deg: deg), r: petalR, isCore: false, baseZ: zFor(deg, layer: 0))
         }
+        // Inner ring (6) — above the outer ring.
+        for (i, c) in innerColors.enumerated() {
+            let deg = CGFloat(i) / CGFloat(innerColors.count) * 360
+            addPetal(color: c, center: ringPoint(innerR, deg: deg), r: petalR, isCore: false, baseZ: zFor(deg, layer: 1))
+        }
+        // White core — on top, larger than the leaves.
+        addPetal(color: .white, center: discCenter, r: coreR, isCore: true, baseZ: 2000)
     }
 
-    /// A rounded capsule "petal" radiating from the center — gives the soft
-    /// flower look (vs a hard pie wedge), like Spatial's wheel.
-    private func petalPath(angle: CGFloat, innerR: CGFloat, outerR: CGFloat, count: Int) -> CGPath {
-        let midR = (innerR + outerR) / 2
-        let length = outerR - innerR
-        let width = (.pi * 2 / CGFloat(count)) * midR * 0.62      // arc-width with a gap
-        let mid = CGPoint(x: center.x + cos(angle) * midR, y: center.y + sin(angle) * midR)
-        let rect = CGRect(x: -length / 2, y: -width / 2, width: length, height: width)
-        var t = CGAffineTransform(translationX: mid.x, y: mid.y).rotated(by: angle)
-        return CGPath(roundedRect: rect, cornerWidth: width / 2, cornerHeight: width / 2, transform: &t)
+    /// Point on a ring at `deg` clockwise from the top (view coords, y-up).
+    private func ringPoint(_ r: CGFloat, deg: CGFloat) -> CGPoint {
+        let a = deg * .pi / 180
+        return CGPoint(x: discCenter.x + sin(a) * r, y: discCenter.y + cos(a) * r)
+    }
+
+    /// Bottom-of-flower petals sit on top (natural bloom); each layer is a band.
+    private func zFor(_ deg: CGFloat, layer: CGFloat) -> CGFloat {
+        layer * 1000 + (1 - cos(deg * .pi / 180)) * 50
+    }
+
+    private func addPetal(color: NSColor, center: CGPoint, r: CGFloat, isCore: Bool, baseZ: CGFloat) {
+        let p = CAShapeLayer()
+        p.path = CGPath(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2), transform: nil)
+        p.fillColor = color.cgColor
+        // Spatial: each leaf has a faint outline + a small drop shadow, so the
+        // circles read as distinct glossy chips stacked over one another.
+        p.strokeColor = NSColor.white.withAlphaComponent(0.15).cgColor   // very subtle at rest; the hovered leaf gets the bright ring
+        p.lineWidth = 1
+        p.shadowColor = NSColor.black.cgColor
+        p.shadowOpacity = 0.16                            // subtle
+        p.shadowRadius = 2
+        p.shadowOffset = CGSize(width: 0, height: -1)     // downward (picker view is y-up)
+        // Explicit shadowPath so CoreAnimation doesn't re-derive each leaf's shadow
+        // from its contents EVERY frame while scaling — that was the low-FPS cause.
+        p.shadowPath = p.path
+        p.zPosition = baseZ
+        layer?.addSublayer(p)
+        petals.append(Petal(layer: p, color: color, center: center, r: r, isCore: isCore, baseZ: baseZ))
     }
 
     // MARK: Hover + pick
@@ -106,85 +253,158 @@ final class RadialColorPicker: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let t = tracking { removeTrackingArea(t) }
-        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInActiveApp], owner: self)
+        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways], owner: self)
         addTrackingArea(t); tracking = t
     }
 
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         let idx = nearestPetal(to: p)
-        if idx != hovered {
-            hovered = idx
-            CLIPHaptics.snap()                            // tick when the highlighted color changes
-            NSCursor.pointingHand.set()
-            for (i, petal) in petals.enumerated() { scale(petal.layer, i == idx ? 1.18 : 1.0) }
-        }
+        guard idx != hovered else { return }
+        hovered = idx
+        if idx != nil { CLIPHaptics.snap() }
+        // (no cursor change on hover — keep the default arrow)
+        applyHover(idx)                                   // hovered snaps; others ease
+        updateHoverRing(for: idx, animated: false)
+        if !picked { onHoverPreview(idx.map { petals[$0].color }) }
     }
+
     override func mouseExited(with event: NSEvent) {
         hovered = nil
-        NSCursor.arrow.set()
-        for petal in petals { scale(petal.layer, 1.0) }
+        applyHover(nil)                                   // hover-OUT: everything eases back
+        updateHoverRing(for: nil, animated: true)
+        if !picked { onHoverPreview(nil) }
     }
+
+    /// Spatial's flower hover: the hovered leaf scales up and physically SHOVES
+    /// its neighbours outward (away from it), the shove falling off over ~3 rings
+    /// — the whole flower flexes around the hovered colour. All spring-animated.
+    private func applyHover(_ idx: Int?) {
+        let hc = idx.map { petals[$0].center }
+        for (i, petal) in petals.enumerated() {
+            var s: CGFloat = 1, tx: CGFloat = 0, ty: CGFloat = 0
+            if let idx, let hc {
+                if i == idx {
+                    s = 1 + (petal.isCore ? hoverCoreBoost : hoverBoost)
+                } else {
+                    let dx = petal.center.x - hc.x, dy = petal.center.y - hc.y
+                    let d = max(0.001, hypot(dx, dy))
+                    let push = pushMax * exp(-0.5 * (d / pushSigma) * (d / pushSigma))
+                    tx = dx / d * push; ty = dy / d * push
+                }
+            }
+            petal.layer.zPosition = petal.baseZ + (i == idx ? 100_000 : 0)
+            // The hovered leaf snaps up INSTANTLY; every other leaf EASES — so the
+            // leaf you just moved off scales back down smoothly, and on exit
+            // (idx == nil) everything eases back.
+            setTransform(petal.layer, scale: s, tx: tx, ty: ty, center: petal.center, animated: i != idx)
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        if hypot(p.x - center.x, p.y - center.y) <= R * 0.17 {
-            pick(.white); return
-        }
         if let idx = nearestPetal(to: p) { pick(petals[idx].color) }
     }
 
     private func pick(_ color: NSColor) {
+        guard !picked else { return }   // safe if both the monitor and mouseDown fire
+        picked = true                   // freeze the preview; the commit stands
         CLIPHaptics.levelChange()
         onPick(color)
         dismiss()
     }
 
     private func nearestPetal(to p: CGPoint) -> Int? {
-        // Only consider the petal whose path contains the point (exact).
-        for (i, petal) in petals.enumerated() where petal.layer.path?.contains(p) == true { return i }
-        return nil
+        // The circle whose CENTRE is nearest the cursor (within a small reach).
+        // Picking by nearest centre — not "topmost circle containing the point" —
+        // means small moves don't flip between overlapping leaves, so the hover is
+        // stable and predictable (you always target the closest colour).
+        var best: Int? = nil; var bestD = CGFloat.greatestFiniteMagnitude
+        for (i, petal) in petals.enumerated() {
+            let d = hypot(p.x - petal.center.x, p.y - petal.center.y)
+            if d <= petal.r + 7, d < bestD { bestD = d; best = i }
+        }
+        return best
     }
 
-    private func scale(_ layer: CAShapeLayer, _ s: CGFloat) {
-        let c = layer.path.map { $0.boundingBox } ?? bounds
-        let pivot = CGPoint(x: c.midX, y: c.midY)
-        let to = CATransform3DConcat(
-            CATransform3DConcat(CATransform3DMakeTranslation(-pivot.x, -pivot.y, 0),
-                                CATransform3DMakeScale(s, s, 1)),
-            CATransform3DMakeTranslation(pivot.x, pivot.y, 0))
+    /// Set a leaf's scale + outward shove (about its centre). `animated` is false
+    /// on hover-IN (snaps instantly) and true on hover-OUT (springs back smoothly).
+    private func setTransform(_ layer: CAShapeLayer, scale s: CGFloat, tx: CGFloat, ty: CGFloat, center c: CGPoint, animated: Bool) {
+        var m = CATransform3DMakeTranslation(-c.x, -c.y, 0)
+        m = CATransform3DConcat(m, CATransform3DMakeScale(s, s, 1))
+        m = CATransform3DConcat(m, CATransform3DMakeTranslation(c.x + tx, c.y + ty, 0))
+        if !animated {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            layer.removeAnimation(forKey: "hoverTransform")
+            layer.transform = m
+            CATransaction.commit()
+            return
+        }
+        // Smooth, slightly-overshooting return — the "scale back" on hover-out.
+        let preset = CLIPSpring.Preset(response: 0.40, damping: 0.72)
         let a = CASpringAnimation(keyPath: "transform")
         a.fromValue = layer.presentation()?.transform ?? layer.transform
-        a.toValue = to
-        a.stiffness = CLIPSpring.Preset.control.stiffness
-        a.damping = CLIPSpring.Preset.control.caDamping
+        a.toValue = m
+        a.stiffness = preset.stiffness
+        a.damping = preset.caDamping
+        a.initialVelocity = 0
+        if #available(macOS 14.0, *) { a.allowsOverdamping = true }
         a.duration = a.settlingDuration
-        layer.transform = to
-        layer.add(a, forKey: "hoverScale")
-        layer.zPosition = s > 1 ? 10 : 0
+        layer.transform = m
+        layer.add(a, forKey: "hoverTransform")
     }
 
     // MARK: Present / dismiss
 
-    /// Present centered at `point` (in `host` coords), springing up from small.
+    /// Present with the disc centre at `point`. Springs OUT of the bottom (the
+    /// Color button) — scale 0.5→1 anchored at bottom-centre + a 12pt rise + a
+    /// pop — matching the toolbar link-input panel's transition.
     func present(in host: NSView, at point: CGPoint) {
-        frame = CGRect(x: point.x - R, y: point.y - R, width: diameter, height: diameter)
+        frame = CGRect(x: point.x - discCenter.x, y: point.y - discCenter.y,
+                       width: bounds.width, height: bounds.height)
         host.addSubview(self)
+        let popper = CLIPSpring.Preset(response: 0.34, damping: 0.66)
         if let layer = layer {
-            let c = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
-            let small = CATransform3DConcat(
-                CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
-                                    CATransform3DMakeScale(0.4, 0.4, 1)),
-                CATransform3DMakeTranslation(c.x, c.y, 0))
+            // Bloom from the disc centre (Spatial spreads its leaves out of the
+            // centre) — scale 0.4 → 1 anchored at centre.
+            let pivot = discCenter
+            var small = CATransform3DConcat(CATransform3DMakeTranslation(-pivot.x, -pivot.y, 0),
+                                            CATransform3DMakeScale(0.4, 0.4, 1))
+            small = CATransform3DConcat(small, CATransform3DMakeTranslation(pivot.x, pivot.y, 0))
             CATransaction.begin(); CATransaction.setDisableActions(true)
             layer.transform = small; layer.opacity = 0
             CATransaction.commit()
+            let a = CASpringAnimation(keyPath: "transform")
+            a.fromValue = small; a.toValue = CATransform3DIdentity
+            a.stiffness = popper.stiffness
+            a.damping = popper.caDamping
+            a.duration = a.settlingDuration
+            layer.transform = CATransform3DIdentity
+            layer.add(a, forKey: "bloom")
         }
-        CLIPSpring.scale(self, to: 1.0, preset: .settle)               // spring small → full
-        CLIPSpring.run(duration: 0.18) { [weak self] in self?.layer?.opacity = 1 }
+        CLIPSpring.run(duration: 0.16) { [weak self] in self?.layer?.opacity = 1 }
         window?.makeFirstResponder(self)
+
+        outsideMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] e in
+            guard let self else { return e }
+            let p = self.convert(e.locationInWindow, from: nil)
+            if self.bounds.contains(p) {
+                // Pick HERE — this monitor fires reliably even if the overlay's own
+                // `mouseDown` isn't delivered over the SwiftUI host (the bug behind
+                // "click doesn't apply"). Consume the event on a successful pick.
+                if e.type == .leftMouseDown, let idx = self.nearestPetal(to: p) {
+                    self.pick(self.petals[idx].color)
+                    return nil
+                }
+                return e
+            }
+            self.dismiss()
+            return e
+        }
     }
 
     func dismiss() {
+        if let m = outsideMonitor { NSEvent.removeMonitor(m); outsideMonitor = nil }
         CLIPSpring.run(duration: 0.16, _: { [weak self] in self?.layer?.opacity = 0 }) { [weak self] in
             self?.removeFromSuperview()
         }
@@ -196,10 +416,8 @@ final class RadialColorPicker: NSView {
     }
     override var acceptsFirstResponder: Bool { true }
 
-    // MARK: Section-color mapping (the model stores 5 presets, not arbitrary RGB)
+    // MARK: Section-color mapping
 
-    /// Nearest `SectionColor` preset to an arbitrary picked color — lets the
-    /// flower wheel drive the existing section palette without a model change.
     static func nearestSectionColor(to color: NSColor) -> SectionColor {
         let target = color.usingColorSpace(.sRGB) ?? color
         func dist(_ s: SectionColor) -> CGFloat {

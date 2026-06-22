@@ -109,7 +109,7 @@ struct TweetCardView: View {
                     nodeID: nodeID,
                     isMuted: $isMuted,
                     isPlaying: .constant(effectivePlaying),
-                    cornerRadius: 19.375,
+                    cornerRadius: 1,
                     timeRange: trimRange
                 )
             } else {
@@ -264,7 +264,7 @@ struct TweetCardView: View {
                 fileURL: videoURL,
                 initialStart: trimStart,
                 initialEnd: trimEnd,
-                cornerRadius: 19.375,
+                cornerRadius: 1,
                 onSave: onSaveTrim,
                 onReset: onResetTrim,
                 onCancel: onCancelTrim

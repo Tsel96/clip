@@ -118,8 +118,10 @@ final class CLIPCanvasView: NSView {
             let host = ToolOverlayHostingView(rootView: above)
             host.isSelectMode = { [weak coordinator] in
                 guard let c = coordinator?.config else { return true }
-                // Draw also passes through → CanvasInputView draws the stroke natively.
-                return c.isSelectMode() || c.isDrawMode()
+                // Draw + connect + hand also pass through → CanvasInputView owns
+                // the native stroke / drag-to-connect / grab-pan (the SwiftUI
+                // ToolInputLayer's connect used the wrong coord space here).
+                return c.isSelectMode() || c.isDrawMode() || c.isConnectMode() || c.isHandMode()
             }
             host.scrollRef = scroll
             host.frame = bounds
@@ -141,6 +143,12 @@ final class CLIPCanvasView: NSView {
             // on-screen width while zooming — cheap CALayer updates, no re-render.
             coordinator?.refreshChrome()
         }
+        // Live magnify ticks update connector stroke widths (constant on screen)
+        // + the inline label editor — the bounds notification lagged the pinch.
+        scroll.onZoomChange = { [weak coordinator] in
+            coordinator?.pushCameraFromScroll()
+            coordinator?.refreshChrome()
+        }
 
         // Escape deselects (keyboard path, always available — no race).
         coordinator.escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in
@@ -150,7 +158,8 @@ final class CLIPCanvasView: NSView {
             }
             return event
         }
-        // "C" with a single section selected → radial color picker at the cursor.
+        // "C" with a single item selected → Spatial flower color picker at the
+        // cursor (works on any node, like Spatial — not just sections).
         coordinator.colorKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in
             // Plain 'c' only — never with ⌘/⌥/⌃ (so ⌘C copy etc. still work).
             guard let coordinator, event.keyCode == 8,
@@ -158,10 +167,34 @@ final class CLIPCanvasView: NSView {
                   coordinator.config.editingTextNodeID == nil,          // not typing
                   coordinator.colorPicker == nil else { return event }
             let sel = coordinator.config.liveSelection()
-            guard sel.count == 1, let id = sel.first,
-                  let node = coordinator.config.nodes.first(where: { $0.id == id }),
-                  node.isSection else { return event }
-            coordinator.presentColorPicker(for: id)
+            if sel.count == 1, let id = sel.first { coordinator.presentColorPicker(for: id) }
+            // Always consume plain 'c' so it can NEVER fall through to the Connect
+            // tool's keyboard shortcut (that collision left the canvas stuck in
+            // connect mode, making card buttons unclickable). Proper launch =
+            // the toolbar color button (next).
+            return nil
+        }
+
+        // Delete / ⌫ removes the current selection. The SwiftUI menu
+        // `.keyboardShortcut(.delete)` goes stale-disabled (commands don't track
+        // the @StateObject reliably), so own it natively here — but NEVER steal
+        // Delete from a text editor (canvas text edit, search, page rename…).
+        coordinator.deleteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in
+            guard let coordinator,
+                  event.keyCode == 51 || event.keyCode == 117,      // ⌫ / fwd-delete
+                  event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+                  coordinator.config.editingTextNodeID == nil
+            else { return event }
+            // A real text field / field-editor has focus → let it handle the key.
+            // (A canvas click makes CanvasInputView first responder, so a lingering
+            // SwiftUI field-editor no longer blocks Delete on the canvas.)
+            if let fr = coordinator.scroll?.window?.firstResponder,
+               fr is NSText || (fr as? NSView)?.isKind(of: NSTextView.self) == true {
+                return event
+            }
+            guard !coordinator.config.liveSelection().isEmpty
+                    || !coordinator.config.selectedConnectorIDs.isEmpty else { return event }
+            coordinator.config.onDelete()
             return nil
         }
 

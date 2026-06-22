@@ -13,9 +13,6 @@ struct CanvasView: View {
     /// NSEvent monitor for Archive's keyboard nav (Esc + arrow keys).
     /// Installed on appear, torn down on disappear so it doesn't leak.
     @State private var archiveKeyMonitor: Any? = nil
-    /// Cursor position over the canvas (hover or drag), driving the
-    /// Stitch-style grid spotlight. `nil` when the pointer is off-canvas.
-    @State private var pointerLocation: CGPoint? = nil
 
     // MARK: - Colorform zoom-driven crossfade
     //
@@ -61,7 +58,7 @@ struct CanvasView: View {
         switch state.canvasMode {
         case .colorform: return Color(red: 0.985, green: 0.965, blue: 0.945)
         case .archive:   return Color(red: 0.965, green: 0.955, blue: 0.940)
-        case .canvas:    return theme.canvas
+        case .canvas:    return Color(red: 237 / 255, green: 240 / 255, blue: 241 / 255)  // #EDF0F1
         }
     }
 
@@ -216,23 +213,6 @@ struct CanvasView: View {
     /// land offset from the camera-derived overlays; (2) card drag math (÷zoom +
     /// `.global`) is wrong inside a magnified scroll view; (3) pan/zoom feel.
     /// Now points at the NSCollectionView core (milestone 1 = placeholder cards).
-    /// Native canvas rewrite (Spatial-style NSScrollView + NSCollectionView).
-    /// Zoom-anchor coordinate bug fixed (document-view coords). Placeholder
-    /// boxes for now — validating pan/zoom smoothness before card hosting.
-    private let useNativeCanvas = true
-
-    /// Native shell collapse (A5): host the canvas-core SCREEN-space overlays
-    /// (dot-grid, tool-input, smart-selection, alignment/spacing guides) as two
-    /// passthrough islands INSIDE the native `CLIPCanvasView` instead of as
-    /// SwiftUI ZStack siblings — so the canvas is one native view with one input
-    /// owner. Flip to `false` to fall back to the proven ZStack shell (kept
-    /// intact below as the `!useNativeShell` branches).
-    /// Re-enabled for the debug-together: the palette rework fixes tool-mode
-    /// switching (the cursor button reliably returns to select) and the
-    /// ToolInputLayer coordinate space is declared on the island. Flip to
-    /// `false` for the proven ZStack shell if select/tools misbehave.
-    private let useNativeShell = true
-
     /// Phase B: draw connectors as native CAShapeLayers in the scrolled
     /// container (off → the proven SwiftUI ConnectorsLayer renders them). ENABLED
     /// for the all-phases push: content-space frames match the cards, the layer
@@ -270,34 +250,9 @@ struct CanvasView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                // Background dot grid (toggleable). Hidden in Archive
-                // because its calendar / bento layers paint their own
-                // surface.
-                if !useNativeShell, state.showGrid, state.canvasMode != .archive {
-                    // No `.ignoresSafeArea()` — the grid must share the
-                    // exact coordinate space the pointer is reported in
-                    // (the canvas view's safe-area-respecting bounds), or
-                    // the spotlight draws offset from the real cursor.
-                    // (Native shell: moved into CLIPCanvasView's behind-island.)
-                    DotGrid(camera: cameraStore.camera, pointer: pointerLocation)
-                        .allowsHitTesting(false)
-                }
-
-                // Empty-state hint. (Native shell: in the behind-island.)
-                if !useNativeShell, state.nodes.isEmpty {
-                    EmptyStateView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .allowsHitTesting(false)
-                }
-
-                // Drawing / text input layer (active when not in select mode).
-                // Sits BEHIND nodes so nodes still get hover/click in select mode.
-                // Only rendered in Canvas mode — Colorform and Archive
-                // are all read-only views. Suppressed in stack focus
-                // mode so the focus backdrop receives clicks cleanly.
-                if !useNativeShell, state.canvasMode == .canvas, state.focusedStackID == nil {
-                    ToolInputLayer()
-                }
+                // Dot grid, empty-state, and the tool-input layer are hosted
+                // inside CLIPCanvasView's screen-space islands (CanvasConfig
+                // behind/above overlays below), not as ZStack siblings.
 
                 // Archive — a chronological list of everything added,
                 // newest first, grouped by day with per-row timestamps.
@@ -335,7 +290,6 @@ struct CanvasView: View {
                 // "apply scale changes directly to the whole graphics
                 // context.")
                 if state.canvasMode != .archive {
-                    if useNativeCanvas {
                         // Phase 1 — native NSScrollView core (zoom = magnification,
                         // pan = scrolling). Only the node layer moves in; the
                         // overlays below stay screen-space and track the camera
@@ -378,33 +332,49 @@ struct CanvasView: View {
                             // Screen-space islands (native shell): dot-grid +
                             // empty-state BEHIND the cards; tool-input + smart-
                             // selection + alignment/spacing guides ABOVE.
-                            behindOverlay: useNativeShell ? AnyView(
+                            behindOverlay: AnyView(
                                 CanvasBehindOverlays()
                                     .environmentObject(state)
                                     .environmentObject(cameraStore)
                                     .environmentObject(pointerStore)
-                            ) : nil,
-                            aboveOverlay: useNativeShell ? AnyView(
+                            ),
+                            aboveOverlay: AnyView(
                                 CanvasAboveOverlays()
                                     .environmentObject(state)
                                     .environmentObject(cameraStore)
                                     .environmentObject(state.smartSelection)
-                            ) : nil,
+                            ),
                             isSelectMode: { state.toolMode == .select },
                             isDrawMode: { state.toolMode == .draw },
+                            isConnectMode: { state.toolMode == .connect },
+                            isHandMode: { state.toolMode == .hand },
+                            onAddConnector: { src, dst, srcSide, side in
+                                state.addConnector(from: src, to: dst, sourceSide: srcSide, targetSide: side)
+                            },
                             drawColor: {
                                 let c = state.drawColor
                                 return NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green),
-                                               blue: CGFloat(c.blue), alpha: 1)
+                                               blue: CGFloat(c.blue), alpha: state.drawOpacity)
                             },
                             drawWidth: { state.drawWidth },
                             onCommitStroke: { world in state.commitStroke(worldPoints: world) },
                             connectors: state.connectors,
                             useNativeConnectors: useNativeConnectors,
                             onSelectConnector: { state.selectConnector($0) },
+                            onSetConnectorLabel: { id, text in state.setConnectorLabel(id, text) },
+                            onMoveConnectorLabel: { id, off in state.setConnectorLabelOffset(id, off) },
                             selectedConnectorIDs: state.selectedConnectorIDs,
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }
+                            },
+                            onDelete: {
+                                // Smart-selection cascade first; else the standard delete.
+                                if state.smartSelection.layout != nil,
+                                   !state.smartSelection.markedIDs.isEmpty {
+                                    state.smartSelection.deleteMarked()
+                                } else {
+                                    state.deleteSelected()
+                                }
                             },
                             selectedNodeID: state.selectedNodeIDs.count == 1
                                 ? state.selectedNodeIDs.first : nil,
@@ -438,6 +408,11 @@ struct CanvasView: View {
                                         // swaps the item to the SwiftUI inline editor
                                         // (HostingCollectionItem.setContent); pendingFocus
                                         // makes that editor grab focus on appear.
+                                        state.select(id)
+                                        state.editingTextNodeID = id
+                                        state.pendingFocusNodeID = id
+                                    } else if case .stickyNote = node.kind {
+                                        // Double-click a sticky → inline text edit (not lightbox).
                                         state.select(id)
                                         state.editingTextNodeID = id
                                         state.pendingFocusNodeID = id
@@ -484,26 +459,16 @@ struct CanvasView: View {
                         .onChange(of: worldBounds) { _ in syncOverlayCamera() }
                         .opacity(cardsOpacity)
                         .blur(radius: cardsBlur)
-                        .allowsHitTesting(state.toolMode == .select && state.canvasMode != .colorform)
-                    }
+                        // Interactive in every tool mode — CanvasInputView + the
+                        // tool islands resolve per-mode behaviour (select / hand /
+                        // draw / connect / text / sticker). Only Colorform is a
+                        // read-only view. (Gating this to `.select` silently broke
+                        // every non-select tool: the native canvas got no events.)
+                        .allowsHitTesting(state.canvasMode != .colorform)
                 }
 
-                // Figma-style Smart Selection chrome — pink center rings +
-                // gutter handles + tooltip + insertion indicator. Sits
-                // above connectors so it can intercept clicks on rings and
-                // handles cleanly. Auto-detects 1D rows / columns / 2D
-                // grids in the current selection.
-                // Suppressed in stack focus mode — the focus chrome owns
-                // the screen and Smart Selection wouldn't apply anyway.
-                if !useNativeShell, state.canvasMode == .canvas, state.focusedStackID == nil {
-                    // On the native canvas, gate Smart Selection's ring/gutter
-                    // gestures OFF — they're competing pointer handlers that would
-                    // re-enter the very race CanvasInputView exists to remove.
-                    // Re-introduce via the native controller later (task #15).
-                    // (Native shell: in the above-island, non-interactive.)
-                    SmartSelectionLayer()
-                        .allowsHitTesting(!useNativeCanvas)
-                }
+                // (Smart Selection chrome is hosted in CLIPCanvasView's
+                // above-island, not as a ZStack sibling.)
 
                 // Stack focus chrome — count pill + exit chip — sits
                 // ABOVE the nodes so it's always reachable. The matching
@@ -513,15 +478,8 @@ struct CanvasView: View {
                     StackFocusLayer(layer: .chrome)
                 }
 
-                // Live alignment guides (red lines while dragging). Only
-                // relevant during a drag, which only happens in canvas mode.
-                // (Native shell: in the above-island, non-interactive.)
-                if !useNativeShell, state.canvasMode == .canvas {
-                    AlignmentGuidesOverlay()
-                        .allowsHitTesting(false)
-                    SpacingIndicatorsOverlay()
-                        .allowsHitTesting(false)
-                }
+                // (Alignment + spacing guides are drawn natively by
+                // GuideOverlayController inside the scrolled container.)
 
                 // Trackpad scroll & pinch capture. Archive owns its own
                 // navigation (calendar ScrollView, breadcrumb pop) so we
@@ -554,13 +512,12 @@ struct CanvasView: View {
                             if state.toolMode == .select { state.deselectAll() }
                         },
                         onPointerMove: { p in
-                            // Native shell feeds the behind-island's spotlight via
-                            // the store (no body churn); legacy uses @State.
-                            if useNativeShell { pointerStore.location = p }
-                            else { pointerLocation = p }
+                            // Feed the behind-island's spotlight via the store
+                            // (no body churn).
+                            pointerStore.location = p
                         },
                         // Native canvas owns pan/zoom — don't consume scroll/magnify.
-                        capturesScrollMagnify: !useNativeCanvas
+                        capturesScrollMagnify: false
                     )
                     .zIndex(-1)
                 }
@@ -691,6 +648,19 @@ struct CanvasView: View {
                     .padding(.bottom, 18)
             }
         }
+        // Click-catcher: while the link input is open, a tap anywhere ELSE on the
+        // canvas dismisses it. Sits BELOW the palette + input overlays (added
+        // first), so the "+" and the field stay interactive — only outside
+        // clicks are caught.
+        .overlay {
+            if state.canvasMode == .canvas, state.isLinkInputPresented {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(Motion.popper) { state.isLinkInputPresented = false }
+                    }
+            }
+        }
         // Bottom-CENTER: the Spatial-style yellow tool palette + "+" (Figma 51:12692).
         .overlay(alignment: .bottom) {
             if state.canvasMode == .canvas {
@@ -703,20 +673,33 @@ struct CanvasView: View {
                     .padding(.bottom, 0)
             }
         }
-        // Acute tool-mode visibility — while a non-Select tool is active,
-        // a chip at the top of the canvas says WHY clicks now draw/place/
-        // connect, and offers the way back (click or V).
+        // Top-CENTER: Canvas / Colorform / Archive segmented control (Figma
+        // 73:37182) — the mirror of the bottom tool palette, 18 pt from the top of
+        // the canvas. Shown in every mode (the affordance to switch between them).
         .overlay(alignment: .top) {
-            Group {
-                if state.canvasMode == .canvas, state.toolMode != .select {
-                    NativeActiveToolChip()
-                        .fixedSize()
-                        .padding(.top, 14)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
+            NativeCanvasTopSegmentedControl(state: state)
+                .frame(width: CanvasTopSegmentedControlView.totalW,
+                       height: CanvasTopSegmentedControlView.totalH)
+                .padding(.top, 18)
+        }
+        // Inline "Insert link here" field (Figma 72:36784) — floats above the
+        // toolbar, centered on the round "+" (240 pt right of the toolbar's
+        // center: 542/2 − 31). ALWAYS mounted (not `if`-inserted): a SwiftUI
+        // `.transition` scale anchors to the un-offset layout frame (canvas
+        // center, ~240pt left of the "+"), so it grew "from the left". Instead we
+        // drive `.scaleEffect(anchor:.bottom)` ourselves — that pins the panel's
+        // bottom-centre, and the `.offset` then carries that pinned point onto the
+        // "+", so the panel scales up directly OUT OF the "+" below it.
+        .overlay(alignment: .bottom) {
+            if state.canvasMode == .canvas {
+                // Shared bottom-toolbar panel motion (grows out of the "+"); see
+                // `ToolbarPanelTransition`. Always mounted; positioned by the
+                // constant offset AFTER the modifier so the scale pivot lands on
+                // the "+". (x: 542/2 − 31 = 240 right of centre; y: −92 above.)
+                LinkInputBar()
+                    .toolbarPanelTransition(isPresented: state.isLinkInputPresented)
+                    .offset(x: 240, y: -92)
             }
-            .animation(.spring(response: 0.32, dampingFraction: 0.85),
-                       value: state.toolMode)
         }
         // Transient share toast — slides in from the top when a link
         // arrives from the iPhone; tap to jump to the Incoming page.

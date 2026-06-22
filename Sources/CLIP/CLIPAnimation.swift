@@ -56,13 +56,25 @@ enum CLIPSpring {
         return a
     }
 
+    /// The pivot that makes a `T(-c)·S·T(c)` transform scale about the layer's
+    /// geometric CENTER. `transform` pivots about the `anchorPoint`, so the fixed
+    /// point must be the center expressed in anchor-origin space:
+    /// `(W·(0.5-apx), H·(0.5-apy))`. For the usual layer-backed-NSView anchor
+    /// (0.5,0.5) this is `(0,0)` → a plain centered scale; for (0,0) it's
+    /// `(midX,midY)`. Hard-coding `(midX,midY)` scaled (0.5,0.5)-anchored views
+    /// about a corner — the "grows from the left" bug.
+    private static func centerPivot(_ layer: CALayer) -> CGPoint {
+        let ap = layer.anchorPoint
+        return CGPoint(x: layer.bounds.width  * (0.5 - ap.x),
+                       y: layer.bounds.height * (0.5 - ap.y))
+    }
+
     /// Spring a layer's uniform scale (about its center) to `scale`. Used by
     /// the button kit for hover-grow / press-shrink / release-bounce.
     static func scale(_ view: NSView, to scale: CGFloat, preset: Preset = .control,
                       key: String = "clipScale") {
         guard let layer = view.layer else { return }
-        // Pivot about the layer center regardless of anchorPoint.
-        let c = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
+        let c = centerPivot(layer)
         let from = layer.presentation()?.transform ?? layer.transform
         let to = CATransform3DConcat(
             CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
@@ -76,6 +88,31 @@ enum CLIPSpring {
         a.mass = 1
         if #available(macOS 14.0, *) { a.allowsOverdamping = preset.allowsOverdamping }
         a.duration = a.settlingDuration
+        a.fillMode = .forwards
+        layer.transform = to
+        layer.add(a, forKey: key)
+    }
+
+    /// Fast, NON-spring press-DOWN scale — mirrors Spatial's `BaseView` press
+    /// visual: the button snaps down quickly (~0.06s ease-out), then the release
+    /// uses `scale(... preset:.control)` for the springy overshoot settle (their
+    /// `resetScaleWithStiffness:damping:` + `allowsOverdamping`). Using the spring
+    /// for the down-stroke too is what makes a press feel mushy/unlike Spatial.
+    /// Share the same `key` as the release so the spring retargets from mid-press.
+    static func pressScale(_ view: NSView, to scale: CGFloat,
+                           duration: CFTimeInterval = 0.07, key: String = "clipScale") {
+        guard let layer = view.layer else { return }
+        let c = centerPivot(layer)
+        let from = layer.presentation()?.transform ?? layer.transform
+        let to = CATransform3DConcat(
+            CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
+                                CATransform3DMakeScale(scale, scale, 1)),
+            CATransform3DMakeTranslation(c.x, c.y, 0))
+        let a = CABasicAnimation(keyPath: "transform")
+        a.fromValue = from
+        a.toValue = to
+        a.duration = duration
+        a.timingFunction = easeOutSoft
         a.fillMode = .forwards
         layer.transform = to
         layer.add(a, forKey: key)

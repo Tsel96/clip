@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Bare canvas text — no background / no border / no padding.
-/// Display & edit both auto-size to the rendered glyphs so the surrounding
-/// selection rectangle in `DraggableNode` hugs the text (Figma-style).
+/// Canvas text restyled as a white **pill** (Figma 96-720): IBM Plex Sans
+/// SemiBold green text on a fully-rounded white card. The node is sized to the
+/// glyphs + pill padding (`CanvasState.textPillSize`), so this view just fills
+/// the item and centres the text; selection ring + float shadow are owned by the
+/// native chrome (pill-shaped to match).
 struct TextNodeView: View {
     @EnvironmentObject var state: CanvasState
     let nodeID: UUID
@@ -12,103 +14,77 @@ struct TextNodeView: View {
 
     @State private var isEditing: Bool = false
     @State private var editingText: String = ""
-    @State private var editorSize: CGSize = .zero
     @FocusState private var focused: Bool
 
-    /// Floor so the empty-state TextField is wide enough to comfortably
-    /// receive the first few keystrokes.
-    private let minWidth: CGFloat = 40
-    /// Extra room for the caret beyond the rightmost glyph.
-    private let trailingCaretPadding: CGFloat = 4
+    private var textFont: Font { .custom("IBMPlexSans-SemiBold", size: fontSize) }
+    /// #3DA726
+    private let green  = Color(.sRGB, red: 0.239, green: 0.655, blue: 0.149, opacity: 1)
+    /// #F0EC00
+    private let yellow = Color(.sRGB, red: 0.943, green: 0.926, blue: 0.0,   opacity: 1)
 
     var body: some View {
-        Group {
-            if isEditing {
-                editor
-            } else {
-                display
+        // The green band + yellow border are the node's permanent border (all
+        // states, Figma 96-720). The white pill is inset inside them; the node is
+        // sized to glyphs + white padding + this border, so content stays centred.
+        let bd = CanvasState.textPillBorder(fontSize)
+        let inset = bd.band + bd.yellow
+        ZStack {
+            Capsule(style: .continuous).fill(green)                          // green pill (shows as a band)
+            Capsule(style: .continuous).fill(Color.white).padding(inset)     // white pill, inset by band+yellow
+            (isEditing ? AnyView(editor) : AnyView(display))                 // text, centred in the white pill
+            Capsule(style: .continuous).strokeBorder(yellow, lineWidth: bd.yellow)  // yellow border at the edge
+        }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear {
+                editingText = content
+                if state.pendingFocusNodeID == nodeID {
+                    DispatchQueue.main.async { startEditing() }
+                }
             }
-        }
-        .font(.system(size: fontSize))
-        // NO `.contentShape(Rectangle())` here and no tap gesture: on the canvas
-        // those capture the click and stop the node from being SELECTED. The
-        // node's own hit region (DraggableNode) handles select + double-click,
-        // which routes back here via `pendingFocusNodeID` to enter edit mode.
-        .onAppear {
-            editingText = content
-            if state.pendingFocusNodeID == nodeID {
-                DispatchQueue.main.async { startEditing() }
+            .onChange(of: state.pendingFocusNodeID) { newID in
+                if newID == nodeID && !isEditing {
+                    startEditing()
+                    DispatchQueue.main.async { state.pendingFocusNodeID = nil }
+                }
             }
-        }
-        .onChange(of: state.pendingFocusNodeID) { newID in
-            if newID == nodeID && !isEditing {
-                startEditing()
-                // Reset so a later double-click can re-trigger the change.
-                DispatchQueue.main.async { state.pendingFocusNodeID = nil }
+            .onChange(of: state.selectedNodeIDs) { selected in
+                if isEditing && !selected.contains(nodeID) { commit() }
             }
-        }
-        // Click-out / Esc / clicking another node all deselect this node.
-        // When we leave the selection while editing, commit & exit edit mode
-        // so the TextField is removed and the caret stops blinking.
-        .onChange(of: state.selectedNodeIDs) { selected in
-            if isEditing && !selected.contains(nodeID) { commit() }
-        }
     }
 
-    // MARK: - Editor (auto-sizing TextField)
+    // MARK: - Display / Editor
+
+    private var display: some View {
+        Text(content.isEmpty ? "Text" : content)
+            .font(textFont)
+            .foregroundStyle(content.isEmpty ? green.opacity(0.4) : green)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 
     private var editor: some View {
-        // ZStack with a hidden `Text` that mirrors the editing content.
-        // The Text drives sizing via a PreferenceKey, and we apply that size
-        // to the TextField — which on its own has a fixed intrinsic width
-        // and would otherwise clip everything except the last character.
-        ZStack(alignment: .topLeading) {
-            Text(editingText.isEmpty ? " " : editingText)
-                .font(.system(size: fontSize))
-                .fixedSize(horizontal: true, vertical: true)
-                .opacity(0)
-                .allowsHitTesting(false)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: TextSizePrefKey.self,
-                                                value: geo.size)
-                    }
-                )
-
-            TextField("", text: $editingText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: fontSize))
-                .lineLimit(1...50)
-                .focused($focused)
-                .onAppear { focused = true }
-                .onExitCommand { commit() }                // Esc
-                .onChange(of: focused) { isFocused in
-                    if !isFocused { commit() }             // click-away
-                }
-        }
-        .frame(
-            width:  max(minWidth, editorSize.width + trailingCaretPadding),
-            height: max(fontSize * 1.4, editorSize.height),
-            alignment: .topLeading
-        )
-        .onPreferenceChange(TextSizePrefKey.self) { editorSize = $0 }
+        TextField("", text: $editingText, axis: .vertical)
+            .textFieldStyle(.plain)
+            .font(textFont)
+            .foregroundStyle(green)
+            .tint(green)
+            .multilineTextAlignment(.center)
+            .focused($focused)
+            .frame(width: editorTextWidth)                  // synchronous → never wraps the last glyph
+            .onAppear { focused = true }
+            .onExitCommand { commit() }                     // Esc
+            .onChange(of: focused) { if !$0 { commit() } }  // click-away
+            .onChange(of: editingText) { newValue in
+                state.liveResizeText(id: nodeID, content: newValue)  // grow the pill live
+            }
     }
 
-    // MARK: - Display
-
-    @ViewBuilder
-    private var display: some View {
-        Group {
-            if content.isEmpty {
-                Text("Text").foregroundStyle(.tertiary)
-            } else {
-                // NOT `.textSelection(.enabled)` — on the canvas that intercepts
-                // the click for character-highlighting, so the node never gets
-                // selected. Double-click still enters edit mode.
-                Text(content)
-            }
-        }
-        .fixedSize(horizontal: true, vertical: true)
+    /// Glyph width measured synchronously from the content (same font as the pill
+    /// sizing) — no PreferenceKey lag, so the field never wraps the last typed
+    /// character. The roomy pill padding absorbs any item-resize lag.
+    private var editorTextWidth: CGFloat {
+        max(fontSize * 0.5,
+            CanvasState.textGlyphSize(content: editingText, fontSize: fontSize).width + 12)
     }
 
     // MARK: - Helpers
@@ -117,16 +93,11 @@ struct TextNodeView: View {
         editingText = content
         isEditing = true
         focused = true
-        // Let the canvas input layer step aside so the TextField receives keys.
         state.editingTextNodeID = nodeID
     }
 
     private func commit() {
-        // Idempotent: protects against the focused-onChange firing again
-        // *after* we already exited edit mode (because the TextField was
-        // removed from the view tree).
         guard isEditing else { return }
-
         let trimmed = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             state.delete(id: nodeID)
@@ -136,18 +107,6 @@ struct TextNodeView: View {
         if state.pendingFocusNodeID == nodeID { state.pendingFocusNodeID = nil }
         if state.editingTextNodeID == nodeID { state.editingTextNodeID = nil }
         isEditing = false
-        // Drop just this node from the selection; multi-select stays intact.
         state.selectedNodeIDs.remove(nodeID)
-    }
-}
-
-// MARK: - Size measurement
-
-private struct TextSizePrefKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        let n = nextValue()
-        value = CGSize(width:  max(value.width,  n.width),
-                       height: max(value.height, n.height))
     }
 }

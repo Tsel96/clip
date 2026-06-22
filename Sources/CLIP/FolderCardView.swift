@@ -1,21 +1,35 @@
 import AppKit
+import CoreImage
 
 /// Native folder card. Renders the exact Figma folder vector (`Folder_Rest.svg`,
-/// text stripped) as the shape — back panel + tab notch, gradients, and the
-/// 4-layer drop shadow — then overlays the LIVE item-count + name + identity
+/// text stripped) as the shape — back panel + tab notch, gradients, and a
+/// silhouette drop shadow — then overlays the LIVE item-count + name + identity
 /// icon natively so they update. The SVG's shadow margin bleeds *outside* the
 /// node bounds so the folder itself fills the node. Refreshes in place via
 /// `NativeCardUpdatable`.
 final class FolderCardView: NSView, NativeCardUpdatable {
     private let shapeView = NSImageView()
+    /// Single silhouette shadow caster stacked BEHIND `shapeView`, deriving its
+    /// shape from the clean folder alpha. Driven by the GLOBAL object-shadow
+    /// settings (see `updateShadow`) so folders lift/zoom-fade exactly like cards.
+    private let shadowView = NSImageView()
+    /// Global object shadow zoom-fade window (matches CardItemView.updateShadow).
+    private static let shadowMinMag: CGFloat = 0.30
+    private static let shadowFullMag: CGFloat = 0.55
+    /// Current scroll magnification (for the shadow's zoom fade), pushed via setState.
+    private var currentMag: CGFloat = 1
     private let countField = NSTextField(labelWithString: "No items")
     private let titleField = NSTextField(labelWithString: "Untitled")
     private let iconChip = NSView()
     private let iconView = NSImageView()
-    /// White stroke tracing the folder silhouette (Figma node 58:232), overlaid
-    /// on the fill so the folder has a crisp outline.
-    private let outlineView = NSImageView()
-    private var isSelected = false
+    /// SELECT-only white halo: a solid-white silhouette DERIVED from the folder art
+    /// (so it matches the shape exactly — tab + corners, every colour), placed
+    /// BEHIND the folder in a slightly larger frame so a clean white edge peeks
+    /// out. Replaces the standalone Folder_Outline asset, which drifted off-shape
+    /// and caused the white-outline artifacts in all states.
+    private let haloView = NSImageView()
+    private var isLifted = false
+    private var showsSelectionOutline = false
     private var currentCount = 0
     /// Current art canvas height (1044 rest/per-count, 1099 selected — the
     /// selected SVG carries extra glow margin) so layout maps the taller art.
@@ -36,7 +50,6 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private static let oneItemImage   = loadSVG("Folder_1-item")
     private static let twoItemsImage  = loadSVG("Folder_2-items")
     private static let threeItemsImage = loadSVG("Folder_3-items")
-    private static let outlineImage   = loadSVG("Folder_Outline")
     /// Folder art for an item count — the card-peek is baked into each SVG.
     private static func art(forCount count: Int) -> NSImage? {
         switch count {
@@ -47,30 +60,90 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         }
     }
 
+    /// White silhouette of each art (cached) — the selection halo, derived from
+    /// the art so it traces the folder EXACTLY at any colour.
+    private static let restSilhouette  = whiteSilhouette(of: restImage)
+    private static let oneSilhouette   = whiteSilhouette(of: oneItemImage)
+    private static let twoSilhouette   = whiteSilhouette(of: twoItemsImage)
+    private static let threeSilhouette = whiteSilhouette(of: threeItemsImage)
+    private static func silhouette(forCount count: Int) -> NSImage? {
+        switch count {
+        case 0:  return restSilhouette
+        case 1:  return oneSilhouette
+        case 2:  return twoSilhouette
+        default: return threeSilhouette
+        }
+    }
+
+    /// A solid-WHITE copy of `image` clipped to its alpha (folder silhouette, tab +
+    /// corners exact). Derived from the art so the halo ALWAYS matches the folder.
+    private static func whiteSilhouette(of image: NSImage?) -> NSImage? {
+        guard let image, let tiff = image.tiffRepresentation, let base = CIImage(data: tiff) else { return nil }
+        let white = CIImage(color: CIColor(red: 1, green: 1, blue: 1))
+            .cropped(to: base.extent)
+            .applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: base])
+        let result = NSImage(size: image.size)
+        result.addRepresentation(NSCIImageRep(ciImage: white))
+        return result
+    }
+
+    /// Parse `#RRGGBB` (sRGB).
+    private static func color(fromHex hex: String) -> NSColor? {
+        var s = hex
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let v = UInt32(s, radix: 16) else { return nil }
+        return NSColor(srgbRed: CGFloat((v >> 16) & 0xFF) / 255,
+                       green: CGFloat((v >> 8) & 0xFF) / 255,
+                       blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+    }
+
+    /// Recolour the folder art to `color`'s hue, keeping the art's luminance,
+    /// gradient and alpha (transparent corners stay transparent) via a colour
+    /// blend (`CIColorBlendMode`: hue/chroma from the colour, luminance + alpha
+    /// from the folder).
+    private static func tinted(_ image: NSImage, with color: NSColor) -> NSImage {
+        guard let tiff = image.tiffRepresentation, let folder = CIImage(data: tiff),
+              let c = CIColor(color: color.usingColorSpace(.sRGB) ?? color) else { return image }
+        // Grayscale folder = luminance + shading + alpha, with no lavender hue.
+        let mono = folder.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
+        // Solid colour clipped to the folder silhouette (transparent corners stay clear).
+        let colorClipped = CIImage(color: c).cropped(to: folder.extent)
+            .applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: folder])
+        // Multiply colour × shading → a clearly-coloured folder that keeps its depth.
+        let out = colorClipped.applyingFilter("CIMultiplyBlendMode", parameters: [kCIInputBackgroundImageKey: mono])
+        let result = NSImage(size: image.size)
+        result.addRepresentation(NSCIImageRep(ciImage: out))
+        return result
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.masksToBounds = false
 
+        // Shadow caster FIRST so it sits behind the folder fill: it shows the
+        // (clean) folder image purely to derive its alpha silhouette shadow — the
+        // image itself is hidden by the opaque `shapeView` directly on top.
+        shadowView.image = Self.restImage
+        shadowView.imageScaling = .scaleAxesIndependently
+        shadowView.wantsLayer = true
+        shadowView.layer?.masksToBounds = false
+        shadowView.layer?.shadowColor = NSColor.black.cgColor
+        shadowView.layer?.shadowOffset = .zero    // set in updateShadow()
+        addSubview(shadowView)
+
+        // Selection halo BEHIND the folder so only its white edge peeks out; sized
+        // larger than the folder in `layout`, faded in on SELECT only.
+        haloView.imageScaling = .scaleAxesIndependently
+        haloView.wantsLayer = true
+        haloView.layer?.opacity = 0
+        addSubview(haloView)
+
         shapeView.image = Self.restImage
         shapeView.imageScaling = .scaleAxesIndependently
         shapeView.wantsLayer = true
         shapeView.layer?.masksToBounds = false
-        // NSImage doesn't render the SVG's baked filter shadow, so add it on the
-        // layer (Figma: black 13%, radius 22 @ the 494-wide art → ~12 at the
-        // 260-pt node). No shadowPath ⇒ derived from the folder+peek silhouette.
-        shapeView.layer?.shadowColor = NSColor.black.cgColor
-        shapeView.layer?.shadowOpacity = 0.13
-        shapeView.layer?.shadowRadius = 12
-        shapeView.layer?.shadowOffset = .zero
         addSubview(shapeView)
-        outlineView.image = Self.outlineImage
-        outlineView.imageScaling = .scaleAxesIndependently
-        // Crisp white edge tracing the folder silhouette (Figma outline.svg, 994×854,
-        // tab included). Its ~1.16 aspect matches the folder, so stretched to the node
-        // bounds it follows the folder shape.
-        outlineView.isHidden = false
-        addSubview(outlineView)
 
         countField.textColor = NSColor(white: 0, alpha: 0.4)
         addSubview(countField)
@@ -106,6 +179,12 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         }
         currentCount = childIDs.count
         refreshArt()
+        // Folder tint from the flower picker (nil → default lavender): recolour
+        // the folder IMAGE so the picked hue actually shows.
+        if let hex = node.folderColor, let color = Self.color(fromHex: hex),
+           let base = Self.art(forCount: currentCount) {
+            shapeView.image = Self.tinted(base, with: color)
+        }
         // The 1/2/3-item SVGs bake in their own count + "Untitled" (as outlined
         // paths), so suppress our dynamic overlays whenever a baked-text SVG is
         // shown — only the text-stripped empty Folder_Rest needs them. (4+ caps at
@@ -121,31 +200,71 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         // Always the per-count art (so the count + card peek stay visible when
         // selected); selection is shown by the scale + ring, not an art swap.
         shapeView.image = Self.art(forCount: currentCount)
+        // Shadow caster traces the SAME (clean, untinted) silhouette so the drop
+        // shadow is identical whether or not the folder is recoloured.
+        shadowView.image = shapeView.image
+        // Selection halo = the clean white silhouette (stays white at any folder colour).
+        haloView.image = Self.silhouette(forCount: currentCount)
         currentArtHeight = 1044
     }
 
-    /// Selection feedback: ONLY a subtle, animated scale (Spatial's "selected
-    /// folder is a bit scaled") — no ring, no art swap. Called from
-    /// CardItemView.updateChrome.
-    func setSelected(_ selected: Bool) {
-        guard selected != isSelected else { return }
-        isSelected = selected
-        // Scale from the CENTRE. A layer-backed NSView anchors its backing layer at
-        // the corner (anchorPoint 0,0), so `CATransform3DMakeScale` alone grows from
-        // a corner — build an explicit centre-pivot transform instead.
-        let cx = bounds.width / 2, cy = bounds.height / 2
-        let factor: CGFloat = selected ? 1.04 : 1.0
-        let target = CATransform3DConcat(
-            CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
-                                CATransform3DMakeScale(factor, factor, 1)),
-            CATransform3DMakeTranslation(cx, cy, 0))
-        let anim = CABasicAnimation(keyPath: "transform")
-        anim.fromValue = layer?.presentation()?.transform ?? layer?.transform
-        anim.toValue = target
-        anim.duration = 0.18
-        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        layer?.transform = target
-        layer?.add(anim, forKey: "selectScale")
+    /// Hover/selected feedback. `lifted` (hover OR select) drives the 1.06 scale;
+    /// `selected` drives the curved offset outline (hover shows scale only, to
+    /// match the cards' Figma-exact hover). Called from CardItemView.updateChrome.
+    func setState(lifted: Bool, selected: Bool, mag: CGFloat) {
+        currentMag = mag
+        let liftChanged = lifted != isLifted
+        if liftChanged {
+            isLifted = lifted
+            // Scale from the CENTRE. A layer-backed NSView anchors its backing layer
+            // at the corner (anchorPoint 0,0), so `CATransform3DMakeScale` alone grows
+            // from a corner — build an explicit centre-pivot transform instead.
+            let cx = bounds.width / 2, cy = bounds.height / 2
+            let factor: CGFloat = lifted ? CardItemView.liftScale : 1.0
+            let target = CATransform3DConcat(
+                CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
+                                    CATransform3DMakeScale(factor, factor, 1)),
+                CATransform3DMakeTranslation(cx, cy, 0))
+            let anim = CardItemView.liftSpring(
+                from: layer?.presentation()?.transform ?? layer?.transform ?? target, to: target)
+            layer?.transform = target
+            layer?.add(anim, forKey: "liftScale")
+        }
+        if selected != showsSelectionOutline {
+            showsSelectionOutline = selected
+            let target: Float = selected ? 1 : 0
+            let anim = CABasicAnimation(keyPath: "opacity")
+            anim.fromValue = haloView.layer?.presentation()?.opacity ?? haloView.layer?.opacity
+            anim.toValue = target
+            anim.duration = 0.14
+            anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            haloView.layer?.opacity = target
+            haloView.layer?.add(anim, forKey: "fade")
+        }
+        updateShadow(animated: liftChanged)
+    }
+
+    /// Global object drop shadow (mirrors CardItemView.updateShadow): rest vs
+    /// lifted depth + a zoom fade so dozens of folders don't read as mud when
+    /// zoomed out. The lift SCALE comes for free — the whole view's transform
+    /// scales this sublayer — so only opacity/offset/radius change here.
+    private func updateShadow(animated: Bool) {
+        guard let l = shadowView.layer else { return }
+        let zoomFade = max(0, min(1, (currentMag - Self.shadowMinMag)
+                                     / (Self.shadowFullMag - Self.shadowMinMag)))
+        let opacity: Float    = (isLifted ? 0.17 : 0.13) * Float(zoomFade)
+        let offsetY: CGFloat  = isLifted ? 16 : 6
+        let radius: CGFloat   = isLifted ? 20 : 8
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        if animated {
+            CATransaction.setAnimationDuration(0.14)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        }
+        l.shadowOpacity = opacity
+        l.shadowRadius = radius
+        l.shadowOffset = CGSize(width: 0, height: -offsetY)   // downward (non-flipped sublayer)
+        CATransaction.commit()
     }
 
     override func layout() {
@@ -160,9 +279,16 @@ final class FolderCardView: NSView, NativeCardUpdatable {
                                  y: -Self.folderRect.minY * sy,
                                  width: Self.svgSize.width * sx,
                                  height: currentArtHeight * sy)
-        // Outline art (994×854) is tight to its canvas, same ~1.16 ratio as the
-        // folder, so it traces the silhouette when filling the node bounds.
-        outlineView.frame = bounds
+        // Shadow caster shares the folder frame; its params come from the global
+        // object shadow (updateShadow), independent of the folder's own size.
+        shadowView.frame = shapeView.frame
+        updateShadow(animated: false)
+        // Selection halo: the folder-shaped white silhouette (in the SAME art frame
+        // as `shapeView`) grown UNIFORMLY about its centre, so a constant-width white
+        // edge peeks out behind the folder — exactly parallel to the folder shape.
+        let g: CGFloat = 0.016
+        let f = shapeView.frame
+        haloView.frame = f.insetBy(dx: -f.width * g, dy: -f.height * g)
 
         // Live text, lower-left (the baked text sat at ≈12% in, 69%/77% down).
         let pad = w * 0.118

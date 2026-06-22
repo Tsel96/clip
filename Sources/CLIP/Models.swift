@@ -35,6 +35,14 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     /// (not in any folder). Folders can't be nested inside folders.
     var folderID: UUID? = nil
 
+    /// Folder tint from the flower color picker, as an `#RRGGBB` hex of the
+    /// actual picked colour (the flower is 18 vibrant hues — far more than the
+    /// 5 `SectionColor`s — so we store the real colour, not a nearest preset).
+    /// Only meaningful when `kind` is `.folder`. Kept as a struct property (NOT a
+    /// `Kind.folder` associated value) so it needs zero enum pattern-match
+    /// changes. `decodeIfPresent` → older snapshots default to `nil` (lavender).
+    var folderColor: String? = nil
+
     /// Where this node came from. `.phone` marks cards ingested from the
     /// iPhone share pipe (the iCloud Drive inbox) so the UI can badge
     /// them. `decodeIfPresent` defaults older snapshots to `.local`.
@@ -103,7 +111,8 @@ struct CanvasNode: Identifiable, Equatable, Codable {
          tags: [String] = [],
          imagePrompt: String? = nil,
          trimStart: Double? = nil,
-         trimEnd: Double? = nil) {
+         trimEnd: Double? = nil,
+         folderColor: String? = nil) {
         self.id = id
         self.position = position
         self.width = width
@@ -120,6 +129,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.imagePrompt = imagePrompt
         self.trimStart = trimStart
         self.trimEnd = trimEnd
+        self.folderColor = folderColor
     }
 
     // MARK: - Codable (manual to migrate older snapshots)
@@ -127,7 +137,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, position, width, height, kind, addedAt, groupID, folderID, origin
         case name, note, linkURL, tags, imagePrompt
-        case trimStart, trimEnd
+        case trimStart, trimEnd, folderColor
     }
 
     init(from decoder: Decoder) throws {
@@ -152,6 +162,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.imagePrompt = try c.decodeIfPresent(String.self, forKey: .imagePrompt)
         self.trimStart = try c.decodeIfPresent(Double.self, forKey: .trimStart)
         self.trimEnd   = try c.decodeIfPresent(Double.self, forKey: .trimEnd)
+        self.folderColor = try c.decodeIfPresent(String.self, forKey: .folderColor)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -172,6 +183,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         try c.encodeIfPresent(imagePrompt, forKey: .imagePrompt)
         try c.encodeIfPresent(trimStart, forKey: .trimStart)
         try c.encodeIfPresent(trimEnd, forKey: .trimEnd)
+        try c.encodeIfPresent(folderColor, forKey: .folderColor)
     }
 
     static func tweet(url: String, position: CGPoint, width: CGFloat = 360) -> CanvasNode {
@@ -268,6 +280,24 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         return false
     }
 
+    /// True if this node is a Folder. Drives the toolbar→folder-bar morph.
+    var isFolder: Bool {
+        if case .folder = kind { return true }
+        return false
+    }
+
+    /// True if this node is a sticky note. Shows the same action bar as folders.
+    var isStickyNote: Bool {
+        if case .stickyNote = kind { return true }
+        return false
+    }
+
+    /// True if this node is a text pill (Figma 96-720 — rounded chrome).
+    var isText: Bool {
+        if case .text = kind { return true }
+        return false
+    }
+
     /// World rectangle covering this node (position + size at current
     /// width/height). Sections use this for containment hit-testing.
     var worldRect: CGRect {
@@ -347,6 +377,19 @@ struct DrawingStroke: Equatable, Codable {
     var points: [CGPoint]
     var color: StrokeColor
     var width: CGFloat
+    /// < 1 = a translucent highlighter (Freeform-style marker); 1 = opaque pen.
+    var opacity: CGFloat = 1
+
+    init(points: [CGPoint], color: StrokeColor, width: CGFloat, opacity: CGFloat = 1) {
+        self.points = points; self.color = color; self.width = width; self.opacity = opacity
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        points = try c.decode([CGPoint].self, forKey: .points)
+        color = try c.decode(StrokeColor.self, forKey: .color)
+        width = try c.decode(CGFloat.self, forKey: .width)
+        opacity = try c.decodeIfPresent(CGFloat.self, forKey: .opacity) ?? 1   // old strokes = opaque
+    }
 }
 
 /// Pre-defined draw colors. Not using `Color` directly because it
@@ -364,6 +407,8 @@ struct StrokeColor: Equatable, Hashable, Codable {
     static let pink   = StrokeColor(red: 0.925, green: 0.282, blue: 0.600)
     static let cyan   = StrokeColor(red: 0.024, green: 0.714, blue: 0.831)
     static let black  = StrokeColor(red: 0.106, green: 0.106, blue: 0.122)
+    /// Marker / highlighter yellow (drawn translucent + wide).
+    static let highlighter = StrokeColor(red: 1.0, green: 0.93, blue: 0.25)
 
     static let palette: [StrokeColor] = [.blue, .red, .green, .amber, .purple, .pink, .cyan, .black]
 
@@ -469,11 +514,57 @@ struct Connector: Identifiable, Equatable, Codable {
     let id: UUID
     var sourceID: UUID
     var targetID: UUID
+    /// Optional text shown in a pill at the connector's midpoint (Obsidian-style
+    /// edge label). Empty = no label.
+    var label: String
+    /// The sides the user drew the connector from / onto (nil = auto-pick). Pinned
+    /// so the endpoints don't drift ("change the original position") as cards move.
+    var sourceSide: ConnSide?
+    var targetSide: ConnSide?
+    /// User offset of the label from the bezier midpoint, content units (nil = on
+    /// the midpoint). Lets the label be dragged; the line break follows it.
+    var labelOffset: CGPoint?
 
-    init(id: UUID = UUID(), sourceID: UUID, targetID: UUID) {
+    init(id: UUID = UUID(), sourceID: UUID, targetID: UUID, label: String = "",
+         sourceSide: ConnSide? = nil, targetSide: ConnSide? = nil, labelOffset: CGPoint? = nil) {
         self.id = id
         self.sourceID = sourceID
         self.targetID = targetID
+        self.label = label
+        self.sourceSide = sourceSide
+        self.targetSide = targetSide
+        self.labelOffset = labelOffset
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, sourceID, targetID, label, sourceSide, targetSide, labelOffsetX, labelOffsetY
+    }
+
+    // Backward-compat: older documents have no `label` / sides / `labelOffset` keys.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        sourceID = try c.decode(UUID.self, forKey: .sourceID)
+        targetID = try c.decode(UUID.self, forKey: .targetID)
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        sourceSide = try c.decodeIfPresent(ConnSide.self, forKey: .sourceSide)
+        targetSide = try c.decodeIfPresent(ConnSide.self, forKey: .targetSide)
+        if let ox = try c.decodeIfPresent(CGFloat.self, forKey: .labelOffsetX),
+           let oy = try c.decodeIfPresent(CGFloat.self, forKey: .labelOffsetY) {
+            labelOffset = CGPoint(x: ox, y: oy)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(sourceID, forKey: .sourceID)
+        try c.encode(targetID, forKey: .targetID)
+        try c.encode(label, forKey: .label)
+        try c.encodeIfPresent(sourceSide, forKey: .sourceSide)
+        try c.encodeIfPresent(targetSide, forKey: .targetSide)
+        try c.encodeIfPresent(labelOffset?.x, forKey: .labelOffsetX)
+        try c.encodeIfPresent(labelOffset?.y, forKey: .labelOffsetY)
     }
 }
 

@@ -798,11 +798,17 @@ final class ToolbarPill: NSView {
         ring.colors = [Self.green.cgColor, Self.green.cgColor]      // flat green capsule
         ring.masksToBounds = true
         layer?.addSublayer(ring)
-        inner.colors = [Self.yellowTop.cgColor, Self.yellowBot.cgColor]
+        // Figma 71:13007: yellow body gradient with a 2pt pale rim (#FFFCA9) on the
+        // TOP edge ONLY (`border-t-2`) — a crisp 4-stop vertical gradient paints the
+        // rim along the rounded top only (never sides/bottom), so the green ring
+        // stays the sole full-perimeter edge. rim ≈ 2/58 ≈ 0.0345.
+        inner.colors = [
+            Self.border.cgColor, Self.border.cgColor,    // pale top rim
+            Self.yellowTop.cgColor, Self.yellowBot.cgColor,
+        ]
+        inner.locations = [0.0, 0.0345, 0.0345, 1.0]
         inner.startPoint = CGPoint(x: 0.5, y: 0)
         inner.endPoint = CGPoint(x: 0.5, y: 1)
-        inner.borderColor = Self.border.cgColor
-        inner.borderWidth = 1.5
         inner.masksToBounds = true
         layer?.addSublayer(inner)
         stack.orientation = .horizontal

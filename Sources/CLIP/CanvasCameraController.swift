@@ -52,5 +52,10 @@ extension CollectionCanvas.Coordinator {
         scroll.contentView.scroll(to: CGPoint(x: worldOriginX - config.worldBounds.minX,
                                               y: worldOriginY - config.worldBounds.minY))
         scroll.reflectScrolledClipView(scroll.contentView)
+        // Connector stroke width is ÷ magnification (constant on screen) — it must
+        // be recomputed on EVERY zoom step, including animated glide ticks, or it
+        // drifts as the canvas scales. Also keep the inline label editor matched.
+        refreshConnectors()
+        if let cid = editingConnectorID { positionEditor(at: cid) }
     }
 }

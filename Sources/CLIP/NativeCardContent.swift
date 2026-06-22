@@ -26,17 +26,16 @@ func makeNativeCardContent(for node: CanvasNode) -> NSView? {
         return CardDrawingContentView(stroke: stroke)
     case .section(let title, let color):
         return CardSectionContentView(title: title, color: color)
-    case .stickyNote(let content, let color):
-        return CardStickyContentView(content: content, color: color)
+    case .stickyNote:
+        // Sticky renders via the SwiftUI StickyNodeView (Figma 88-415 light card,
+        // recolour + inline editing). Returning nil hosts that fallback.
+        return nil
     case .folder:
         let v = FolderCardView(); v.update(for: node); return v
-    case .text(let content, let fontSize):
-        // Native at-rest render. `HostingCollectionItem.setContent(isEditing:)`
-        // swaps to the SwiftUI inline editor while this node is being edited.
-        // Gated so the whole text card can fall back to SwiftUI in one flip.
-        return FeatureFlags.useNativeText
-            ? CardTextContentView(content: content, fontSize: fontSize)
-            : nil
+    case .text:
+        // Text renders via the SwiftUI TextNodeView (Figma 96-720 white pill,
+        // IBM Plex Sans, live-resize editing). Returning nil hosts that fallback.
+        return nil
     default:
         // tweet / instagram / youtube / webclip — still SwiftUI (web cards keep
         // their semantic-zoom live↔poster lifecycle). See task #17.
@@ -54,7 +53,7 @@ func nativeContentKey(for node: CanvasNode) -> String? {
     case .section(let t, let c):    return "section|\(t)|\(c.rawValue)"
     case .stickyNote(let t, let c): return "sticky|\(t)|\(c.rawValue)"
     case .text(let t, let s):       return "text|\(t)|\(s)"
-    case .folder(let t, let i, let c): return "folder|\(t)|\(i)|\(c.count)"
+    case .folder(let t, let i, let c): return "folder|\(t)|\(i)|\(c.count)|\(node.folderColor ?? "")"
     default:                        return nil
     }
 }
@@ -118,7 +117,7 @@ final class CardSectionContentView: NSView, NativeCardUpdatable {
     private let titleField = NSTextField(labelWithString: "")
     private let icon = NSImageView()
     private let headerHeight: CGFloat = 28
-    private let radius: CGFloat = 12
+    private let radius: CGFloat = 1
 
     init(title: String, color: SectionColor) {
         self.title = title; self.color = color
@@ -186,7 +185,7 @@ final class CardStickyContentView: NSView, NativeCardUpdatable {
     private var content: String
     private var color: StickyColor
     private let textField = NSTextField(wrappingLabelWithString: "")
-    private let radius: CGFloat = 6
+    private let radius: CGFloat = 1
     private let lipHeight: CGFloat = 6
 
     init(content: String, color: StickyColor) {
@@ -331,7 +330,7 @@ final class CardDrawingContentView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext, stroke.points.count > 1 else { return }
         ctx.addPath(smoothCGPath(through: stroke.points))
         ctx.setStrokeColor(NSColor(srgbRed: stroke.color.red, green: stroke.color.green,
-                                   blue: stroke.color.blue, alpha: 1).cgColor)
+                                   blue: stroke.color.blue, alpha: stroke.opacity).cgColor)
         ctx.setLineWidth(stroke.width)
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
@@ -517,5 +516,7 @@ final class NativeVideoCache {
 
 /// Shared card-chrome constants so native content + the item chrome agree.
 enum CardChrome {
-    static let cornerRadius: CGFloat = 19.375
+    /// Cards are SQUARE (Figma 88:329/330/336 — the CARD layer has no corner
+    /// radius). Sticky/section keep their own small radii in their content views.
+    static let cornerRadius: CGFloat = 1
 }
