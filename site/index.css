@@ -120,6 +120,7 @@ html, body {
   top: var(--gap);
   left: var(--gap);
   --bul: 0;            /* underline progress, animated by Motion */
+  transition: transform 0.45s var(--ease-spring);
 }
 /* draw-in underline on hover */
 .ui-brand::after {
@@ -144,6 +145,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: clamp(10px, calc(20 / 2340 * 100vw), 32px);
+  transition: transform 0.45s var(--ease-spring);
 }
 
 .ui-platform {
@@ -229,6 +231,7 @@ html, body {
   max-width: clamp(260px, 34.9vw, 640px);
   text-transform: uppercase;
   line-height: 1.45;
+  transition: transform 0.45s var(--ease-spring);
 }
 
 /* ── Download modal ── */
@@ -505,6 +508,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: clamp(14px, calc(20 / 2340 * 100vw), 32px);
+  transition: transform 0.45s var(--ease-spring);
 }
 .ui-git {
   position: static;   /* overrides the shared position:fixed from the group selector */
@@ -600,7 +604,9 @@ body.mat-active .ui-platform,
 body.mat-active .ui-description,
 body.mat-active .ui-git {
   color: #fff;
-  transition: color 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    color     0.6s  var(--ease-out),
+    transform 0.45s var(--ease-spring);
 }
 body.mat-active .ui-git {
   text-decoration-color: rgba(255, 255, 255, 0.25);

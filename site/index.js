@@ -232,52 +232,24 @@ function wireBgToggle() {
   const desc     = document.querySelector('.ui-description');
   const botRight = document.querySelector('.ui-bottom-right');
 
-  // Mirror the CSS clamp formulas — gives us the pixel offsets to shift each element
-  const defGap    = () => Math.min(Math.max(14, 26 / 2340 * window.innerWidth), 44);
-  const defBotGap = () => Math.min(Math.max(14, 38 / 2340 * window.innerWidth), 56);
-  const matGapPx  = () => {
-    const vmin = Math.min(window.innerWidth, window.innerHeight) / 100;
-    return Math.min(Math.max(46, 2 * vmin + 26), 62);
-  };
+  function applyShift(mat) {
+    // Mirror CSS clamp formulas to compute pixel offsets
+    const g  = Math.min(Math.max(14, 26 / 2340 * window.innerWidth), 44);
+    const bg = Math.min(Math.max(14, 38 / 2340 * window.innerWidth), 56);
+    const mg = Math.min(Math.max(46, 2 * Math.min(window.innerWidth, window.innerHeight) / 100 + 26), 62);
+    const d  = mat ? mg - g  : 0;
+    const db = mat ? mg - bg : 0;
 
-  // x/y transform offsets per element — positive x = right, positive y = down
-  // bottom-anchored elements invert y (moving element "up" = negative y transform)
-  function offsets(mat) {
-    if (!mat) return { brand: [0,0], topRight: [0,0], desc: [0,0], botRight: [0,0] };
-    const d  = matGapPx() - defGap();
-    const db = matGapPx() - defBotGap();
-    return {
-      brand:    [ d,  d],   // top-left  → slide right + down
-      topRight: [-d,  d],   // top-right → slide left  + down
-      desc:     [ d, -d],   // bot-left  → slide right + up
-      botRight: [-d, -db],  // bot-right → slide left  + up (different y start)
-    };
+    // CSS transition: transform handles the spring animation
+    if (brand)    brand.style.transform    = d  ? `translate(${d}px, ${d}px)`    : '';
+    if (topRight) topRight.style.transform = d  ? `translate(${-d}px, ${d}px)`   : '';
+    if (desc)     desc.style.transform     = d  ? `translate(${d}px, ${-d}px)`   : '';
+    if (botRight) botRight.style.transform = db ? `translate(${-d}px, ${-db}px)` : '';
   }
-
-  const SPRING_POS = { type: 'spring', visualDuration: 0.45, bounce: 0.12 };
 
   btn.addEventListener('click', () => {
     document.body.classList.toggle('mat-active');
-    const mat = document.body.classList.contains('mat-active');
-    const off = offsets(mat);
-
-    if (REDUCE || !M) {
-      [[brand, 'brand'], [topRight, 'topRight'], [desc, 'desc'], [botRight, 'botRight']]
-        .forEach(([el, key]) => {
-          if (!el) return;
-          const [x, y] = off[key];
-          el.style.transform = (x || y) ? `translate(${x}px,${y}px)` : '';
-        });
-      return;
-    }
-
-    const { animate } = M;
-    [[brand, 'brand'], [topRight, 'topRight'], [desc, 'desc'], [botRight, 'botRight']]
-      .forEach(([el, key]) => {
-        if (!el) return;
-        const [x, y] = off[key];
-        animate(el, { x, y }, SPRING_POS);
-      });
+    applyShift(document.body.classList.contains('mat-active'));
   });
 }
 
