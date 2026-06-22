@@ -88,9 +88,10 @@ final class CanvasToolPaletteView: NSView {
         addSubview(mainPill)
         addSubview(addPill)
 
-        mainPill.onToolTap   = { [weak self] tool in self?.onToolTap?(tool) }
-        mainPill.onFolderTap = { [weak self] in self?.onFolderTap?() }
-        addPill.onTap        = { [weak self] in self?.onAddTap?() }
+        mainPill.onToolTap    = { [weak self] tool in self?.onToolTap?(tool) }
+        mainPill.onFolderTap  = { [weak self] in self?.onFolderTap?() }
+        mainPill.onStickerTap = { [weak self] in self?.onStickerTap?() }
+        addPill.onTap         = { [weak self] in self?.onAddTap?() }
 
         // Folder bar starts hidden + slightly shrunk (springs in on morph).
         addSubview(folderBar)
@@ -781,7 +782,7 @@ private final class MainPillView: NSView {
         stickersView.setElements(
             paper: loadBundleImage(named: "sticky-paper"),
             fold:  loadBundleImage(named: "sticky-corner-fold"))
-        stickersView.onTap = { [weak self] in self?.onToolTap?(.stickyNote) }
+        stickersView.onTap = { [weak self] in self?.onStickerTap?() }
         addSubview(stickersView)
     }
 
@@ -798,6 +799,7 @@ private final class MainPillView: NSView {
 
     var onToolTap: ((ToolMode) -> Void)?
     var onFolderTap: (() -> Void)?
+    var onStickerTap: (() -> Void)?
 
     // MARK: - Layout
 
@@ -1332,8 +1334,10 @@ struct _PaletteRepresentable: NSViewRepresentable {
         self.toolMode     = state.toolMode
         self.isAddSelected = state.isLinkInputPresented
         let ids = state.selectedNodeIDs
+        // The contextual action bar shows for folders AND stickies (same bar).
         self.folderSelected = !ids.isEmpty && ids.allSatisfy { id in
-            state.nodes.first(where: { $0.id == id })?.isFolder ?? false
+            guard let n = state.nodes.first(where: { $0.id == id }) else { return false }
+            return n.isFolder || n.isStickyNote
         }
     }
 
@@ -1365,6 +1369,7 @@ struct _PaletteRepresentable: NSViewRepresentable {
             withAnimation(Motion.feedback) { state.toolMode = mode }
         }
         v.onFolderTap = { state.addFolder() }   // the Folder button
+        v.onStickerTap = { state.addStickyNote() }   // sticker prop → sticky at viewport centre
         // "+" toggles the inline link input (Figma 72:36784); its green
         // selected skin follows `isLinkInputPresented`.
         v.onAddTap = {
