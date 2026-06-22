@@ -419,6 +419,7 @@ struct CanvasView: View {
                                 state.activeResizeUndoSnapshot = nil
                             },
                             onMoveCommitted: { state.handleDropOntoFolder(draggedIDs: $0) },
+                            onOptionDuplicate: { state.duplicateForDrag($0) },
                             onMove: { id, position in
                                 // Move (not resize) so connectors stay attached.
                                 state.updatePosition(of: id, to: position)

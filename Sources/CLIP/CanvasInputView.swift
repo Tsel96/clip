@@ -51,6 +51,7 @@ final class CanvasInputView: NSView {
     private var moveStartPos: [UUID: CGPoint] = [:] // world coords
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
+    private var optionDuplicated = false            // Option-drag duplicated this drag already
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
     private var labelDragID: UUID?                  // connector whose label is being dragged
@@ -366,6 +367,18 @@ final class CanvasInputView: NSView {
         case .pendingMove, .move:
             if mode == .pendingMove {
                 if abs(dx) < 1 && abs(dy) < 1 { return }     // not a real drag yet
+                // Option-drag → duplicate in place and drag the COPIES (the
+                // originals stay put), like every other app.
+                if event.modifierFlags.contains(.option), !optionDuplicated {
+                    optionDuplicated = true
+                    let map = p.onOptionDuplicate(Set(moveStartPos.keys))
+                    if !map.isEmpty {
+                        var newStart: [UUID: CGPoint] = [:]
+                        for (old, sp) in moveStartPos { newStart[map[old] ?? old] = sp }
+                        moveStartPos = newStart
+                        if let pid = primaryMoveID, let np = map[pid] { primaryMoveID = np }
+                    }
+                }
                 mode = .move
                 beginIfNeeded(p, primary: primaryMoveID)
             }
@@ -534,6 +547,7 @@ final class CanvasInputView: NSView {
         coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
         mode = .idle; resizeGrip = nil; resizeNodeID = nil
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
+        optionDuplicated = false
     }
 
     private func beginIfNeeded(_ p: CanvasConfig, primary: UUID?) {

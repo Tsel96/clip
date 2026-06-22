@@ -200,6 +200,42 @@ extension CanvasState {
     /// expansion (`expandedDragSet`) and continue to render at their
     /// duplicated positions.
     @discardableResult
+    /// Option-drag duplicate: clone `ids` IN PLACE (same positions, ALL fields)
+    /// and return an original→copy id mapping so the drag can retarget onto the
+    /// copies, leaving the originals where they were. One undo entry.
+    func duplicateForDrag(_ ids: Set<UUID>) -> [UUID: UUID] {
+        let expanded = expandedDragSet(from: ids)
+        guard !expanded.isEmpty else { return [:] }
+        var map: [UUID: UUID] = [:]
+        var freshGroupForOriginal: [UUID: UUID] = [:]
+        withUndoable {
+            for original in nodes where expanded.contains(original.id) {
+                let newGroupID: UUID? = {
+                    guard let g = original.groupID else { return nil }
+                    if let existing = freshGroupForOriginal[g] { return existing }
+                    let fresh = UUID(); freshGroupForOriginal[g] = fresh; return fresh
+                }()
+                let copy = CanvasNode(
+                    position: original.position,
+                    width: original.width,
+                    height: original.height,
+                    kind: original.kind,
+                    groupID: newGroupID,
+                    folderID: nil,                 // copies live on the board, not inside a folder
+                    origin: original.origin,
+                    name: original.name, note: original.note, linkURL: original.linkURL,
+                    tags: original.tags, imagePrompt: original.imagePrompt,
+                    trimStart: original.trimStart, trimEnd: original.trimEnd,
+                    folderColor: original.folderColor,
+                    attributedContent: original.attributedContent)
+                nodes.append(copy)
+                map[original.id] = copy.id
+            }
+        }
+        if !map.isEmpty { selectedNodeIDs = Set(map.values) }
+        return map
+    }
+
     func duplicateNodes(_ ids: Set<UUID>) -> Set<UUID> {
         guard !ids.isEmpty else { return [] }
         // Expand so a stack head pulls its hidden members; without this
