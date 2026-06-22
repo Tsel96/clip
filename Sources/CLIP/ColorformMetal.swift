@@ -113,9 +113,22 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
                                        length: MemoryLayout<CFBulb>.stride * arr.count,
                                        options: .storageModeShared)
         uniforms.bulbCount = Int32(arr.count)
-        // σ ≈ average bulb radius → soft overlap that fills to ~the bulb radius.
-        let avgR = bulbs.reduce(0) { $0 + $1.radius } / CGFloat(bulbs.count)
-        uniforms.sigma = max(Float(avgR) * 0.85, 120)
+        // σ = average nearest-neighbour distance (the constellation's natural
+        // spacing). The field/mask scale off this so the colour blobs fill BETWEEN
+        // adjacent bulbs regardless of zoom — bulb `radius` is far smaller than the
+        // spacing in the engine's layout, which is why the old σ made tiny dots.
+        var nnSum: CGFloat = 0, nnCount = 0
+        for i in bulbs.indices {
+            var best = CGFloat.greatestFiniteMagnitude
+            for j in bulbs.indices where j != i {
+                let dx = bulbs[i].center.x - bulbs[j].center.x
+                let dy = bulbs[i].center.y - bulbs[j].center.y
+                best = min(best, dx * dx + dy * dy)
+            }
+            if best.isFinite { nnSum += best.squareRoot(); nnCount += 1 }
+        }
+        let nn = nnCount > 0 ? nnSum / CGFloat(nnCount) : (bulbs.first?.radius ?? 300)
+        uniforms.sigma = max(Float(nn), 50)
     }
 
     func refresh() {
@@ -171,21 +184,30 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
         if (u.bulbCount == 0) return float4(0.0);
 
         float sig = max(u.sigma, 1.0);
-        float wsum = 0.0, wmax = 0.0;
+        // INVERSE-DISTANCE blend → every pixel takes the (smoothly blended) nearest
+        // bulb colour, so the field has FULL coverage like the old Voronoi; the
+        // softening term keeps centres pure and boundaries smooth.
+        float soft = sig * sig * 0.06;
+        float wsum = 0.0;
         float3 csum = float3(0.0);
+        float minD2 = 1e20;
         for (int i = 0; i < u.bulbCount; i++) {
             float2 d = world - float2(bulbs[i].px, bulbs[i].py);
-            float w = exp(-dot(d, d) / (sig * sig));
-            if (i == u.hoverIndex) { w *= 1.8; }     // hover-effect hook
-            wsum += w; wmax = max(wmax, w);
+            float dd = dot(d, d);
+            float w = 1.0 / (dd + soft);
+            if (i == u.hoverIndex) { w *= 2.0; }      // hover-effect hook
+            wsum += w;
             csum += w * float3(bulbs[i].r, bulbs[i].g, bulbs[i].b);
+            minD2 = min(minD2, dd);
         }
-        float3 cream = float3(u.creamR, u.creamG, u.creamB);
-        float3 field = (wsum > 1e-4) ? (csum / wsum) : cream;
-        field += wmax * 0.16;                        // soft seed glow
+        float3 field = csum / max(wsum, 1e-6);
+        float minD = sqrt(minD2);
+        field += clamp(1.0 - minD / (sig * 0.55), 0.0, 1.0) * 0.14;  // soft seed glow
         field = clamp(field, 0.0, 1.0);
-        float a = smoothstep(0.04, 0.5, wsum);       // fade to cream at the edges
-        return float4(field * a, a);                 // premultiplied
+        // Blob mask: solid within ~one spacing of any bulb, fading to cream beyond
+        // (replaces the SwiftUI organic blob + bounding box).
+        float a = 1.0 - smoothstep(sig * 0.85, sig * 1.55, minD);
+        return float4(field * a, a);                  // premultiplied
     }
     """
 }

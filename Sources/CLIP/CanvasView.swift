@@ -462,10 +462,10 @@ struct CanvasView: View {
                         .blur(radius: cardsBlur)
                         // Interactive in every tool mode — CanvasInputView + the
                         // tool islands resolve per-mode behaviour (select / hand /
-                        // draw / connect / text / sticker). Only Colorform is a
-                        // read-only view. (Gating this to `.select` silently broke
-                        // every non-select tool: the native canvas got no events.)
-                        .allowsHitTesting(state.canvasMode != .colorform)
+                        // draw / connect / text / sticker). Colorform is read-only for
+                        // CARDS, but still needs pan/zoom (navigate the color field +
+                        // drive the zoom→cards crossfade), so input stays enabled.
+                        .allowsHitTesting(true)
                 }
 
                 // (Smart Selection chrome is hosted in CLIPCanvasView's
@@ -604,7 +604,11 @@ struct CanvasView: View {
             if state.canvasMode != .archive {
                 HStack(spacing: 10) {
                     SidebarToggleButton()
-                    CanvasControlsBar()
+                    // Connectors / grid / play are canvas-only — meaningless over
+                    // the Colorform field, so hide them there.
+                    if state.canvasMode == .canvas {
+                        CanvasControlsBar()
+                    }
                 }
                 .fixedSize()
                 .padding(.leading, 18)
