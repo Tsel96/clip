@@ -482,17 +482,6 @@ struct CollectionCanvas: NSViewRepresentable {
         /// them into the CAShapeLayer controller. Driven from `refreshChrome`, so
         /// it tracks node changes (apply → refreshChrome) AND zoom (bounds
         /// observer → refreshChrome). No-op unless `useNativeConnectors`.
-        /// TEMP profiling wrapper (ZoomProfiler) — times the per-tick chrome rebuild
-        /// so we can attribute high-zoom jank to CPU (this cost) vs GPU (shadows).
-        func refreshChromeProfiled() {
-            let t0 = CACurrentMediaTime()
-            refreshChrome()
-            let ms = (CACurrentMediaTime() - t0) * 1000
-            let items = collection?.indexPathsForVisibleItems().count ?? 0
-            ZoomProfiler.shared.noteZoom(refreshMs: ms, mag: scroll?.magnification ?? 1,
-                                         items: items, connectors: config.connectors.count)
-        }
-
         func refreshConnectors() {
             guard let cc = connectorController else { return }
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY

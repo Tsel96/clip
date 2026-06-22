@@ -688,6 +688,9 @@ final class CanvasState: ObservableObject {
     /// user's exact viewport from the canvas they left.
     var preArchiveCamera: Camera? = nil
 
+    /// Whether the left pages sidebar is shown (toggled by the floating
+    /// sidebar-toggle button, Figma 74:25877 open / 74:13420 closed).
+    @Published var showSidebar: Bool = true
     /// Whether the connectors layer is rendered. Toggled from the
     /// bottom-right floating control bar.
     @Published var showConnectors: Bool = true

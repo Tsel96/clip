@@ -21,10 +21,13 @@ struct ContentView: View {
         // panel's drop shadow. As a sibling in an HStack with a higher zIndex, our
         // panel is the ONLY one and its real shadow spills over the canvas.
         HStack(spacing: 0) {
-            PagesSidebar()
-                .frame(width: 200)
-                .frame(maxHeight: .infinity)
-                .zIndex(1)
+            if state.showSidebar {
+                PagesSidebar()
+                    .frame(width: 200)
+                    .frame(maxHeight: .infinity)
+                    .zIndex(1)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
             CanvasView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .toolbar { toolbarContent }
@@ -53,6 +56,13 @@ struct ContentView: View {
                 .sheet(isPresented: $state.isInboxGuidePresented) {
                     InboxSetupGuide()
                 }
+        }
+        // Floating sidebar show/hide toggle (Figma 74:25877/74:13420), top-left of
+        // the canvas — clears the macOS traffic lights when the sidebar is hidden.
+        .overlay(alignment: .topLeading) {
+            SidebarToggleButton()
+                .padding(.top, 14)
+                .padding(.leading, state.showSidebar ? 212 : 80)
         }
         .frame(minWidth: 700, minHeight: 480)
         // Fill under the hidden title bar (traffic lights float over the sidebar).

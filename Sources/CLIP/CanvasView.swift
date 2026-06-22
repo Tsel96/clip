@@ -601,7 +601,7 @@ struct CanvasView: View {
         // Bottom-LEFT: connectors / grid / play toggles (Figma 51:12692).
         .overlay(alignment: .bottomLeading) {
             if state.canvasMode != .archive {
-                NativeCanvasTogglesPill()
+                CanvasControlsBar()
                     .fixedSize()
                     .padding(.leading, 18)
                     .padding(.bottom, 18)
