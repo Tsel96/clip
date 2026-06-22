@@ -770,6 +770,13 @@ final class CardItemView: NSView {
     /// Inner hairline (0.5px, 15% black, drawn INSIDE the card edge) on media
     /// cards — defines the card against the light canvas. Always on.
     private let innerHairlineLayer = CAShapeLayer()
+    /// BAKED drop shadow: a dedicated rasterized layer BEHIND the content so the
+    /// soft blur is computed once and cheaply *resampled* when zooming (NSScrollView
+    /// magnification is an ancestor transform) instead of re-blurred every frame —
+    /// the high-zoom FPS fix. Content stays unrasterized (crisp). The zoom-out fade
+    /// rides this layer's `opacity` (composite-time → no re-raster); only a
+    /// lift/resize changes the baked `shadowPath`/radius and re-bakes.
+    private let shadowLayer = CALayer()
     /// Hover/selected scale, applied to every canvas object EXCEPT marker
     /// drawings (user spec). Same factor for hover and select (not compounded).
     static let liftScale: CGFloat = 1.02
@@ -784,6 +791,20 @@ final class CardItemView: NSView {
     // MARK: - Native chrome (section outline + selection ring + handles)
 
     private func setupChrome() {
+        // Baked shadow caster — BACKMOST (behind content), rasterized so a zoom
+        // just resamples the cached blur. Driven in `updateShadow`; the item's own
+        // layer no longer casts (set its shadowOpacity 0).
+        shadowLayer.zPosition = -1
+        shadowLayer.masksToBounds = false
+        shadowLayer.backgroundColor = nil            // invisible body; only the shadow shows
+        shadowLayer.shadowColor = NSColor.black.cgColor
+        shadowLayer.shouldRasterize = true
+        shadowLayer.rasterizationScale = NSScreen.main?.backingScaleFactor ?? 2
+        shadowLayer.magnificationFilter = .trilinear
+        shadowLayer.opacity = 0
+        layer?.addSublayer(shadowLayer)
+        layer?.shadowOpacity = 0
+
         // Section outline — a crisp neutral border so empty section frames read
         // clearly at any zoom (the SwiftUI 1pt border vanished when zoomed out).
         sectionLayer.fillColor = nil
@@ -1034,38 +1055,51 @@ final class CardItemView: NSView {
         }
     }
 
-    /// Spatial draws the card shadow on the item's CALayer (not in the card
-    /// content) precisely because a layer shadow renders OUTSIDE the bounds —
-    /// a SwiftUI shadow would be clipped by the collection item, just like the
-    /// resize handles were. `shadowPath` keeps it cheap and correctly rounded.
+    /// The float shadow lives on a dedicated BAKED `shadowLayer` (rasterized), not
+    /// the item's own layer, so zooming resamples a cached blur instead of
+    /// re-running the gaussian every frame (the high-zoom FPS fix). The expensive
+    /// parts (`shadowPath`/radius/offset/`shadowOpacity`) change only on lift/resize
+    /// → the cache is reused across zoom ticks; the zoom-out fade rides the layer's
+    /// composite `opacity`, which never invalidates the cache.
     private var lastLiftedForShadow: Bool?
+    /// Enlarge the shadow layer past the card so rasterization can't clip the blur.
+    private static let shadowMargin: CGFloat = 48
     func updateShadow() {
-        guard let layer = layer else { return }
-        layer.masksToBounds = false
+        guard layer != nil else { return }
+        layer?.masksToBounds = false
         guard let n = liveNode, castsShadow(n.kind), bounds.width > 1, bounds.height > 1 else {
-            layer.shadowOpacity = 0
+            shadowLayer.opacity = 0
             lastLiftedForShadow = nil
             return
         }
-        // Fade the float shadow out when zoomed far out (Spatial's
-        // minMagnificationForShadow) — dozens of soft shadows on a zoomed-out
-        // board read as mud and cost fill-rate; near 1× they lift cleanly.
+        // Fade out when zoomed far out (Spatial's minMagnificationForShadow): dozens
+        // of soft shadows zoomed out read as mud. This rides the LAYER opacity
+        // (composite-time) — set instantly per tick, no re-raster.
         let mag = magnification
         let minMag: CGFloat = 0.30, fullMag: CGFloat = 0.55
         let zoomFade = max(0, min(1, (mag - minMag) / (fullMag - minMag)))
-        // Per-state shadow (Figma 88:329 rest vs 88:330/336 lifted): rest is a
-        // tight subtle contact shadow; hover/selected lifts the card into a
-        // larger, softer, slightly darker pool. The shadow path is scaled by the
-        // lift factor so it tracks the (1.06×) scaled card edge.
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        shadowLayer.opacity = Float(zoomFade)
+        shadowLayer.rasterizationScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        CATransaction.commit()
+
+        // Per-state baked shadow (Figma 88:329 rest vs 88:330/336 lifted): rest is a
+        // tight contact shadow; hover/selected lifts into a larger softer pool. These
+        // change only on a lift/resize → no per-zoom re-raster.
         let lifted = isLifted
         let baseOpacity: Float = lifted ? 0.17 : 0.13
         let offsetY: CGFloat   = lifted ? 16 : 6
         let radius: CGFloat    = lifted ? 20 : 8
         let liftS: CGFloat     = lifted ? Self.liftScale : 1.0
+        let m = Self.shadowMargin
         let sw = bounds.width * liftS, sh = bounds.height * liftS
-        let shadowRect = CGRect(x: (bounds.width - sw) / 2, y: (bounds.height - sh) / 2,
+        // Card rect inside the enlarged shadowLayer space (origin shifted by +m).
+        let shadowRect = CGRect(x: m + (bounds.width - sw) / 2, y: m + (bounds.height - sh) / 2,
                                 width: sw, height: sh)
-        // Animate ONLY on a rest⇄lifted transition; zoom ticks set instantly.
+        let shadowR: CGFloat = n.isText ? shadowRect.height / 2
+                             : n.isStickyNote ? StickyNodeView.cornerRadius * liftS
+                             : shadowCornerRadius
+        // Animate ONLY on a rest⇄lifted transition; everything else is instant.
         let animated = (lastLiftedForShadow != nil && lastLiftedForShadow != lifted)
         lastLiftedForShadow = lifted
         CATransaction.begin()
@@ -1074,17 +1108,14 @@ final class CardItemView: NSView {
             CATransaction.setAnimationDuration(0.14)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
         }
-        layer.shadowColor = NSColor.black.cgColor
-        layer.shadowOpacity = baseOpacity * Float(zoomFade)
-        layer.shadowRadius = radius
-        layer.shadowOffset = CGSize(width: 0, height: offsetY)
-        // Pill (text) / rounded (sticky) cards round their shadow to match.
-        let shadowR: CGFloat = n.isText ? shadowRect.height / 2
-                             : n.isStickyNote ? StickyNodeView.cornerRadius * liftS
-                             : shadowCornerRadius
-        layer.shadowPath = CGPath(roundedRect: shadowRect,
-                                  cornerWidth: shadowR, cornerHeight: shadowR,
-                                  transform: nil)
+        shadowLayer.frame = bounds.insetBy(dx: -m, dy: -m)
+        shadowLayer.shadowColor = NSColor.black.cgColor
+        shadowLayer.shadowOpacity = baseOpacity         // baked (fade is on .opacity)
+        shadowLayer.shadowRadius = radius
+        shadowLayer.shadowOffset = CGSize(width: 0, height: offsetY)
+        shadowLayer.shadowPath = CGPath(roundedRect: shadowRect,
+                                        cornerWidth: shadowR, cornerHeight: shadowR,
+                                        transform: nil)
         CATransaction.commit()
     }
 }

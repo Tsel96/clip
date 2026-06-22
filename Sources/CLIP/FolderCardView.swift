@@ -138,6 +138,12 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         shadowView.layer?.masksToBounds = false
         shadowView.layer?.shadowColor = NSColor.black.cgColor
         shadowView.layer?.shadowOffset = .zero    // set in updateShadow()
+        // BAKE the alpha-derived blur: rasterize so a zoom resamples the cached
+        // shadow instead of re-blurring every frame (high-zoom FPS fix). The art it
+        // shows is occluded by `shapeView`, so only the shadow is visible.
+        shadowView.layer?.shouldRasterize = true
+        shadowView.layer?.rasterizationScale = NSScreen.main?.backingScaleFactor ?? 2
+        shadowView.layer?.magnificationFilter = .trilinear
         addSubview(shadowView)
 
         // Selection halo BEHIND the folder so only its white edge peeks out; sized
@@ -255,21 +261,28 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     /// Global object drop shadow (mirrors CardItemView.updateShadow): rest vs
     /// lifted depth + a zoom fade so dozens of folders don't read as mud when
     /// zoomed out. The lift SCALE comes for free — the whole view's transform
-    /// scales this sublayer — so only opacity/offset/radius change here.
+    /// scales this sublayer. The blur is BAKED (shadowView.layer is rasterized), so
+    /// `shadowOpacity`/radius/offset change only on lift (rare re-bake); the zoom
+    /// fade rides the composite `opacity`, which never invalidates the cache.
     private func updateShadow(animated: Bool) {
         guard let l = shadowView.layer else { return }
         let zoomFade = max(0, min(1, (currentMag - Self.shadowMinMag)
                                      / (Self.shadowFullMag - Self.shadowMinMag)))
-        let opacity: Float    = (isLifted ? 0.17 : 0.13) * Float(zoomFade)
-        let offsetY: CGFloat  = isLifted ? 16 : 6
-        let radius: CGFloat   = isLifted ? 20 : 8
+        let baseOpacity: Float = isLifted ? 0.17 : 0.13
+        let offsetY: CGFloat   = isLifted ? 16 : 6
+        let radius: CGFloat    = isLifted ? 20 : 8
+        // Zoom fade — composite opacity, instant per tick, no re-raster.
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        l.opacity = Float(zoomFade)
+        CATransaction.commit()
+        // Baked params — change on lift only → cached shadow bitmap reused on zoom.
         CATransaction.begin()
         CATransaction.setDisableActions(!animated)
         if animated {
             CATransaction.setAnimationDuration(0.14)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
         }
-        l.shadowOpacity = opacity
+        l.shadowOpacity = baseOpacity
         l.shadowRadius = radius
         l.shadowOffset = CGSize(width: 0, height: -offsetY)   // downward (non-flipped sublayer)
         CATransaction.commit()
