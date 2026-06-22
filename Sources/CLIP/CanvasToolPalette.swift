@@ -192,11 +192,9 @@ final class CanvasToolPaletteView: NSView {
         addPill.setSelected(on)
     }
 
-    /// Swap the contextual action bar's contents: text-format buttons while a
-    /// sticky/text node is being edited, else the folder/sticky actions. Same
-    /// capsule, different functions — re-centers via `needsLayout`.
-    func setActionBarMode(textFormat: Bool) {
-        let m: FolderActionBarView.Mode = textFormat ? .textFormat : .folder
+    /// Swap the contextual action bar's contents (folder / sticky / text-format).
+    /// Same capsule, different functions — re-centers via `needsLayout`.
+    fileprivate func setActionBarMode(_ m: FolderActionBarView.Mode) {
         guard folderBar.mode != m else { return }
         folderBar.mode = m
         needsLayout = true
@@ -702,6 +700,8 @@ private final class MainPillView: NSView {
         [.select, .hand, .text, .connect]
     private static let buttonIcons: [String] =
         ["tool_select", "tool_hand", "tool_text", "tool_connect"]
+    private static let buttonTooltips: [String] =
+        ["Select", "Hand", "Text", "Connect"]
 
     // Decorative prop positions (Figma 89-610, inner-capsule coords; Y from top).
     // Marker:   x=117  (overflows above rim by 12)
@@ -769,6 +769,7 @@ private final class MainPillView: NSView {
         for (i, icon) in Self.buttonIcons.enumerated() {
             let btn = ToolPaletteButton(iconName: icon)
             btn.iconRestOpacity = Self.buttonOpacities[i]
+            btn.toolTip = Self.buttonTooltips[i]
             let mode = Self.buttonModes[i]
             btn.onTap = { [weak self] in
                 if let mode { self?.onToolTap?(mode) }   // enter a tool mode
@@ -789,6 +790,7 @@ private final class MainPillView: NSView {
             selected: loadBundleImage(named: "marker-selected"),
             lift:     10)
         markerView.onTap = { [weak self] in self?.onToolTap?(.draw) }
+        markerView.toolTip = "Draw"
         addSubview(markerView)
 
         // Sticky button: paper + corner-fold sheets physically fan apart on hover
@@ -797,6 +799,7 @@ private final class MainPillView: NSView {
             paper: loadBundleImage(named: "sticky-paper"),
             fold:  loadBundleImage(named: "sticky-corner-fold"))
         stickersView.onTap = { [weak self] in self?.onStickerTap?() }
+        stickersView.toolTip = "Sticky note"
         addSubview(stickersView)
     }
 
@@ -945,6 +948,7 @@ private final class AddPillView: NSView {
     private func commonInit() {
         wantsLayer = true
         layer?.masksToBounds = false      // never clip the hover-grow
+        toolTip = "Insert link"
 
         outerLayer.backgroundColor = NSColor.fromHex(0x3DA726).cgColor
         outerLayer.masksToBounds   = false
@@ -1363,24 +1367,41 @@ struct _PaletteRepresentable: NSViewRepresentable {
     let state: CanvasState
     let toolMode: ToolMode
     let isAddSelected: Bool
-    let folderSelected: Bool   // value field so SwiftUI diffs it → updateNSView fires
-    let editingStickyText: Bool   // editing a sticky/text node → text-format bar
+    /// The contextual action-bar mode for the current selection / edit, or `nil`
+    /// when the plain tool palette should show. A value field so SwiftUI diffs it.
+    let barMode: BarMode
+    enum BarMode: Equatable { case none, folder, sticky, textFormat }
 
     init(state: CanvasState) {
         self.state        = state
         self.toolMode     = state.toolMode
         self.isAddSelected = state.isLinkInputPresented
         let ids = state.selectedNodeIDs
-        // The contextual action bar shows for folders AND stickies (same bar).
-        self.folderSelected = !ids.isEmpty && ids.allSatisfy { id in
-            guard let n = state.nodes.first(where: { $0.id == id }) else { return false }
-            return n.isFolder || n.isStickyNote || n.isText
+        func nodesOf(_ s: Set<UUID>) -> [CanvasNode] {
+            s.compactMap { id in state.nodes.first { $0.id == id } }
         }
         if let eid = state.editingTextNodeID,
-           let n = state.nodes.first(where: { $0.id == eid }) {
-            self.editingStickyText = n.isStickyNote || n.isText
+           let n = state.nodes.first(where: { $0.id == eid }), n.isStickyNote || n.isText {
+            self.barMode = .textFormat               // editing → format bar (104:593)
+        } else if !ids.isEmpty {
+            let sel = nodesOf(ids)
+            if sel.allSatisfy({ $0.isStickyNote }) {
+                self.barMode = .sticky               // sticky selected → 104:651
+            } else if sel.allSatisfy({ $0.isFolder }) {
+                self.barMode = .folder               // folder selected → Download/Color/Open
+            } else {
+                self.barMode = .none
+            }
         } else {
-            self.editingStickyText = false
+            self.barMode = .none
+        }
+    }
+
+    private func appKitMode(_ m: BarMode) -> FolderActionBarView.Mode {
+        switch m {
+        case .sticky:     return .sticky
+        case .textFormat: return .textFormat
+        case .folder, .none: return .folder
         }
     }
 
@@ -1389,8 +1410,8 @@ struct _PaletteRepresentable: NSViewRepresentable {
         v.configure(active: toolMode)
         v.setAddSelected(isAddSelected)
         wireCallbacks(v, state: state)
-        v.setActionBarMode(textFormat: editingStickyText)
-        v.setFolderMode(folderSelected || editingStickyText, animated: false)
+        v.setActionBarMode(appKitMode(barMode))
+        v.setFolderMode(barMode != .none, animated: false)
         return v
     }
 
@@ -1398,8 +1419,8 @@ struct _PaletteRepresentable: NSViewRepresentable {
         nsView.configure(active: toolMode)
         nsView.setAddSelected(isAddSelected)
         wireCallbacks(nsView, state: state)
-        nsView.setActionBarMode(textFormat: editingStickyText)
-        nsView.setFolderMode(folderSelected || editingStickyText)
+        nsView.setActionBarMode(appKitMode(barMode))
+        nsView.setFolderMode(barMode != .none)
     }
 
     private func wireCallbacks(_ v: CanvasToolPaletteView, state: CanvasState) {
@@ -1451,12 +1472,20 @@ struct _PaletteRepresentable: NSViewRepresentable {
                 if n.isStickyNote { state.exportSticker(id) }
             }
         }
+        // Folder mode: Eject = open the folder (grid view).
         v.onEjectTap = {
-            let ids = Array(state.selectedNodeIDs)
-            for id in ids {
-                guard let n = state.nodes.first(where: { $0.id == id }) else { continue }
-                if n.isStickyNote { state.addStickerToNewFolder(id) }
-                else if n.isFolder { state.enterFolderFocus(folderID: id) }
+            for id in Array(state.selectedNodeIDs) {
+                if state.nodes.first(where: { $0.id == id })?.isFolder == true {
+                    state.enterFolderFocus(folderID: id)
+                }
+            }
+        }
+        // Sticky mode (104:651): Folder = tuck the sticky into a new folder.
+        v.onStickyFolderTap = {
+            for id in Array(state.selectedNodeIDs) {
+                if state.nodes.first(where: { $0.id == id })?.isStickyNote == true {
+                    state.addStickerToNewFolder(id)
+                }
             }
         }
     }

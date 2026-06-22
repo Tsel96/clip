@@ -1300,28 +1300,21 @@ final class CanvasState: ObservableObject {
         }
     }
 
-    /// Pre-unfold camera, restored on exit.
-    private var folderFocusOriginCamera: Camera?
-
-    /// Unfold a folder → show only its children under a camera fitted to them.
+    /// Open a folder → the SOLID-BG GRID view (FolderGridView) takes over; the
+    /// canvas camera is left untouched (the grid overlay covers it), so closing
+    /// returns to exactly where the board was.
     func enterFolderFocus(folderID: UUID) {
-        guard case .folder(_, _, let childIDs)? = nodeByID[folderID]?.kind else { return }
+        guard case .folder = nodeByID[folderID]?.kind else { return }
         cancelPanInertia()
-        if focusedFolderID == nil { folderFocusOriginCamera = cameraStore.camera }
         deselectAll()
-        focusedFolderID = folderID
-        if let rect = boundingRect(of: Set(childIDs)) { frameRect(rect, padding: 120) }
+        withAnimation(.easeInOut(duration: 0.2)) { focusedFolderID = folderID }
         Haptics.tap()
     }
 
-    /// Close the unfolded folder and restore the pre-unfold camera.
+    /// Close the folder grid → back to the board (camera unchanged).
     func exitFolderFocus() {
         guard focusedFolderID != nil else { return }
-        cancelPanInertia()
-        let restore = folderFocusOriginCamera ?? cameraStore.camera
-        focusedFolderID = nil
-        folderFocusOriginCamera = nil
-        cameraStore.camera = restore
+        withAnimation(.easeInOut(duration: 0.2)) { focusedFolderID = nil }
     }
 
     /// Drop cards INTO a folder: add them to its `childIDs` so they leave the

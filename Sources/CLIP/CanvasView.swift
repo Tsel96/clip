@@ -637,7 +637,7 @@ struct CanvasView: View {
         // visible when the user resizes the window (in any direction).
         // Bottom-LEFT: connectors / grid / play toggles (Figma 51:12692).
         .overlay(alignment: .bottomLeading) {
-            if state.canvasMode != .archive {
+            if state.canvasMode != .archive, state.focusedFolderID == nil {
                 HStack(spacing: 10) {
                     SidebarToggleButton()
                     // Connectors / grid / play are canvas-only — meaningless over
@@ -649,6 +649,15 @@ struct CanvasView: View {
                 .fixedSize()
                 .padding(.leading, 18)
                 .padding(.bottom, 18)
+            }
+        }
+        // OPEN FOLDER → solid-bg grid of the folder's cards (NOT a sub-canvas).
+        // Covers the canvas + the (hidden) chrome below; the back chip + folder-
+        // name pill below sit on top. Added before them so they layer above.
+        .overlay {
+            if state.canvasMode == .canvas, let fid = state.focusedFolderID {
+                FolderGridView(state: state, folderID: fid)
+                    .transition(.opacity)
             }
         }
         // Unfolded-folder back chip (top-LEFT): re-fold to the main canvas. Anchored
@@ -680,14 +689,14 @@ struct CanvasView: View {
         // frame can extend past the window. Hidden while the floating-
         // window minimap is being shown.
         .overlay(alignment: .bottomTrailing) {
-            if state.canvasMode != .archive, !state.isMinimapDetached {
+            if state.canvasMode != .archive, !state.isMinimapDetached, state.focusedFolderID == nil {
                 LiquidGlassMinimap()
                     .ignoresSafeArea()
             }
         }
         // Bottom-RIGHT: zoom −/NN%/+ pill (Figma 51:12692).
         .overlay(alignment: .bottomTrailing) {
-            if state.canvasMode != .archive {
+            if state.canvasMode != .archive, state.focusedFolderID == nil {
                 CanvasZoomPill()
                     .fixedSize()
                     .padding(.trailing, 18)
@@ -709,7 +718,7 @@ struct CanvasView: View {
         }
         // Bottom-CENTER: the Spatial-style yellow tool palette + "+" (Figma 51:12692).
         .overlay(alignment: .bottom) {
-            if state.canvasMode == .canvas {
+            if state.canvasMode == .canvas, state.focusedFolderID == nil {
                 // ONE bottom toolbar — the native candy palette. It MORPHS in place
                 // into the SAME candy action bar (FolderActionBarView) when a folder /
                 // sticky / text node is selected, just swapping the button functions.
@@ -722,14 +731,19 @@ struct CanvasView: View {
                     .padding(.bottom, 0)
             }
         }
-        // Top-CENTER: Canvas / Colorform / Archive segmented control (Figma
-        // 73:37182) — the mirror of the bottom tool palette, 18 pt from the top of
-        // the canvas. Shown in every mode (the affordance to switch between them).
+        // Top-CENTER: while a folder is open, the folder-NAME pill (rename) REPLACES
+        // the Canvas/Colorform/Archive segmented control (Figma 105-755/764).
+        // Otherwise the segmented control — the affordance to switch modes.
         .overlay(alignment: .top) {
-            NativeCanvasTopSegmentedControl(state: state)
-                .frame(width: CanvasTopSegmentedControlView.totalW,
-                       height: CanvasTopSegmentedControlView.totalH)
-                .padding(.top, 18)
+            if state.canvasMode == .canvas, let fid = state.focusedFolderID {
+                FolderNameField(state: state, folderID: fid)
+                    .padding(.top, 18)
+            } else {
+                NativeCanvasTopSegmentedControl(state: state)
+                    .frame(width: CanvasTopSegmentedControlView.totalW,
+                           height: CanvasTopSegmentedControlView.totalH)
+                    .padding(.top, 18)
+            }
         }
         // Inline "Insert link here" field (Figma 72:36784) — floats above the
         // toolbar, centered on the round "+" (240 pt right of the toolbar's

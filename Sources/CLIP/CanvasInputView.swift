@@ -293,19 +293,9 @@ final class CanvasInputView: NSView {
             return
         }
 
-        // Double-click → activate (text edit / stack focus / lightbox).
+        // Double-click → activate. For a folder this opens the GRID view, where
+        // the top name-pill handles renaming (no more in-card name rename).
         if event.clickCount == 2, let n = hitNode(at: pt, p), !n.isSection {
-            // On a folder's NAME LABEL (lower-left) → inline rename; elsewhere → unfold.
-            if case .folder = n.kind {
-                let fh = n.height ?? (n.width / 1.165)
-                let lx = pt.x - n.position.x, ly = pt.y - n.position.y
-                let inLabel = lx > n.width * 0.05 && lx < n.width * 0.65
-                    && ly > fh * 0.62 && ly < fh * 0.93
-                FolderCardView.diag("dblclick folder lx=\(Int(lx))/\(Int(n.width)) ly=\(Int(ly))/\(Int(fh)) inLabel=\(inLabel)")
-                if inLabel {
-                    coordinator?.beginFolderRename(n.id); mode = .idle; return
-                }
-            }
             p.onActivate(n.id); mode = .idle; return
         }
         // Double-click on a connector → edit its midpoint label (Obsidian-style).
