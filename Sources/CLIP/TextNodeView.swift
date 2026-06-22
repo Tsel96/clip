@@ -14,7 +14,6 @@ struct TextNodeView: View {
 
     @State private var isEditing: Bool = false
     @State private var editingText: String = ""
-    @State private var editorSize: CGSize = .zero
     @FocusState private var focused: Bool
 
     private var textFont: Font { .custom("IBMPlexSans-SemiBold", size: fontSize) }
@@ -56,32 +55,29 @@ struct TextNodeView: View {
     }
 
     private var editor: some View {
-        ZStack {
-            // Hidden Text drives the field width — a bare TextField collapses to
-            // its intrinsic (last-character) width on the canvas.
-            Text(editingText.isEmpty ? " " : editingText)
-                .font(textFont)
-                .fixedSize()
-                .opacity(0)
-                .background(GeometryReader { geo in
-                    Color.clear.preference(key: TextSizePrefKey.self, value: geo.size)
-                })
-            TextField("", text: $editingText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(textFont)
-                .foregroundStyle(green)
-                .tint(green)
-                .multilineTextAlignment(.center)
-                .focused($focused)
-                .frame(width: max(8, editorSize.width + 3))
-                .onAppear { focused = true }
-                .onExitCommand { commit() }                      // Esc
-                .onChange(of: focused) { if !$0 { commit() } }   // click-away
-                .onChange(of: editingText) { newValue in
-                    state.liveResizeText(id: nodeID, content: newValue)  // grow the pill live
-                }
-        }
-        .onPreferenceChange(TextSizePrefKey.self) { editorSize = $0 }
+        TextField("", text: $editingText, axis: .vertical)
+            .textFieldStyle(.plain)
+            .font(textFont)
+            .foregroundStyle(green)
+            .tint(green)
+            .multilineTextAlignment(.center)
+            .focused($focused)
+            .frame(width: editorTextWidth)                  // synchronous → never wraps the last glyph
+            .onAppear { focused = true }
+            .onExitCommand { commit() }                     // Esc
+            .onChange(of: focused) { if !$0 { commit() } }  // click-away
+            .onChange(of: editingText) { newValue in
+                state.liveResizeText(id: nodeID, content: newValue)  // grow the pill live
+            }
+    }
+
+    /// Glyph width measured synchronously from the content (same font as the pill
+    /// sizing) — no PreferenceKey lag, so the field never wraps the last typed
+    /// character. The roomy pill padding absorbs any item-resize lag.
+    private var editorTextWidth: CGFloat {
+        let glyph = CanvasState.textPillSize(content: editingText, fontSize: fontSize).width
+                  - CanvasState.textPillPadding(fontSize).h * 2
+        return max(fontSize * 0.5, glyph + 12)
     }
 
     // MARK: - Helpers
@@ -105,16 +101,5 @@ struct TextNodeView: View {
         if state.editingTextNodeID == nodeID { state.editingTextNodeID = nil }
         isEditing = false
         state.selectedNodeIDs.remove(nodeID)
-    }
-}
-
-// MARK: - Size measurement
-
-private struct TextSizePrefKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        let n = nextValue()
-        value = CGSize(width:  max(value.width,  n.width),
-                       height: max(value.height, n.height))
     }
 }
