@@ -138,7 +138,7 @@ extension CanvasState {
     /// centre when `nil`), selected and ready. Sized to the Figma folder aspect.
     @discardableResult
     func addFolder(at worldPoint: CGPoint? = nil) -> UUID {
-        let width: CGFloat = 780               // 3× the old 260 default
+        let width: CGFloat = 546               // 30% smaller than the old 780
         let height = (width / 1.165).rounded()
         let position: CGPoint = {
             if let p = worldPoint {

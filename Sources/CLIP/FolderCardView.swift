@@ -57,6 +57,11 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private let lidView = NSImageView()
     /// Figma rect of the open lid within the folder frame.
     private static let lidRect = CGRect(x: 73, y: 256.2256, width: 1017, height: 685)
+    /// Up-arrow drop affordance (Figma 104:675) — a white circle + arrow shown on
+    /// drop-hover, ABOVE everything. Its Figma rect within the folder frame.
+    private let dropArrow = NSView()
+    private let dropArrowGlyph = NSImageView()
+    private static let arrowRect = CGRect(x: 471.29, y: 339.39, width: 219.39, height: 219.39)
     /// Current folder tint (so the open-lid art is recoloured to match).
     private var nodeColorHex: String?
     private var isDropHovered = false
@@ -195,6 +200,22 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         iconView.contentTintColor = .black
         iconChip.addSubview(iconView)
         addSubview(iconChip)
+
+        // Up-arrow drop affordance — ABOVE everything (incl. the lid), shown on hover.
+        dropArrow.wantsLayer = true
+        dropArrow.layer?.backgroundColor = NSColor.white.cgColor
+        dropArrow.layer?.shadowColor = NSColor.black.cgColor
+        dropArrow.layer?.shadowOpacity = 0.16
+        dropArrow.layer?.shadowRadius = 8
+        dropArrow.layer?.shadowOffset = CGSize(width: 0, height: -2)
+        dropArrow.layer?.masksToBounds = false
+        dropArrow.layer?.opacity = 0
+        dropArrowGlyph.image = NSImage(systemSymbolName: "arrow.up", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 40, weight: .bold))
+        dropArrowGlyph.contentTintColor = NSColor.black.withAlphaComponent(0.78)
+        dropArrowGlyph.imageScaling = .scaleProportionallyDown
+        dropArrow.addSubview(dropArrowGlyph)
+        addSubview(dropArrow)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
