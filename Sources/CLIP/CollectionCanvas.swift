@@ -992,7 +992,7 @@ final class CardItemView: NSView {
 
         // Rotate handle (dot + stem) — green on white, shown on select.
         rotateHandleLayer.fillColor = NSColor.white.cgColor
-        rotateHandleLayer.strokeColor = NSColor.fromHex(0x3DA726).cgColor
+        rotateHandleLayer.strokeColor = NSColor(srgbRed: 0.239, green: 0.655, blue: 0.149, alpha: 1).cgColor
         rotateHandleLayer.lineWidth = 1.5
         rotateHandleLayer.zPosition = 101
         rotateHandleLayer.opacity = 0

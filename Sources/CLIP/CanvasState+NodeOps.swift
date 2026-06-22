@@ -200,6 +200,13 @@ extension CanvasState {
     /// expansion (`expandedDragSet`) and continue to render at their
     /// duplicated positions.
     @discardableResult
+    /// Live (per-tick, non-undoable) rotation set while dragging the rotate
+    /// handle. Undo is provided by the drag-start page snapshot, like resize.
+    func setRotation(id: UUID, to radians: CGFloat) {
+        guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }
+        nodes[idx].rotation = radians
+    }
+
     /// Option-drag duplicate: clone `ids` IN PLACE (same positions, ALL fields)
     /// and return an original→copy id mapping so the drag can retarget onto the
     /// copies, leaving the originals where they were. One undo entry.
