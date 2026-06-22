@@ -751,11 +751,6 @@ final class CardItemView: NSView {
     /// three constant on-screen (÷ magnification). Shown on SELECT only (Figma
     /// 88:336). Folders draw their own curved silhouette outline instead.
     private let outlineLayer = CAShapeLayer()
-    /// Yellow border outside the green band on a SELECTED text pill (Figma 96-720).
-    private let textBorderLayer = CAShapeLayer()
-    /// Text selection colours (Figma 96-720): #3DA726 green band, #F0EC00 border.
-    static let selGreen  = NSColor(srgbRed: 0.239, green: 0.655, blue: 0.149, alpha: 1)
-    static let selYellow = NSColor(srgbRed: 0.943, green: 0.926, blue: 0.0,   alpha: 1)
     /// Inner hairline (0.5px, 15% black, drawn INSIDE the card edge) on media
     /// cards — defines the card against the light canvas. Always on.
     private let innerHairlineLayer = CAShapeLayer()
@@ -793,14 +788,6 @@ final class CardItemView: NSView {
         outlineLayer.zPosition = 100
         outlineLayer.opacity = 0
         layer?.addSublayer(outlineLayer)
-
-        // Yellow border for the selected text pill (sits just outside the green band).
-        textBorderLayer.fillColor = nil
-        textBorderLayer.strokeColor = Self.selYellow.cgColor
-        textBorderLayer.lineJoin = .round
-        textBorderLayer.zPosition = 100
-        textBorderLayer.opacity = 0
-        layer?.addSublayer(textBorderLayer)
 
         // Inner card hairline — black 15%, 0.5px, drawn inside the edge.
         innerHairlineLayer.fillColor = nil
@@ -853,28 +840,15 @@ final class CardItemView: NSView {
         // The 4px stroke is drawn INSIDE the gap boundary (Figma border-box): the
         // outer edge sits 8px out from the card frame, the stroke grows inward →
         // centreline at gap − 2px, outer corner radius 8px.
-        if valid, folderView == nil, node?.isText == true {
-            // Figma 96-720 text selection: a thick GREEN band hugging the pill +
-            // a YELLOW border just outside it (instead of the white ring).
-            let band = 12 / mag, yW = 4 / mag, h = bounds.height
-            let gR = h / 2 + band / 2
-            outlineLayer.path = CGPath(roundedRect: bounds.insetBy(dx: -band / 2, dy: -band / 2),
-                                       cornerWidth: gR, cornerHeight: gR, transform: nil)
-            outlineLayer.lineWidth = band
-            outlineLayer.strokeColor = Self.selGreen.cgColor
-            outlineLayer.shadowRadius = 2 / mag
-            let yR = h / 2 + band + yW / 2
-            textBorderLayer.path = CGPath(roundedRect: bounds.insetBy(dx: -(band + yW / 2), dy: -(band + yW / 2)),
-                                          cornerWidth: yR, cornerHeight: yR, transform: nil)
-            textBorderLayer.lineWidth = yW
-        } else if valid, folderView == nil {
+        if valid, folderView == nil {
             let lineW = 4 / mag, gap = 7 / mag      // gap 1px smaller (was 8)
             let inset = -(gap - lineW / 2)
             let rect = bounds.insetBy(dx: inset, dy: inset)
-            // Square cards → radius = gap; stickies add their 37pt corner.
-            let cardR: CGFloat = node?.isStickyNote == true ? StickyNodeView.cornerRadius * liftS : 0
+            // Square cards → radius = gap; stickies add their 37pt corner; text is
+            // a full pill (height/2). Same white ring for all — just the shape differs.
+            let cardR: CGFloat = node?.isStickyNote == true ? StickyNodeView.cornerRadius * liftS
+                               : node?.isText == true ? bounds.height / 2 : 0
             let radius = cardR + gap - lineW / 2    // outer corner radius
-            outlineLayer.strokeColor = NSColor.white.cgColor
             outlineLayer.path = CGPath(roundedRect: rect, cornerWidth: radius,
                                        cornerHeight: radius, transform: nil)
             outlineLayer.lineWidth = lineW
@@ -905,8 +879,6 @@ final class CardItemView: NSView {
         // Animated visibility (fade) — OUTSIDE the no-animation transaction.
         // Outline shows on SELECT only (hover never shows it, per Figma 88:330).
         fade(outlineLayer, to: (selected && folderView == nil) ? 1 : 0)
-        // Yellow text-pill border tracks the selection (text nodes only).
-        fade(textBorderLayer, to: (selected && folderView == nil && node?.isText == true) ? 1 : 0)
         // Lift scale (hover OR select): folders scale + show their curved outline
         // internally; every other card scales its content here.
         if let folderView {

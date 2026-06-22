@@ -11,22 +11,36 @@ extension CanvasState {
 
     /// Create a text node at the given world position and put it straight into
     /// edit mode. If `worldPoint` is nil, place at viewport centre.
-    /// Text pill padding (Figma 96-720 proportions, scaled to the font size).
+    /// White-pill internal padding (text → white edge), Figma 96-720 proportions.
     static func textPillPadding(_ fontSize: CGFloat) -> (h: CGFloat, v: CGFloat) {
-        (h: fontSize * 0.9, v: fontSize * 0.5)
+        (h: fontSize * 0.45, v: fontSize * 0.28)
     }
 
-    /// The text node's pill frame for `content` — measured glyph box (IBM Plex
-    /// Sans SemiBold) plus the pill padding. Empty content uses the placeholder.
-    static func textPillSize(content: String, fontSize: CGFloat) -> CGSize {
+    /// The green band + yellow border around the white pill (Figma 96-720) — the
+    /// text node's permanent border (all states).
+    static func textPillBorder(_ fontSize: CGFloat) -> (band: CGFloat, yellow: CGFloat) {
+        (band: fontSize * 0.18, yellow: fontSize * 0.05)
+    }
+
+    /// Glyph box for `content` (IBM Plex Sans SemiBold); placeholder if empty.
+    static func textGlyphSize(content: String, fontSize: CGFloat) -> CGSize {
         let text = content.isEmpty ? "Text" : content
         let font = NSFont(name: "IBMPlexSans-SemiBold", size: fontSize)
             ?? .systemFont(ofSize: fontSize, weight: .semibold)
         let b = (text as NSString).boundingRect(
             with: CGSize(width: 100_000, height: 100_000),
             options: [.usesLineFragmentOrigin], attributes: [.font: font])
+        return CGSize(width: ceil(b.width), height: ceil(b.height))
+    }
+
+    /// Full node frame = glyphs + white-pill padding + green/yellow border.
+    static func textPillSize(content: String, fontSize: CGFloat) -> CGSize {
+        let g = textGlyphSize(content: content, fontSize: fontSize)
         let pad = textPillPadding(fontSize)
-        return CGSize(width: ceil(b.width) + pad.h * 2, height: ceil(b.height) + pad.v * 2)
+        let bd = textPillBorder(fontSize)
+        let e = bd.band + bd.yellow
+        return CGSize(width: g.width + pad.h * 2 + e * 2,
+                      height: g.height + pad.v * 2 + e * 2)
     }
 
     @discardableResult

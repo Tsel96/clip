@@ -18,14 +18,22 @@ struct TextNodeView: View {
 
     private var textFont: Font { .custom("IBMPlexSans-SemiBold", size: fontSize) }
     /// #3DA726
-    private let green = Color(.sRGB, red: 0.239, green: 0.655, blue: 0.149, opacity: 1)
+    private let green  = Color(.sRGB, red: 0.239, green: 0.655, blue: 0.149, opacity: 1)
+    /// #F0EC00
+    private let yellow = Color(.sRGB, red: 0.943, green: 0.926, blue: 0.0,   opacity: 1)
 
     var body: some View {
-        Capsule(style: .continuous)
-            .fill(Color.white)
-            // The node is already sized to glyphs + pill padding, so the content
-            // is centred (the padding falls out of the centring).
-            .overlay { isEditing ? AnyView(editor) : AnyView(display) }
+        // The green band + yellow border are the node's permanent border (all
+        // states, Figma 96-720). The white pill is inset inside them; the node is
+        // sized to glyphs + white padding + this border, so content stays centred.
+        let bd = CanvasState.textPillBorder(fontSize)
+        let inset = bd.band + bd.yellow
+        ZStack {
+            Capsule(style: .continuous).fill(green)                          // green pill (shows as a band)
+            Capsule(style: .continuous).fill(Color.white).padding(inset)     // white pill, inset by band+yellow
+            (isEditing ? AnyView(editor) : AnyView(display))                 // text, centred in the white pill
+            Capsule(style: .continuous).strokeBorder(yellow, lineWidth: bd.yellow)  // yellow border at the edge
+        }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 editingText = content
@@ -75,9 +83,8 @@ struct TextNodeView: View {
     /// sizing) — no PreferenceKey lag, so the field never wraps the last typed
     /// character. The roomy pill padding absorbs any item-resize lag.
     private var editorTextWidth: CGFloat {
-        let glyph = CanvasState.textPillSize(content: editingText, fontSize: fontSize).width
-                  - CanvasState.textPillPadding(fontSize).h * 2
-        return max(fontSize * 0.5, glyph + 12)
+        max(fontSize * 0.5,
+            CanvasState.textGlyphSize(content: editingText, fontSize: fontSize).width + 12)
     }
 
     // MARK: - Helpers
