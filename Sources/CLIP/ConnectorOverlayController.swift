@@ -14,6 +14,7 @@ final class ConnectorOverlayController {
     private struct Bundle {
         let line: CAShapeLayer
         let arrow: CAShapeLayer
+        let dot: CAShapeLayer       // yellow source dot
         let labelBG: CALayer
         let labelText: CATextLayer
     }
@@ -39,12 +40,17 @@ final class ConnectorOverlayController {
     private static let arrowLen: CGFloat = 10
     private static let arrowHalf: CGFloat = 4.5
     private static let labelFontSize: CGFloat = 17   // CONTENT units (Figma: SF Mono Semibold 17) → scales with zoom
-    /// Canvas backdrop colour (light theme) — masks the line behind the label.
-    private static let labelBackground = NSColor(srgbRed: 0.95, green: 0.95, blue: 0.95, alpha: 1)
+    private static let dotDiameter: CGFloat = 9      // yellow source dot (Figma 88-441), screen-constant
+    /// Canvas backdrop colour (light theme #EDF0F1) — masks the line behind the label.
+    private static let labelBackground = NSColor(srgbRed: 0.929, green: 0.941, blue: 0.945, alpha: 1)
+    /// Label text #16181A (Figma).
+    private static let labelTextColor = NSColor(srgbRed: 0.086, green: 0.094, blue: 0.102, alpha: 1)
 
     /// Brand green (#3DA726) for the line/arrow; brighter green when selected.
     private static let green = NSColor(srgbRed: 0.239, green: 0.655, blue: 0.149, alpha: 1)
     private static let greenSelected = NSColor(srgbRed: 0.298, green: 0.769, blue: 0.196, alpha: 1)
+    /// Yellow source dot (#F0EC00, Figma 88-441).
+    private static let dotYellow = NSColor(srgbRed: 0.943, green: 0.926, blue: 0.0, alpha: 1)
 
     func attach(to container: NSView) {
         container.wantsLayer = true
@@ -101,11 +107,18 @@ final class ConnectorOverlayController {
             b.arrow.path = arrowPath(tip: route.arrowTip, from: route.arrowFrom, mag: mag)
             b.arrow.fillColor = color
 
+            // Yellow source dot (Figma 88-441), screen-constant.
+            let d = Self.dotDiameter / mag
+            b.dot.path = CGPath(ellipseIn: CGRect(x: route.sourceAnchor.x - d / 2,
+                                                  y: route.sourceAnchor.y - d / 2,
+                                                  width: d, height: d), transform: nil)
+
             layoutLabel(b, text: c.label, center: route.midpoint, mag: mag, selected: isSel)
         }
         // Drop layers for connectors that no longer exist.
         for (id, b) in bundles where !seen.contains(id) {
             b.line.removeFromSuperlayer(); b.arrow.removeFromSuperlayer()
+            b.dot.removeFromSuperlayer()
             b.labelBG.removeFromSuperlayer(); b.labelText.removeFromSuperlayer()
             bundles[id] = nil
         }
@@ -172,6 +185,10 @@ final class ConnectorOverlayController {
         let arrow = CAShapeLayer()
         arrow.strokeColor = nil
 
+        let dot = CAShapeLayer()
+        dot.fillColor = Self.dotYellow.cgColor
+        dot.strokeColor = nil
+
         let labelBG = CALayer()
         labelBG.backgroundColor = Self.labelBackground.cgColor
         labelBG.cornerCurve = .continuous
@@ -185,9 +202,10 @@ final class ConnectorOverlayController {
 
         root.addSublayer(line)
         root.addSublayer(arrow)
+        root.addSublayer(dot)
         root.addSublayer(labelBG)
         root.addSublayer(labelText)
-        let b = Bundle(line: line, arrow: arrow, labelBG: labelBG, labelText: labelText)
+        let b = Bundle(line: line, arrow: arrow, dot: dot, labelBG: labelBG, labelText: labelText)
         bundles[id] = b
         return b
     }
@@ -238,7 +256,7 @@ final class ConnectorOverlayController {
                                    width: measured.width, height: measured.height)
         b.labelText.string = NSAttributedString(string: shown, attributes: [
             .font: font,
-            .foregroundColor: NSColor.black            // Figma: pure black
+            .foregroundColor: Self.labelTextColor      // Figma #16181A
         ])
         b.labelText.contentsScale = 3              // crisp when zoomed in
     }
