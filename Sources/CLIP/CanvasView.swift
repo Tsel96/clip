@@ -708,13 +708,26 @@ struct CanvasView: View {
         // Bottom-CENTER: the Spatial-style yellow tool palette + "+" (Figma 51:12692).
         .overlay(alignment: .bottom) {
             if state.canvasMode == .canvas {
-                NativeCanvasToolPalette(state: state)
-                    .frame(width: CanvasToolPaletteView.totalW,
-                           height: CanvasToolPaletteView.totalH)
-                    // Pill sits exactly 18 pt off the viewport bottom (user spec):
-                    // frame bottom flush with the viewport + the 18 pt shadow-bleed
-                    // IS that gap.
-                    .padding(.bottom, 0)
+                // The bottom toolbar is CONTEXTUAL: editing a sticky → text-format
+                // bar (104:593); a sticky selected → its action bar (104:651);
+                // otherwise the tool palette.
+                if let eid = state.editingTextNodeID, state.nodeByID[eid]?.isStickyNote == true {
+                    StickyTextEditBar().padding(.bottom, 18)
+                } else if state.selectedNodeIDs.count == 1,
+                          let sid = state.selectedNodeIDs.first,
+                          case .stickyNote(_, let color)? = state.nodeByID[sid]?.kind {
+                    StickyActionBar(current: color,
+                                    onDownload: { state.exportSticker(sid) },
+                                    onPickColor: { state.setStickyColor(id: sid, to: $0) },
+                                    onFolder: { state.addStickerToNewFolder(sid) })
+                        .padding(.bottom, 18)
+                } else {
+                    NativeCanvasToolPalette(state: state)
+                        .frame(width: CanvasToolPaletteView.totalW,
+                               height: CanvasToolPaletteView.totalH)
+                        // Pill sits exactly 18 pt off the viewport bottom (user spec).
+                        .padding(.bottom, 0)
+                }
             }
         }
         // Top-CENTER: Canvas / Colorform / Archive segmented control (Figma

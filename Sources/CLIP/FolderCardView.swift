@@ -386,8 +386,13 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         titleField.lineBreakMode = .byTruncatingTail
         titleField.maximumNumberOfLines = 1
         titleField.delegate = self
-        window?.makeFirstResponder(titleField)
-        titleField.currentEditor()?.selectAll(nil)
+        // Defer past the current click event so the canvas input view doesn't
+        // immediately re-grab first responder (which fired an instant commit).
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.window?.makeFirstResponder(self.titleField)
+            self.titleField.currentEditor()?.selectAll(nil)
+        }
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
