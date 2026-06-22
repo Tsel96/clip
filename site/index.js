@@ -91,21 +91,16 @@ function gestures() {
     return () => animate(closeBtn, { scale: 1 }, SPRING_BACK);
   });
 
-  // Modal download pill — same lift + icon feel as the main pill
-  const modalPill = document.getElementById('modalDownloadBtn');
-  if (modalPill) {
-    const modalIcon = modalPill.querySelector('.ui-pill-icon svg');
-    hover(modalPill, () => {
-      animate(modalPill, { y: -2 }, SPRING_HOVER);
-      if (modalIcon) animate(modalIcon, { scale: 1.08 }, SPRING_HOVER);
-      return () => {
-        animate(modalPill, { y: 0 }, SPRING_HOVER);
-        if (modalIcon) animate(modalIcon, { scale: 1 }, SPRING_HOVER);
-      };
+  // Modal download link — underline deepens on hover, same as .ui-git
+  const modalDownload = document.getElementById('modalDownloadBtn');
+  if (modalDownload) {
+    hover(modalDownload, () => {
+      animate(modalDownload, { textUnderlineOffset: '0.28em', textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
+      return () => animate(modalDownload, { textUnderlineOffset: '0.15em', textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
     });
-    press(modalPill, () => {
-      animate(modalPill, { scale: 0.97 }, SPRING_PRESS);
-      return () => animate(modalPill, { scale: 1 }, SPRING_BACK);
+    press(modalDownload, () => {
+      animate(modalDownload, { scale: 0.98 }, SPRING_PRESS);
+      return () => animate(modalDownload, { scale: 1 }, SPRING_BACK);
     });
   }
 

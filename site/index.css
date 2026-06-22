@@ -284,6 +284,20 @@ html, body {
   display: block;
 }
 
+.modal-download {
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--fs);
+  font-weight: 400;
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 0, 0, 0.20);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.15em;
+  line-height: 1;
+}
+
 .modal-close {
   position: absolute;
   top: clamp(14px, calc(28 / 2340 * 100vw), 44px);
