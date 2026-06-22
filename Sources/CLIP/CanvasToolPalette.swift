@@ -1556,14 +1556,14 @@ private final class FolderActionBarView: NSView {
     private let download = ToolPaletteButton(iconName: "Download")
     private let colorBtn = ToolPaletteButton(iconName: "Color")
     private let eject    = ToolPaletteButton(iconName: "Eject")
-    // Sticky actions (Figma 104:651) — Download / Color / Folder.
-    private let stickyFolder = ToolPaletteButton(symbolName: "folder")
-    // Text-format actions (Figma 104:593) — SF Symbols, same button skin.
-    private let boldBtn      = ToolPaletteButton(symbolName: "bold")
-    private let italicBtn    = ToolPaletteButton(symbolName: "italic")
-    private let underlineBtn = ToolPaletteButton(symbolName: "underline")
-    private let strikeBtn    = ToolPaletteButton(symbolName: "strikethrough")
-    private let eraserBtn    = ToolPaletteButton(symbolName: "eraser")
+    // Sticky actions (Figma 104:651) — Download / Color / Folder (exact SVGs).
+    private let stickyFolder = ToolPaletteButton(iconName: "StickyFolder")
+    // Text-format actions (Figma 104:593) — exact SVGs, same button skin.
+    private let boldBtn      = ToolPaletteButton(iconName: "Bold")
+    private let italicBtn    = ToolPaletteButton(iconName: "Italic")
+    private let underlineBtn = ToolPaletteButton(iconName: "Underline")
+    private let strikeBtn    = ToolPaletteButton(iconName: "Strike")
+    private let eraserBtn    = ToolPaletteButton(iconName: "Eraser")
 
     /// Buttons shown for the current mode (order = left→right).
     private var activeButtons: [ToolPaletteButton] {

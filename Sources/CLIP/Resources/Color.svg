@@ -1,5 +1,5 @@
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g opacity="0.7">
-<path d="M19.25 14.0558C19.25 18.0292 16.0041 21.2502 12 21.2502C7.99594 21.2502 4.75 18.0292 4.75 14.0558C4.75 9.90117 8.66637 5.38459 10.7422 3.28239C11.4445 2.57123 12.5555 2.57123 13.2578 3.2824C15.3336 5.38459 19.25 9.90117 19.25 14.0558Z" stroke="black" style="stroke:black;stroke-opacity:1;" stroke-width="1.5" stroke-linejoin="round"/>
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Color" opacity="0.7">
+<path id="Vector" d="M19.25 14.0556C19.25 18.029 16.0041 21.25 12 21.25C7.99594 21.25 4.75 18.029 4.75 14.0556C4.75 9.90093 8.66637 5.38435 10.7422 3.28215C11.4445 2.57099 12.5555 2.57099 13.2578 3.28216C15.3336 5.38435 19.25 9.90093 19.25 14.0556Z" stroke="var(--stroke-0, black)" style="stroke:black;stroke-opacity:1;" stroke-width="1.5" stroke-linejoin="round"/>
 </g>
 </svg>
