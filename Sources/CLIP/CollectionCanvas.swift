@@ -848,6 +848,9 @@ final class CardItemView: NSView {
         let selected = valid && isSelectedNow
         let hovered = valid && isHoveredNow
         let lifted = selected || hovered
+        // Selected cards float ABOVE every other card (z-order to front), so the
+        // selection + its shadow are never occluded by neighbours.
+        layer?.zPosition = selected ? 1 : 0
         var isDrawing = false, wantsHairline = false
         switch node?.kind {
         case .drawing: isDrawing = true

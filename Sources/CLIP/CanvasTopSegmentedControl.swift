@@ -157,14 +157,40 @@ final class CanvasTopSegmentedControlView: NSView {
                                       radius: Self.troughH / 2)
         CATransaction.commit()
 
-        // Indicator + labels + hit zones, per segment frame.
-        indicator.frame = Self.segmentFrames[selectedIndex]
+        // Indicator + labels + hit zones, per segment frame. Don't snap the
+        // indicator mid-slide (that would cancel the spring).
+        if !isSliding { indicator.frame = Self.segmentFrames[selectedIndex] }
         for (i, frame) in Self.segmentFrames.enumerated() {
             hitZones[i].frame = frame
-            // Label fills the segment; NSTextField centers the (single-line)
-            // text both axes — matches Figma's flex items-center justify-center.
-            labels[i].frame = frame
+            centerLabel(i)
         }
+    }
+
+    /// Size each label to its text and center it BOTH axes in its segment — an
+    /// NSTextField left at the full 46pt-tall frame top-aligns the single line
+    /// (the "labels broken inside" bug). Re-run on relayout + restyle.
+    private func centerLabel(_ i: Int) {
+        guard i < labels.count else { return }
+        labels[i].sizeToFit()
+        let f = Self.segmentFrames[i]
+        let s = labels[i].frame.size
+        labels[i].frame = NSRect(x: (f.midX - s.width / 2).rounded(),
+                                 y: (f.midY - s.height / 2).rounded(),
+                                 width: ceil(s.width), height: ceil(s.height))
+    }
+
+    /// Instant centered scale (the "press-down" before a spring-back pop).
+    private static func setCenteredScale(_ v: NSView, _ s: CGFloat) {
+        guard let l = v.layer else { return }
+        let ap = l.anchorPoint
+        let c = CGPoint(x: l.bounds.width * (0.5 - ap.x), y: l.bounds.height * (0.5 - ap.y))
+        let t = CATransform3DConcat(
+            CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
+                                CATransform3DMakeScale(s, s, 1)),
+            CATransform3DMakeTranslation(c.x, c.y, 0))
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        l.transform = t
+        CATransaction.commit()
     }
 
     // MARK: - Selection
@@ -213,6 +239,7 @@ final class CanvasTopSegmentedControlView: NSView {
     }
 
     private func handleTap(_ index: Int) {
+        clickPop()                       // tactile "click" feedback on every tap
         guard index != selectedIndex else { return }
         // Drive the visual change immediately for snappy feedback; the state
         // round-trip via `onSelect` keeps us authoritative.
@@ -220,16 +247,27 @@ final class CanvasTopSegmentedControlView: NSView {
         onSelect?(index)
     }
 
-    /// Animate the indicator to a segment. Figma spec: 0.22 s easeInEaseOut.
+    /// A quick spring-back pop on the indicator = the "click" feedback (global
+    /// motion). Press down instantly, then spring to full with a little overshoot.
+    private func clickPop() {
+        Self.setCenteredScale(indicator, 0.93)
+        CLIPSpring.scale(indicator, to: 1.0, preset: .settle, key: "clickPop")
+    }
+
+    /// Slide the indicator to a segment with a snappy, springy overshoot (global
+    /// motion `CLIPSpring.popOut`) instead of the old flat easeInEaseOut. The
+    /// implicit animation carries the pill's sublayers (gradient + shadow) along.
+    private var isSliding = false
     private func moveIndicator(to index: Int, animated: Bool) {
         let target = Self.segmentFrames[index]
         if animated {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.22
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            isSliding = true
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.34
+                ctx.timingFunction = CLIPSpring.popOut
                 ctx.allowsImplicitAnimation = true
                 indicator.animator().frame = target
-            }
+            }, completionHandler: { [weak self] in self?.isSliding = false })
         } else {
             indicator.frame = target
         }
@@ -240,6 +278,7 @@ final class CanvasTopSegmentedControlView: NSView {
         for (i, label) in labels.enumerated() {
             label.attributedStringValue = Self.attributedTitle(
                 Self.titles[i], active: i == selectedIndex)
+            centerLabel(i)              // keep centred (active label's shadow changes the fit)
         }
     }
 
@@ -424,12 +463,13 @@ private final class SegmentIndicatorView: NSView {
         bodyLayer.locations = [0.0, NSNumber(value: rimFrac),
                                NSNumber(value: rimFrac), 1.0]
 
-        // Drop-shadow casters: a clear layer per level, shadow from shadowPath
-        // (this is a non-flipped CALayer coordinate space → "down" = -Y).
+        // Drop-shadow casters: a clear layer per level, shadow from shadowPath.
+        // This is a FLIPPED view (+Y = down), so the Figma positive-Y offsets cast
+        // the shadow DOWNWARD by offsetting the caster +Y (was −Y → shadow pointed up).
         let path = CGPath(roundedRect: CGRect(origin: .zero, size: b.size),
                           cornerWidth: r, cornerHeight: r, transform: nil)
         for (i, l) in shadowLayers.enumerated() {
-            l.frame = b.offsetBy(dx: 0, dy: -Self.shadowLevels[i].y)
+            l.frame = b.offsetBy(dx: 0, dy: Self.shadowLevels[i].y)
             l.shadowPath = path
         }
         CATransaction.commit()
