@@ -54,6 +54,7 @@ final class CanvasInputView: NSView {
     private var optionDuplicated = false            // Option-drag duplicated this drag already
     private var rotateNodeID: UUID?                 // node being rotated by the handle
     private var lastRotateSnap: CGFloat?            // cardinal we're currently snapped to (haptic edge)
+    private var lastRotateAngle: CGFloat = 0        // committed to the model on mouse-up
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
     private var labelDragID: UUID?                  // connector whose label is being dragged
@@ -443,8 +444,9 @@ final class CanvasInputView: NSView {
             let snap = (!free && isCardinal(ang)) ? ang : nil
             if let s = snap, s != lastRotateSnap { Haptics.tap() }
             lastRotateSnap = snap
-            p.onRotate(id, ang)
-            coordinator?.refreshChrome()
+            lastRotateAngle = ang
+            // LIVE visual only — no per-tick model write (keeps FPS high).
+            coordinator?.liveRotate(id, angle: ang)
         case .pendingMove, .move:
             if mode == .pendingMove {
                 if abs(dx) < 1 && abs(dy) < 1 { return }     // not a real drag yet
@@ -579,6 +581,13 @@ final class CanvasInputView: NSView {
         case .resize:
             if didBegin { p.onInteractionEnded() }
         case .rotate:
+            // Commit the final angle to the model ONCE, then clear the live
+            // override (deferred so the model has propagated to the item).
+            if let id = rotateNodeID {
+                p.onRotate(id, lastRotateAngle)
+                coordinator?.liveRotate(id, angle: lastRotateAngle)   // keep visual until model lands
+                DispatchQueue.main.async { [weak coordinator] in coordinator?.liveRotate(id, angle: nil) }
+            }
             if didBegin { p.onInteractionEnded() }
         case .draw:
             if drawPoints.count >= 2 {

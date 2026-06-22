@@ -522,6 +522,18 @@ struct CollectionCanvas: NSViewRepresentable {
             if let cid = editingConnectorID { positionEditor(at: cid) }
         }
 
+        /// Live rotate ONE item's visual (no model write) during a handle drag —
+        /// keeps FPS high. `angle == nil` clears the override (reads the model).
+        func liveRotate(_ id: UUID, angle: CGFloat?) {
+            guard let cv = collection else { return }
+            for ip in cv.indexPathsForVisibleItems() {
+                if let card = (cv.item(at: ip) as? HostingCollectionItem)?.cardView,
+                   card.nodeID == id {
+                    card.setLiveRotation(angle); return
+                }
+            }
+        }
+
         /// Phase B native connectors: rebuild content-space node frames and push
         /// them into the CAShapeLayer controller. Driven from `refreshChrome`, so
         /// it tracks node changes (apply → refreshChrome) AND zoom (bounds
@@ -1123,8 +1135,21 @@ final class CardItemView: NSView {
         if let folderView {
             folderView.setState(lifted: lifted, selected: selected, mag: mag)
         } else {
-            applyLiftScale(lifted, kind: node?.kind, angle: node?.rotation ?? 0)
+            applyLiftScale(lifted, kind: node?.kind,
+                           angle: liveRotationOverride ?? (node?.rotation ?? 0))
         }
+    }
+
+    /// Live (drag-time) rotation override — set while the rotate handle is being
+    /// dragged so the visual tracks WITHOUT a per-tick model write (which would
+    /// re-render all of SwiftUI and tank FPS). Committed to the model on mouse-up.
+    var liveRotationOverride: CGFloat?
+    func setLiveRotation(_ angle: CGFloat?) {
+        liveRotationOverride = angle
+        guard bounds.width > 1 else { return }
+        let n = liveNode
+        let lifted = isSelectedNow || isHoveredNow
+        applyLiftScale(lifted, kind: n?.kind, angle: angle ?? (n?.rotation ?? 0))
     }
 
     private var lastLiftFactor: CGFloat = 1.0
@@ -1156,9 +1181,7 @@ final class CardItemView: NSView {
         lastLiftFactor = factor
         lastAngle = angle
         let contentLayers = subviews.compactMap { $0.layer }
-        // The baked shadow rotates + scales WITH the card (user: the drop shadow
-        // must follow the rotation).
-        let all = contentLayers + [shadowLayer, outlineLayer, innerHairlineLayer,
+        let all = contentLayers + [outlineLayer, innerHairlineLayer,
                                    sectionLayer, rotateHandleLayer]
         for layer in all {
             if animateLift {
