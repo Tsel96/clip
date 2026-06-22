@@ -250,6 +250,48 @@ extension CanvasState {
         return CGSize(width: w * scale, height: h * scale)
     }
 
+    /// Reset every content card to its native (add-time) size, preserving aspect
+    /// and keeping the card centred. Cards can balloon (manual resize / import) to
+    /// thousands of points wide, which rasterises to enormous bitmaps — bloating
+    /// memory, off-screen reveal renders, and especially zoom FPS. This snaps each
+    /// back to the per-kind default width. Structural cards (text / sticky /
+    /// section / folder / drawing) keep their own sizing.
+    func resetAllNodesToNativeSize() {
+        withUndoable {
+            for i in nodes.indices {
+                let old = nodes[i]
+                guard let native = nativeSize(for: old) else { continue }
+                let cx = old.position.x + old.width / 2
+                let cy = old.position.y + (old.height ?? old.width) / 2
+                nodes[i].width = native.width
+                nodes[i].height = native.height
+                let newH = native.height ?? native.width
+                nodes[i].position = CGPoint(x: cx - native.width / 2, y: cy - newH / 2)
+            }
+        }
+        resetWorldBoundsCache()
+    }
+
+    /// Per-kind native (width, optional height). Aspect-driven kinds scale their
+    /// height from the CURRENT aspect (intact in the bloated size — no re-decode);
+    /// fixed-embed kinds use their service default. `nil` → leave the node alone.
+    private func nativeSize(for node: CanvasNode) -> (width: CGFloat, height: CGFloat?)? {
+        let curW = node.width
+        let curH = node.height ?? node.width
+        let aspect = curW > 0 ? curH / curW : 1
+        switch node.kind {
+        case .tweet:              return (360, node.height.map { _ in 360 * aspect })
+        case .webclip:            return (480, 320)
+        case .instagram(let url): return (360, InstagramService.defaultCardHeight(for: url))
+        case .youtube:            return (360, YouTubeService.defaultCardHeight(forWidth: 360))
+        case .image:
+            let s = fitInto(maxDim: 600, naturalSize: CGSize(width: curW, height: curH))
+            return (s.width, s.height)
+        case .video:              return (480, 480 * aspect)
+        default:                  return nil
+        }
+    }
+
     /// Add an Instagram post / reel / TV node to the canvas.
     func addInstagram(url: String, at worldPoint: CGPoint? = nil,
                       origin: CanvasNode.Origin = .local) {

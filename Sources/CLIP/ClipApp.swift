@@ -162,6 +162,11 @@ struct ClipApp: App {
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
                 .disabled(state.selectedNodeIDs.count < 2)
+                Button("Reset Card Sizes") {
+                    state.resetAllNodesToNativeSize()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .option])
+                .disabled(state.nodes.isEmpty)
                 Divider()
                 Button("Group") {
                     state.groupSelection()
