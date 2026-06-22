@@ -1194,6 +1194,22 @@ final class CardItemView: NSView {
                 CATransaction.commit()
             }
         }
+        // The shadow layer's frame is OFFSET (blur margin) and its anchorPoint is
+        // its own centre — which coincides with the item centre — so a PURE
+        // rotation about that anchor rotates it correctly (the composed translate
+        // pivot used above would slide it). It doesn't lift-scale (Spatial keeps a
+        // steady-size float shadow), only rotates with the card.
+        let shadowT = angle == 0 ? CATransform3DIdentity
+                                 : CATransform3DMakeRotation(angle, 0, 0, 1)
+        if animateLift {
+            shadowLayer.add(Self.liftSpring(from: shadowLayer.presentation()?.transform ?? shadowLayer.transform,
+                                            to: shadowT), forKey: "rot")
+            shadowLayer.transform = shadowT
+        } else {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            shadowLayer.transform = shadowT
+            CATransaction.commit()
+        }
     }
 
     /// The canvas-item scale spring (Spatial's `CanvasItemsAnimator` /
