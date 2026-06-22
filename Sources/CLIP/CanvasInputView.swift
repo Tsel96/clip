@@ -254,9 +254,22 @@ final class CanvasInputView: NSView {
 
         // Native drag-to-connect (connectors tool): drag from one card to another.
         if p.isConnectMode() {
+            // Double-click a connector → edit its midpoint label.
+            if event.clickCount == 2, p.useNativeConnectors,
+               let cid = coordinator?.connectorController?.hitTest(pt, tolerance: 16 / mag) {
+                coordinator?.beginEditingConnectorLabel(cid)
+                mode = .idle
+                return
+            }
             if let n = hitNode(at: pt, p), !n.isSection {
                 mode = .pendingConnect
                 connectSourceID = n.id
+            } else if p.useNativeConnectors,
+                      let cid = coordinator?.connectorController?.hitTest(pt, tolerance: 16 / mag) {
+                // Click a connector line (not a card) → select it (so it's deletable).
+                p.onSelectConnector(cid)
+                coordinator?.refreshChrome()
+                mode = .idle
             } else {
                 mode = .idle
             }

@@ -39,7 +39,7 @@ final class ConnectorOverlayController {
     private static let selectedLineWidth: CGFloat = 3.5
     private static let arrowLen: CGFloat = 10
     private static let arrowHalf: CGFloat = 4.5
-    private static let labelFontSize: CGFloat = 17   // CONTENT units (Figma: SF Mono Semibold 17) → scales with zoom
+    private static let labelFontSize: CGFloat = 22   // SCREEN-constant (÷mag); bigger than the Figma 17 for canvas legibility
     private static let dotDiameter: CGFloat = 9      // yellow source dot (Figma 88-441), screen-constant
     private static let hoverDotDiameter: CGFloat = 16  // connect-hover port (Figma 100-297)
     private static let hoverDotRing: CGFloat = 3
@@ -272,16 +272,17 @@ final class ConnectorOverlayController {
         b.labelBG.isHidden = false; b.labelText.isHidden = false
 
         let shown = text.uppercased()              // Figma: uppercase label text
-        let fs = Self.labelFontSize                // content units → scales with zoom
+        // Screen-CONSTANT size (÷mag): the label stays the same size at any zoom.
+        let fs = Self.labelFontSize / mag
         let font = NSFont.monospacedSystemFont(ofSize: fs, weight: .semibold)   // SF Mono Semibold (Figma)
         let measured = (shown as NSString).size(withAttributes: [.font: font])
-        let padH: CGFloat = 8, padV: CGFloat = 4
+        let padH: CGFloat = 10 / mag, padV: CGFloat = 5 / mag
         let w = measured.width + padH * 2
         let h = measured.height + padV * 2
 
         b.labelBG.frame = CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
-        b.labelBG.cornerRadius = 5
-        b.labelBG.borderWidth = selected ? 2 : 0
+        b.labelBG.cornerRadius = 6 / mag
+        b.labelBG.borderWidth = (selected ? 2 : 0) / mag
         b.labelBG.borderColor = Self.greenSelected.cgColor
 
         b.labelText.frame = CGRect(x: center.x - measured.width / 2,
