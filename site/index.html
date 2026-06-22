@@ -8,7 +8,7 @@
 <link rel="icon" href="icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="index.css" />
 <meta property="og:title" content="CLIP BETA — nekonečné plátno pro macOS" />
 <meta property="og:description" content="Lokálně běžící open-source aplikace pro macOS. Apple Silicon (M1+)." />
@@ -55,17 +55,38 @@
       <img src="assets/qr-code.svg" alt="QR kód pro instalaci CLIP" id="qrImage" />
     </div>
     <div class="modal-text">
-      <p class="modal-lead m-reveal">Návod k instalaci:</p>
-      <ol class="modal-steps m-reveal">
-        <li>Stáhněte <b>CLIP.dmg</b> a otevřete jej ze složky Stažené soubory.</li>
-        <li>Přetáhněte <b>CLIP</b> do složky <b>Aplikace</b>.</li>
-        <li>Při prvním spuštění klikněte na CLIP pravým tlačítkem → <b>Otevřít</b>.</li>
+      <h2 class="install-title m-reveal">Instalace</h2>
+      <ol class="install-steps" role="list">
+        <li class="install-step m-reveal">
+          <span class="install-bullet" aria-hidden="true">1</span>
+          <div class="install-body">
+            <p class="install-heading">Stažení</p>
+            <p class="install-desc">Na svém Macu otevřete <a class="install-url" href="https://clip-umprum.vercel.app">clip-umprum.vercel.app</a> a klikněte na Stáhnout. Stáhne se soubor CLIP.dmg.</p>
+          </div>
+        </li>
+        <li class="install-step m-reveal">
+          <span class="install-bullet" aria-hidden="true">2</span>
+          <div class="install-body">
+            <p class="install-heading">Instalace</p>
+            <p class="install-desc">Otevřete CLIP.dmg a přetáhněte ikonu CLIP do složky Aplikace.</p>
+          </div>
+        </li>
+        <li class="install-step m-reveal">
+          <span class="install-bullet" aria-hidden="true">3</span>
+          <div class="install-body">
+            <p class="install-heading">První spuštění</p>
+            <p class="install-desc">CLIP vytvořil nezávislý autor, takže si macOS nechá jednou potvrdit:</p>
+            <ol class="install-substeps">
+              <li>Otevřete složku Aplikace a dvakrát klikněte na CLIP.</li>
+              <li>Objeví se hláška, že aplikaci nelze otevřít&nbsp;— klikněte na Hotovo.</li>
+              <li>Otevřete &#63743;&thinsp;menu → Nastavení systému → Soukromí a zabezpečení.</li>
+              <li>Sjeďte dolů k Zabezpečení. Vedle „CLIP byl zablokován…" → Přesto otevřít.</li>
+              <li>Klikněte znovu na Přesto otevřít a potvrďte přes Touch ID nebo heslo.</li>
+            </ol>
+          </div>
+        </li>
       </ol>
-      <p class="modal-note m-reveal">Vyžaduje Mac s Apple&nbsp;Silicon (M1 a novější) · macOS&nbsp;13+</p>
-      <a class="modal-link m-reveal" href="install.html">Stahnout na svůj Mac</a>
     </div>
-    <div class="modal-img-placeholder" aria-hidden="true"></div>
-    <div class="modal-img-placeholder" aria-hidden="true"></div>
   </aside>
 
   <!-- Bottom-left description -->

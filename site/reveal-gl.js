@@ -618,7 +618,7 @@ export function revealImage(img, opts = {}) {
 
       const gl = canvas.getContext('webgl2', {
         premultipliedAlpha: true, alpha: true, antialias: true,
-        preserveDrawingBuffer: false,
+        preserveDrawingBuffer: true,
       });
       if (!gl) { resolve(); return; }   // no WebGL2 → leave the plain image
 

@@ -99,7 +99,7 @@ function gestures() {
   });
 
   // Underlined links — offset + color deepen on hover
-  document.querySelectorAll('.ui-git, .modal-link').forEach((link) => {
+  document.querySelectorAll('.ui-git, .install-url').forEach((link) => {
     hover(link, () => {
       animate(link, { textUnderlineOffset: '0.28em', textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
       return () => animate(link, { textUnderlineOffset: '0.15em', textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
@@ -177,9 +177,10 @@ function wireModal() {
 
   function onKey(e) {
     if (e.key === 'Escape') { close(); return; }
-    if (e.key === 'Tab') {           // contain focus between the two focusables
+    if (e.key === 'Tab') {           // contain focus within the modal
+      const focusables = [...modal.querySelectorAll('a[href], button')];
       const first = closeBtn;
-      const last = modal.querySelector('.modal-link');
+      const last = focusables[focusables.length - 1] || closeBtn;
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }

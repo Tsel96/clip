@@ -4,7 +4,7 @@
    All sizing is vw-relative so it scales from 1080p → 4K.
    ========================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -297,74 +297,106 @@ html, body {
 }
 
 .modal-text {
-  /* shift left to the panel's 25px text margin (QR sits at 99px) */
-  margin-left: calc(-74 / 2340 * 100vw);
+  /* align to Figma's 34px inset from the modal edge (QR is at 99px) */
+  margin-left: calc(-65 / 2340 * 100vw);
   margin-top: calc(73 / 2340 * 100vw);
+  padding-bottom: clamp(24px, calc(60 / 2340 * 100vw), 60px);
   display: flex;
   flex-direction: column;
 }
-.modal-lead {
-  font-size: var(--fs);
-  letter-spacing: var(--ls);
-  text-transform: uppercase;
-  color: var(--ink);
-  line-height: 1.35;
+
+/* ── Install guide (Figma A6-4) ── */
+.install-title {
+  display: inline-block;
+  font-size: clamp(18px, calc(36 / 2340 * 100vw), 50px);
+  font-weight: 600;
+  color: var(--green);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  transform: rotate(-0.71deg);
+  transform-origin: left center;
+  margin-bottom: clamp(16px, calc(46 / 2340 * 100vw), 44px);
 }
-.modal-steps {
-  margin-top: calc(20 / 2340 * 100vw);
-  padding-left: 1.5em;
+
+.install-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: calc(14 / 2340 * 100vw);
-}
-.modal-steps li {
-  /* same editorial treatment as the rest of the site */
-  font-size: var(--fs);
-  letter-spacing: var(--ls);
-  text-transform: uppercase;
-  line-height: 1.4;
-  color: var(--ink);
-}
-.modal-steps li::marker { color: rgba(0, 0, 0, 0.32); }
-.modal-steps li b { color: var(--ink); font-weight: 400; }
-
-.modal-note {
-  margin-top: calc(22 / 2340 * 100vw);
-  font-size: var(--fs);
-  letter-spacing: var(--ls);
-  text-transform: uppercase;
-  line-height: 1.4;
-  /* dim via colour, not opacity (Motion animates opacity on reveal) */
-  color: rgba(0, 0, 0, 0.32);
+  gap: clamp(16px, calc(40 / 2340 * 100vw), 48px);
 }
 
-.modal-img-placeholder {
-  /* stretch edge-to-edge inside the modal, ignoring its padding */
-  width: calc(100% + 2 * calc(99 / 2340 * 100vw));
-  margin-left: calc(-1 * calc(99 / 2340 * 100vw));
-  border-radius: 0;
-  background: rgba(0, 0, 0, 0.06);
-  border-top: 1px dashed rgba(0, 0, 0, 0.14);
-  border-bottom: 1px dashed rgba(0, 0, 0, 0.14);
-  aspect-ratio: 16 / 9;
-  margin-top: calc(20 / 2340 * 100vw);
+.install-step {
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(8px, calc(12 / 2340 * 100vw), 18px);
+}
+
+.install-bullet {
   flex-shrink: 0;
+  width: clamp(16px, calc(24 / 2340 * 100vw), 30px);
+  height: clamp(16px, calc(24 / 2340 * 100vw), 30px);
+  border-radius: 50%;
+  background: var(--green);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(8px, calc(12 / 2340 * 100vw), 14px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin-top: 0.1em;
 }
 
-.modal-text { padding-bottom: clamp(24px, calc(60 / 2340 * 100vw), 60px); }
+.install-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(3px, calc(6 / 2340 * 100vw), 8px);
+}
 
-.modal-link {
-  margin-top: calc(28 / 2340 * 100vw);
+.install-heading {
   font-size: var(--fs);
-  letter-spacing: var(--ls);
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: -0.04em;
   color: var(--ink);
+  line-height: 1;
+}
+
+.install-desc {
+  font-size: var(--fs);
+  font-weight: 400;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.install-url {
+  color: inherit;
   text-decoration: underline;
-  text-decoration-color: rgba(0, 0, 0, 0.20);
-  text-decoration-thickness: 1.5px;
+  text-decoration-color: rgba(0, 0, 0, 0.22);
+  text-decoration-thickness: 1px;
   text-underline-offset: 0.15em;
-  width: max-content;
-  /* underline offset/color + press are driven by Motion */
+}
+
+.install-substeps {
+  list-style: decimal;
+  padding-left: 1.15em;
+  margin-top: clamp(4px, calc(7 / 2340 * 100vw), 10px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(3px, calc(6 / 2340 * 100vw), 8px);
+}
+
+.install-substeps li {
+  font-size: var(--fs);
+  font-weight: 400;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  line-height: 1.45;
 }
 
 @media (prefers-reduced-motion: reduce) {
