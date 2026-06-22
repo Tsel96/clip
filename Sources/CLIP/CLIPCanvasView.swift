@@ -121,7 +121,7 @@ final class CLIPCanvasView: NSView {
                 // Draw + connect + hand also pass through → CanvasInputView owns
                 // the native stroke / drag-to-connect / grab-pan (the SwiftUI
                 // ToolInputLayer's connect used the wrong coord space here).
-                return c.isSelectMode() || c.isDrawMode() || c.isConnectMode() || c.isHandMode()
+                return c.isSelectMode() || c.isDrawMode() || c.isConnectMode() || c.isHandMode() || c.isStickyMode()
             }
             host.scrollRef = scroll
             host.frame = bounds

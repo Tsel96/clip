@@ -217,6 +217,14 @@ final class CanvasInputView: NSView {
             return
         }
 
+        // Sticky-note tool: a single click drops a sticky at the click point and
+        // returns to select mode (addStickyNote focuses it for editing).
+        if p.isStickyMode() {
+            if event.clickCount == 1 { p.onPlaceSticky(pt) }
+            mode = .idle
+            return
+        }
+
         // Native draw (marker): collect content-space points; commit on mouse-up.
         if p.isDrawMode() {
             mode = .draw
