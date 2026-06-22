@@ -52,9 +52,6 @@ final class CanvasInputView: NSView {
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
     private var optionDuplicated = false            // Option-drag duplicated this drag already
-    /// While editing a text node, the text view we're forwarding a drag-select to
-    /// (so mouseDragged/mouseUp extend the selection instead of panning the canvas).
-    private weak var forwardDragTV: NSTextView?
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
     private var labelDragID: UUID?                  // connector whose label is being dragged
@@ -218,32 +215,41 @@ final class CanvasInputView: NSView {
     }
 
     /// The input view shields the cards from clicks (it owns interaction). The
-    /// one exception: while a text node is being edited, clicks INSIDE its frame
-    /// fall through to the TextField below so the caret/keys work — everything
-    /// else returns self.
-    // The input view always owns clicks. While a text/sticky node is being edited,
-    // its clicks are FORWARDED to that node's text view in `mouseDown` (the SwiftUI
-    // gestures in the hosted card swallow a passed-through click, so forwarding to
-    // AppKit's own selection loop is the reliable path).
+    /// one exception: while a text/sticky node is being edited, clicks INSIDE its
+    /// frame are routed straight to that node's NSTextView so AppKit delivers
+    /// mouseDown/Dragged/Up to it natively (caret, drag-select, ⌘A all work, and
+    /// the text view stays first responder). Everything else returns self.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let p = config, let editID = p.editingTextNodeID,
+           let n = p.nodes.first(where: { $0.id == editID }) {
+            let local = convert(point, from: superview)
+            if contentFrame(n, p).contains(local),
+               let tv = editingTextView() {
+                return tv
+            }
+        }
+        return super.hitTest(point)
+    }
+
+    /// The NSTextView of the node currently being edited (the first responder, or
+    /// — if focus is mid-handoff — searched in the window's view tree).
+    private func editingTextView() -> NSTextView? {
+        if let tv = window?.firstResponder as? NSTextView { return tv }
+        return window?.contentView.flatMap { Self.firstTextView(in: $0) }
+    }
+    private static func firstTextView(in view: NSView) -> NSTextView? {
+        if let tv = view as? NSTextView, tv.isEditable { return tv }
+        for sub in view.subviews {
+            if let tv = firstTextView(in: sub) { return tv }
+        }
+        return nil
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard let p = config else { return }
         // Take focus from any text field so the canvas owns the keyboard (Delete,
         // etc.). Clicks INSIDE an editing text node never reach here (hitTest
-        // passes them to the field), so this won't interrupt active text editing.
-        let pt0 = convert(event.locationInWindow, from: nil)
-        forwardDragTV = nil
-        // While editing a text/sticky node, a click INSIDE it is forwarded to its
-        // text view (already first responder) so AppKit handles caret + selection.
-        // This NSTextView doesn't run a modal loop on a forwarded mouseDown, so we
-        // also forward mouseDragged/mouseUp (below) to extend the drag-selection.
-        if let eid = p.editingTextNodeID, let en = p.nodes.first(where: { $0.id == eid }),
-           contentFrame(en, p).contains(pt0),
-           let tv = window?.firstResponder as? NSTextView {
-            forwardDragTV = tv
-            tv.mouseDown(with: event)
-            return
-        }
+        // routes them to the text view), so this won't interrupt active editing.
         if window?.firstResponder !== self { window?.makeFirstResponder(self) }
         let pt = convert(event.locationInWindow, from: nil)
         startPt = pt
@@ -369,8 +375,6 @@ final class CanvasInputView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        // Forward to the editing text view to extend its drag-selection.
-        if let tv = forwardDragTV { tv.mouseDragged(with: event); return }
         guard let p = config else { return }
         let pt = convert(event.locationInWindow, from: nil)
         let dx = pt.x - startPt.x, dy = pt.y - startPt.y
@@ -490,8 +494,6 @@ final class CanvasInputView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        // End a forwarded text drag-selection.
-        if let tv = forwardDragTV { tv.mouseUp(with: event); forwardDragTV = nil; return }
         guard let p = config else { reset(); return }
         switch mode {
         case .pendingMarquee:

@@ -138,7 +138,16 @@ struct ClipApp: App {
 
             // Edit ▸ Select All / Duplicate / Bring to Front / Send to Back.
             CommandGroup(after: .pasteboard) {
-                Button("Select All") { state.selectAll() }
+                Button("Select All") {
+                    // If a text editor is focused (sticky / text node / field),
+                    // ⌘A selects its TEXT — menu shortcuts fire before the first
+                    // responder, so route it manually. Otherwise select all cards.
+                    if let tv = NSApp.keyWindow?.firstResponder as? NSTextView {
+                        tv.selectAll(nil)
+                    } else {
+                        state.selectAll()
+                    }
+                }
                     .keyboardShortcut("a", modifiers: .command)
                     .disabled(state.nodes.isEmpty)
                 Button("Duplicate") {

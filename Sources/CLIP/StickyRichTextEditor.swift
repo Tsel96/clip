@@ -118,10 +118,13 @@ struct StickyRichTextEditor: NSViewRepresentable {
                 tv.window?.makeFirstResponder(tv)
                 tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
             }
-        } else if !isEditing, tv.window?.firstResponder === tv {
-            // Editing was ended programmatically (not by a canvas click) while the
-            // text view still held focus → resign so the edit commits.
-            tv.window?.makeFirstResponder(nil)
+        } else if !isEditing {
+            if tv.window?.firstResponder === tv {
+                // Ended programmatically while still focused → resign so it commits.
+                tv.window?.makeFirstResponder(nil)
+            } else if tv.selectedRange().length > 0 {
+                tv.setSelectedRange(NSRange(location: 0, length: 0))   // clear lingering highlight
+            }
         }
     }
 
@@ -149,6 +152,9 @@ struct StickyRichTextEditor: NSViewRepresentable {
 
         func textDidEndEditing(_ notification: Notification) {
             commit()
+            // Drop the selection so its (desaturated) highlight doesn't linger on
+            // the deselected sticky.
+            textView?.setSelectedRange(NSRange(location: 0, length: 0))
             parent.onEndEditing()
         }
 
