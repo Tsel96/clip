@@ -48,6 +48,15 @@ final class ConnectorOverlayController {
     private static let dotRing: CGFloat = 2.5
     private static let hoverDotDiameter: CGFloat = 13  // connect-hover port (≈20% smaller)
     private static let hoverDotRing: CGFloat = 2.5
+    /// Floor for a port's ON-SCREEN diameter — the √mag dampening alone shrank
+    /// ports to a few px around 17% zoom; this keeps them grabbable when far out.
+    private static let minScreenDot: CGFloat = 9
+
+    /// Port diameter in CONTENT units: dampened √mag zoom (on-screen ≈ base·√mag),
+    /// but never below `minScreenDot` on screen (on-screen = content·mag).
+    private static func portDiameter(base: CGFloat, mag: CGFloat) -> CGFloat {
+        max(base / sqrt(mag), minScreenDot / mag)
+    }
     /// Canvas backdrop colour (light theme #EDF0F1) — masks the line behind the label.
     private static let labelBackground = NSColor(srgbRed: 0.929, green: 0.941, blue: 0.945, alpha: 1)
     /// Label text #16181A (Figma).
@@ -83,14 +92,14 @@ final class ConnectorOverlayController {
 
     func showHoverDot(at point: CGPoint, mag: CGFloat) {
         hoverGen += 1
-        let dz = sqrt(mag)                   // dampened zoom, matching the source port + labels
-        let d = Self.hoverDotDiameter / dz
+        // Dampened √mag zoom with a screen-size floor (matching the source port).
+        let d = Self.portDiameter(base: Self.hoverDotDiameter, mag: mag)
         let wasHidden = hoverDot.isHidden
         // Centred bounds + position so the scale spring grows from the dot's centre.
         CATransaction.begin(); CATransaction.setDisableActions(true)
         hoverDot.bounds = CGRect(x: 0, y: 0, width: d, height: d)
         hoverDot.position = point
-        hoverDot.lineWidth = Self.hoverDotRing / dz
+        hoverDot.lineWidth = d * (Self.hoverDotRing / Self.hoverDotDiameter)
         hoverDot.path = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: d, height: d), transform: nil)
         hoverDot.transform = CATransform3DIdentity
         hoverDot.isHidden = false
@@ -177,10 +186,10 @@ final class ConnectorOverlayController {
             b.arrow.fillColor = color
 
             // Source port (Figma 88-480): green ring + yellow centre, DAMPENED zoom
-            // (√mag) like the labels — shrinks gently instead of looking huge zoomed out.
-            let dz = sqrt(mag)
-            let d = Self.dotDiameter / dz
-            b.dot.lineWidth = Self.dotRing / dz
+            // (√mag) like the labels — shrinks gently — with a screen-size floor so
+            // it stays visible/grabbable when zoomed far out.
+            let d = Self.portDiameter(base: Self.dotDiameter, mag: mag)
+            b.dot.lineWidth = d * (Self.dotRing / Self.dotDiameter)
             b.dot.path = CGPath(ellipseIn: CGRect(x: route.sourceAnchor.x - d / 2,
                                                   y: route.sourceAnchor.y - d / 2,
                                                   width: d, height: d), transform: nil)
