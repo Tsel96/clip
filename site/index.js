@@ -232,16 +232,26 @@ function wireBgToggle() {
   const desc     = document.querySelector('.ui-description');
   const botRight = document.querySelector('.ui-bottom-right');
 
-  function computeGap(mat) {
-    if (mat) {
-      const vmin = Math.min(window.innerWidth, window.innerHeight) / 100;
-      return Math.min(Math.max(46, 2 * vmin + 26), 62);
-    }
-    return Math.min(Math.max(14, 26 / 2340 * window.innerWidth), 44);
-  }
-  function computeBotGap(mat) {
-    if (mat) return computeGap(true);
-    return Math.min(Math.max(14, 38 / 2340 * window.innerWidth), 56);
+  // Mirror the CSS clamp formulas — gives us the pixel offsets to shift each element
+  const defGap    = () => Math.min(Math.max(14, 26 / 2340 * window.innerWidth), 44);
+  const defBotGap = () => Math.min(Math.max(14, 38 / 2340 * window.innerWidth), 56);
+  const matGapPx  = () => {
+    const vmin = Math.min(window.innerWidth, window.innerHeight) / 100;
+    return Math.min(Math.max(46, 2 * vmin + 26), 62);
+  };
+
+  // x/y transform offsets per element — positive x = right, positive y = down
+  // bottom-anchored elements invert y (moving element "up" = negative y transform)
+  function offsets(mat) {
+    if (!mat) return { brand: [0,0], topRight: [0,0], desc: [0,0], botRight: [0,0] };
+    const d  = matGapPx() - defGap();
+    const db = matGapPx() - defBotGap();
+    return {
+      brand:    [ d,  d],   // top-left  → slide right + down
+      topRight: [-d,  d],   // top-right → slide left  + down
+      desc:     [ d, -d],   // bot-left  → slide right + up
+      botRight: [-d, -db],  // bot-right → slide left  + up (different y start)
+    };
   }
 
   const SPRING_POS = { type: 'spring', visualDuration: 0.45, bounce: 0.12 };
@@ -249,22 +259,25 @@ function wireBgToggle() {
   btn.addEventListener('click', () => {
     document.body.classList.toggle('mat-active');
     const mat = document.body.classList.contains('mat-active');
-    const g  = computeGap(mat);
-    const bg = computeBotGap(mat);
+    const off = offsets(mat);
 
     if (REDUCE || !M) {
-      if (brand)    Object.assign(brand.style,    { top: g + 'px', left: g + 'px' });
-      if (topRight) Object.assign(topRight.style, { top: g + 'px', right: g + 'px' });
-      if (desc)     Object.assign(desc.style,     { bottom: g + 'px', left: g + 'px' });
-      if (botRight) Object.assign(botRight.style, { bottom: bg + 'px', right: g + 'px' });
+      [[brand, 'brand'], [topRight, 'topRight'], [desc, 'desc'], [botRight, 'botRight']]
+        .forEach(([el, key]) => {
+          if (!el) return;
+          const [x, y] = off[key];
+          el.style.transform = (x || y) ? `translate(${x}px,${y}px)` : '';
+        });
       return;
     }
 
     const { animate } = M;
-    animate(brand,    { top: g,  left:  g  }, SPRING_POS);
-    animate(topRight, { top: g,  right: g  }, SPRING_POS);
-    animate(desc,     { bottom: g,  left:  g  }, SPRING_POS);
-    animate(botRight, { bottom: bg, right: g  }, SPRING_POS);
+    [[brand, 'brand'], [topRight, 'topRight'], [desc, 'desc'], [botRight, 'botRight']]
+      .forEach(([el, key]) => {
+        if (!el) return;
+        const [x, y] = off[key];
+        animate(el, { x, y }, SPRING_POS);
+      });
   });
 }
 
