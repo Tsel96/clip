@@ -547,11 +547,10 @@ private final class PropButton: NSView {
 private final class StickerProp: NSView {
     var onTap: (() -> Void)?
 
-    private let greenBg = NSImageView()   // Select_bg — green selection backdrop
-    private let paper   = NSImageView()   // back sheet (carries the baked shadow)
-    private let fold    = NSImageView()   // front sheet with the folded corner
+    private let paper    = NSImageView()  // back sheet (carries the baked shadow)
+    private let fold     = NSImageView()  // front sheet with the folded corner
+    private let foldWash = NSImageView()  // 30% white wash over the fold on hover
 
-    private var isActive  = false
     private var isHovered = false
     private var isPressed = false
 
@@ -559,8 +558,7 @@ private final class StickerProp: NSView {
 
     // Natural element SVG sizes (viewBox).
     private let paperSize = CGSize(width: 91, height: 89)
-    private let foldSize   = CGSize(width: 80, height: 75)
-    private let bgFrame    = CGRect(x: 0, y: 21, width: 111, height: 55)
+    private let foldSize   = CGSize(width: 80, height: 88)
 
     // Element centres per state (126×76 frame, top-left origin → flipped).
     private let paperCRest  = CGPoint(x: 50.19, y: 55.38)
@@ -580,31 +578,34 @@ private final class StickerProp: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = true          // clip the sheets to the frame, like Figma
-        for iv in [greenBg, paper, fold] {
+        for iv in [paper, fold, foldWash] {   // foldWash on top of fold
             iv.imageScaling = .scaleAxesIndependently
             iv.wantsLayer = true
             addSubview(iv)
         }
-        greenBg.alphaValue = 0
+        foldWash.alphaValue = 0
+        foldWash.contentTintColor = .white
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func setElements(paper p: NSImage?, fold f: NSImage?, greenBg g: NSImage?) {
-        paper.image = p; fold.image = f; greenBg.image = g
+    func setElements(paper p: NSImage?, fold f: NSImage?) {
+        paper.image = p; fold.image = f
+        // White-tinted template copy of the fold → the hover wash, clipped to the
+        // fold silhouette (Figma: 30% white over the front sheet on hover).
+        if let washImg = f?.copy() as? NSImage {
+            washImg.isTemplate = true
+            foldWash.image = washImg
+        }
         needsLayout = true
     }
 
-    func setActive(_ active: Bool) {
-        guard active != isActive else { return }
-        isActive = active
-        apply(animated: true)
-    }
+    /// Sticky has no distinct selected state — only rest ↔ hover (per spec).
+    func setActive(_ active: Bool) {}
 
-    private var lifted: Bool { isHovered || isActive }
+    private var lifted: Bool { isHovered }
 
     override func layout() {
         super.layout()
-        greenBg.frame = bgFrame
         apply(animated: false)
     }
 
@@ -626,15 +627,17 @@ private final class StickerProp: NSView {
                 paper.setFrameSize(paperSize)
                 paper.animator().setFrameOrigin(pOrigin)
                 paper.animator().frameCenterRotation = pRot
-                fold.animator().setFrameSize(fSize)
-                fold.animator().setFrameOrigin(fOrigin)
-                fold.animator().frameCenterRotation = fRot
-                greenBg.animator().alphaValue = isActive ? 1 : 0
+                for v in [fold, foldWash] {            // wash tracks the fold exactly
+                    v.animator().setFrameSize(fSize)
+                    v.animator().setFrameOrigin(fOrigin)
+                    v.animator().frameCenterRotation = fRot
+                }
+                foldWash.animator().alphaValue = isHovered ? 0.30 : 0
             }
         } else {
             paper.setFrameSize(paperSize); paper.setFrameOrigin(pOrigin); paper.frameCenterRotation = pRot
-            fold.setFrameSize(fSize); fold.setFrameOrigin(fOrigin); fold.frameCenterRotation = fRot
-            greenBg.alphaValue = isActive ? 1 : 0
+            for v in [fold, foldWash] { v.setFrameSize(fSize); v.setFrameOrigin(fOrigin); v.frameCenterRotation = fRot }
+            foldWash.alphaValue = isHovered ? 0.30 : 0
         }
     }
 
@@ -781,9 +784,8 @@ private final class MainPillView: NSView {
         // Layered sticky-note prop (paper + corner-fold + green select-bg) that
         // fans apart / lifts on hover and gains the green backdrop when active.
         stickersView.setElements(
-            paper:   loadBundleImage(named: "sticky-paper"),
-            fold:    loadBundleImage(named: "sticky-corner-fold"),
-            greenBg: loadBundleImage(named: "Select_bg"))
+            paper: loadBundleImage(named: "sticky-paper"),
+            fold:  loadBundleImage(named: "sticky-corner-fold"))
         stickersView.onTap = { [weak self] in self?.onToolTap?(.stickyNote) }
         addSubview(stickersView)
     }
