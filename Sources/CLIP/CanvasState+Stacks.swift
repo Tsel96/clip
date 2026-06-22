@@ -386,7 +386,8 @@ extension CanvasState {
     /// `folderColor` changes the node's `nativeContentKey`, so the card re-renders.
     func setFolderColor(id: UUID, hex: String) {
         withUndoable {
-            guard let idx = nodes.firstIndex(where: { $0.id == id }), nodes[idx].isFolder else { return }
+            guard let idx = nodes.firstIndex(where: { $0.id == id }),
+                  nodes[idx].isFolder || nodes[idx].isStickyNote else { return }
             nodes[idx].folderColor = hex
         }
     }
@@ -396,7 +397,8 @@ extension CanvasState {
     /// undo stack. `nil` restores the folder's previous (or default) tint. The
     /// commit on pick goes through `setFolderColor` (undoable).
     func previewFolderColor(id: UUID, hex: String?) {
-        guard let idx = nodes.firstIndex(where: { $0.id == id }), nodes[idx].isFolder else { return }
+        guard let idx = nodes.firstIndex(where: { $0.id == id }),
+              nodes[idx].isFolder || nodes[idx].isStickyNote else { return }
         guard nodes[idx].folderColor != hex else { return }
         nodes[idx].folderColor = hex
     }

@@ -40,12 +40,12 @@ extension CanvasState {
 
     // MARK: - Sticky notes
 
-    /// Create a 200×200 sticky at the given world point (or viewport
-    /// centre when `nil`) and immediately auto-focus its editor — same
+    /// Create a sticky (Figma 88-415, 382×408) at the given world point (or
+    /// viewport centre when `nil`) and immediately auto-focus its editor — same
     /// pattern as `addText`.
     @discardableResult
     func addStickyNote(at worldPoint: CGPoint? = nil) -> UUID {
-        let size = CGSize(width: 200, height: 200)
+        let size = CGSize(width: 382, height: 408)   // Figma 88-415
         let position: CGPoint = {
             if let p = worldPoint {
                 return CGPoint(x: p.x - size.width / 2, y: p.y - size.height / 2)

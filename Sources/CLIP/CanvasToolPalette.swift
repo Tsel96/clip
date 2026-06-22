@@ -1385,8 +1385,9 @@ struct _PaletteRepresentable: NSViewRepresentable {
             let hex = nsColor.hexRGB
             for id in targets {
                 guard let n = state.nodes.first(where: { $0.id == id }) else { continue }
-                if n.isSection      { state.setSectionColor(id: id, to: preset) }
-                else if n.isFolder  { state.setFolderColor(id: id, hex: hex) }
+                if n.isSection          { state.setSectionColor(id: id, to: preset) }
+                else if n.isFolder      { state.setFolderColor(id: id, hex: hex) }
+                else if n.isStickyNote  { state.setFolderColor(id: id, hex: hex) }   // sticky tint reuses folderColor
             }
         }
         // Download / Eject actions: TODO (pending behaviour spec).
