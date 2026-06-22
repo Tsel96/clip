@@ -261,18 +261,19 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
            let base = Self.art(forCount: currentCount) {
             shapeView.image = Self.tinted(base, with: color)
         }
-        // The 1/2/3-item SVGs bake in their own count + "Untitled" (as outlined
-        // Art is ALWAYS the text-free Folder_Rest now, so the dynamic count +
-        // name labels are ALWAYS shown (they carry the live, renamable values).
+        // The count art's baked text is erased by `eraseArt`, so the dynamic
+        // count + name labels are ALWAYS shown (they carry the live, renamable
+        // values).
         countField.isHidden = false
         titleField.isHidden = false
         needsLayout = true
     }
 
     private func refreshArt() {
-        // Always the per-count art (so the count + card peek stay visible when
-        // selected); selection is shown by the scale + ring, not an art swap.
+        // Per-count art keeps the peeking-card preview; the baked text is erased by
+        // `eraseArt` (text-free body, same tint) clipped to the label band.
         shapeView.image = Self.art(forCount: currentCount)
+        eraseArt.image = tintedIfNeeded(Self.restImage)
         // Shadow caster traces the SAME (clean, untinted) silhouette so the drop
         // shadow is identical whether or not the folder is recoloured.
         shadowView.image = shapeView.image
@@ -512,6 +513,15 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
                                  y: -Self.folderRect.minY * sy,
                                  width: Self.svgSize.width * sx,
                                  height: currentArtHeight * sy)
+        // Text-erase band: clip to the lower-left label area (clear of the peeking
+        // cards up top + the drop-arrow centre) and draw the text-free art shifted
+        // so its body lines up with `shapeView`, hiding the count art's baked text.
+        let band = CGRect(x: 0, y: h * 0.62, width: w * 0.66, height: h * 0.33)
+        eraseClip.frame = band
+        eraseArt.frame = CGRect(x: shapeView.frame.minX - band.minX,
+                                y: shapeView.frame.minY - band.minY,
+                                width: shapeView.frame.width,
+                                height: shapeView.frame.height)
         // Shadow caster shares the folder frame; its params come from the global
         // object shadow (updateShadow), independent of the folder's own size.
         shadowView.frame = shapeView.frame
