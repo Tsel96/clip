@@ -295,6 +295,14 @@ final class CanvasInputView: NSView {
 
         // Double-click → activate (text edit / stack focus / lightbox).
         if event.clickCount == 2, let n = hitNode(at: pt, p), !n.isSection {
+            // On a folder's NAME LABEL (lower-left) → inline rename; elsewhere → unfold.
+            if case .folder = n.kind {
+                let fh = n.height ?? (n.width / 1.165)
+                let lx = pt.x - n.position.x, ly = pt.y - n.position.y
+                if lx > n.width * 0.05, lx < n.width * 0.65, ly > fh * 0.62, ly < fh * 0.93 {
+                    coordinator?.beginFolderRename(n.id); mode = .idle; return
+                }
+            }
             p.onActivate(n.id); mode = .idle; return
         }
         // Double-click on a connector → edit its midpoint label (Obsidian-style).

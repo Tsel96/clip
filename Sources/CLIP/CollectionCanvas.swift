@@ -212,6 +212,8 @@ struct CanvasConfig {
     let onResize: (UUID, CGRect) -> Void
     /// Double-click a node → activate (text edit / stack focus / lightbox).
     let onActivate: (UUID) -> Void
+    /// Commit an inline folder rename: (folder id, new title).
+    let onRenameFolder: (UUID, String) -> Void
     /// Marquee box-select: rect in CONTENT coords; Bool = additive (Shift held).
     let onMarquee: (CGRect, Bool) -> Void
     /// Native click-select: (node id, shift held).
@@ -571,6 +573,14 @@ struct CollectionCanvas: NSViewRepresentable {
                    let fv = h.nativeContentView as? FolderCardView { return fv }
             }
             return nil
+        }
+
+        /// Inline-rename a folder (double-click the name label) — drive the native
+        /// title field into edit mode; commit routes back through `onRenameFolder`.
+        func beginFolderRename(_ id: UUID) {
+            folderContentView(id)?.beginRename { [weak self] newTitle in
+                self?.config.onRenameFolder(id, newTitle)
+            }
         }
 
         func liveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {

@@ -451,6 +451,9 @@ struct CanvasView: View {
                                     }
                                 }
                             },
+                            onRenameFolder: { id, title in
+                                state.setFolderTitle(id: id, to: title)
+                            },
                             onMarquee: { contentRect, additive in
                                 // Content → world, then select every node the box touches.
                                 let world = contentRect.offsetBy(dx: worldBounds.minX,

@@ -7,7 +7,7 @@ import CoreImage
 /// icon natively so they update. The SVG's shadow margin bleeds *outside* the
 /// node bounds so the folder itself fills the node. Refreshes in place via
 /// `NativeCardUpdatable`.
-final class FolderCardView: NSView, NativeCardUpdatable {
+final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
     private let shapeView = NSImageView()
     /// Single silhouette shadow caster stacked BEHIND `shapeView`, deriving its
     /// shape from the clean folder alpha. Driven by the GLOBAL object-shadow
@@ -348,6 +348,36 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         ao.timingFunction = CAMediaTimingFunction(name: .easeOut)
         dropArrow.layer?.opacity = hovering ? 1 : 0
         dropArrow.layer?.add(ao, forKey: "arrowFade")
+    }
+
+    // MARK: - Inline rename (double-click the name label, Figma 104:688)
+
+    private var renameCommit: ((String) -> Void)?
+
+    func beginRename(commit: @escaping (String) -> Void) {
+        renameCommit = commit
+        titleField.isHidden = false                 // show even if a baked-text SVG is up
+        titleField.isEditable = true
+        titleField.isSelectable = true
+        titleField.isBordered = false
+        titleField.drawsBackground = false
+        titleField.focusRingType = .none
+        titleField.usesSingleLineMode = true        // one line then … (Figma)
+        titleField.lineBreakMode = .byTruncatingTail
+        titleField.maximumNumberOfLines = 1
+        titleField.delegate = self
+        window?.makeFirstResponder(titleField)
+        titleField.currentEditor()?.selectAll(nil)
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let commit = renameCommit else { return }
+        renameCommit = nil
+        let newTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        titleField.isEditable = false
+        titleField.isSelectable = false
+        titleField.delegate = nil
+        commit(newTitle)
     }
 
     /// Apply the folder tint to an art image if one is set.
