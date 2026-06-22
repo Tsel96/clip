@@ -57,10 +57,11 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private let lidView = NSImageView()
     /// Figma rect of the open lid within the folder frame.
     private static let lidRect = CGRect(x: 73, y: 256.2256, width: 1017, height: 685)
-    /// Up-arrow drop affordance (Figma 104:675) — a white circle + arrow shown on
-    /// drop-hover, ABOVE everything. Its Figma rect within the folder frame.
-    private let dropArrow = NSView()
-    private let dropArrowGlyph = NSImageView()
+    /// Up-arrow drop affordance (Figma 104:675) — the exact `Arrow up button` SVG
+    /// (subtle dark circle + arrow), shown on drop-hover ABOVE everything. Its
+    /// Figma rect within the folder frame.
+    private static let arrowImage = loadSVG("Folder_ArrowUp")
+    private let dropArrow = NSImageView()
     private static let arrowRect = CGRect(x: 471.29, y: 339.39, width: 219.39, height: 219.39)
     /// Current folder tint (so the open-lid art is recoloured to match).
     private var nodeColorHex: String?
