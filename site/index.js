@@ -15,8 +15,8 @@ const EASE_IN  = [0.4, 0, 1, 1];
 const SPRING_HOVER = { type: 'spring', stiffness: 400, damping: 28 };
 const SPRING_PRESS = { type: 'spring', stiffness: 620, damping: 30 };
 const SPRING_BACK  = { type: 'spring', stiffness: 500, damping: 24 };
-const MODAL_IN     = { type: 'spring', visualDuration: 0.5, bounce: 0.18 };
-const MODAL_OUT    = { duration: 0.3, ease: EASE_IN };
+const MODAL_IN     = { type: 'spring', visualDuration: 0.3, bounce: 0.14 };
+const MODAL_OUT    = { duration: 0.18, ease: EASE_IN };
 
 let M = null;
 const html = document.documentElement;
@@ -167,7 +167,7 @@ function wireModal() {
       modal.style.transform = 'none';
       modal.style.opacity = 1;
     } else {
-      animate(backdrop, { opacity: [0, 1] }, { duration: 0.35, ease: EASE_OUT });
+      animate(backdrop, { opacity: [0, 1] }, { duration: 0.2, ease: EASE_OUT });
       animate(modal, { x: ['110%', '0%'], scale: [0.98, 1], opacity: [0, 1] }, MODAL_IN);
       reveals.forEach((el, i) =>
         animate(
@@ -199,7 +199,7 @@ function wireModal() {
     if (REDUCE) {
       finish();
     } else {
-      animate(backdrop, { opacity: 0 }, { duration: 0.28, ease: EASE_IN });
+      animate(backdrop, { opacity: 0 }, { duration: 0.16, ease: EASE_IN });
       const a = animate(modal, { x: '110%', scale: 0.98, opacity: 0 }, MODAL_OUT);
       Promise.resolve(a.finished || a).then(finish).catch(() => {});
     }

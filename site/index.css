@@ -284,10 +284,11 @@ html, body {
     rgba(255,255,255,0.9) 58%,
     #fff                  78%
   );
+  /* left = bottom so button has equal gap from left edge and bottom of panel */
   padding: clamp(56px, calc(88 / 2340 * 100vw), 116px)
            calc(99 / 2340 * 100vw)
-           clamp(24px, calc(36 / 2340 * 100vw), 50px)
-           calc(99 / 2340 * 100vw);
+           clamp(22px, calc(34 / 2340 * 100vw), 46px)
+           clamp(22px, calc(34 / 2340 * 100vw), 46px);
   margin-top: clamp(-56px, calc(-88 / 2340 * 100vw), -30px);
   position: relative;
   z-index: 2;
@@ -303,6 +304,7 @@ html, body {
   justify-content: center;
   width: auto;
   height: var(--pill-h);
+  padding: 0 clamp(18px, calc(28 / 2340 * 100vw), 40px);
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   font-size: var(--fs);
   font-weight: 400;
