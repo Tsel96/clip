@@ -884,7 +884,7 @@ final class CardItemView: NSView {
         // Lift scale (hover OR select): folders scale + show their curved outline
         // internally; every other card scales its content here.
         if let folderView {
-            folderView.setState(lifted: lifted, selected: selected)
+            folderView.setState(lifted: lifted, selected: selected, mag: mag)
         } else {
             applyLiftScale(lifted, kind: node?.kind)
         }

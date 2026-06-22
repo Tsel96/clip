@@ -41,8 +41,7 @@ final class ConnectorOverlayController {
     // Base on-screen sizes (divided by magnification each refresh).
     private static let screenLineWidth: CGFloat = 1      // 1px thinner
     private static let selectedLineWidth: CGFloat = 2.5
-    private static let arrowLen: CGFloat = 10
-    private static let arrowHalf: CGFloat = 4.5
+    private static let arrowLen: CGFloat = 12   // on-screen apex→base length (Polygon-6 arrowhead)
     private static let labelFontSize: CGFloat = 18   // SCREEN-constant (÷mag)
     private static let dotDiameter: CGFloat = 11     // source port (≈20% smaller) — green ring + yellow centre
     private static let dotRing: CGFloat = 2.5
@@ -303,21 +302,47 @@ final class ConnectorOverlayController {
         return b
     }
 
-    /// Filled triangle at `tip`, pointing along (tip − from). Constant on-screen.
+    /// The Polygon-6 arrowhead (a wide, soft, rounded triangle) in its own 29×20
+    /// design space — apex at the TOP (≈ y 0), base notch at the bottom. Built once;
+    /// each arrow transforms a copy onto its tip.
+    private static let arrowTemplate: CGPath = {
+        let p = CGMutablePath()
+        p.move(to: CGPoint(x: 12.3281, y: 1.46101))
+        p.addCurve(to: CGPoint(x: 13.7787, y: 0.0666322), control1: CGPoint(x: 13.014, y: 0.618925), control2: CGPoint(x: 13.3569, y: 0.197882))
+        p.addCurve(to: CGPoint(x: 14.6495, y: 0.0666322), control1: CGPoint(x: 14.0623, y: -0.0215984), control2: CGPoint(x: 14.3659, y: -0.0215984))
+        p.addCurve(to: CGPoint(x: 16.1001, y: 1.46101), control1: CGPoint(x: 15.0713, y: 0.197882), control2: CGPoint(x: 15.4142, y: 0.618925))
+        p.addLine(to: CGPoint(x: 24.6641, y: 11.9752))
+        p.addCurve(to: CGPoint(x: 28.4155, y: 17.8832), control1: CGPoint(x: 27.2697, y: 15.1741), control2: CGPoint(x: 28.5724, y: 16.7736))
+        p.addCurve(to: CGPoint(x: 27.2847, y: 19.6672), control1: CGPoint(x: 28.3124, y: 18.6127), control2: CGPoint(x: 27.9004, y: 19.2626))
+        p.addCurve(to: CGPoint(x: 20.3408, y: 18.7957), control1: CGPoint(x: 26.3481, y: 20.2826), control2: CGPoint(x: 24.3457, y: 19.787))
+        p.addLine(to: CGPoint(x: 14.2141, y: 17.2792))
+        p.addLine(to: CGPoint(x: 8.08744, y: 18.7957))
+        p.addCurve(to: CGPoint(x: 1.14355, y: 19.6672), control1: CGPoint(x: 4.08255, y: 19.787), control2: CGPoint(x: 2.0801, y: 20.2826))
+        p.addCurve(to: CGPoint(x: 0.0126801, y: 17.8832), control1: CGPoint(x: 0.527801, y: 19.2626), control2: CGPoint(x: 0.115837, y: 18.6127))
+        p.addCurve(to: CGPoint(x: 3.76411, y: 11.9752), control1: CGPoint(x: -0.144223, y: 16.7736), control2: CGPoint(x: 1.15855, y: 15.1741))
+        p.addLine(to: CGPoint(x: 12.3281, y: 1.46101))
+        p.closeSubpath()
+        return p
+    }()
+    /// Template apex (centre of the pointed tip) — placed exactly on the arrowTip.
+    private static let arrowApex = CGPoint(x: 14.2141, y: 0)
+    /// Template apex→base span (viewBox height) — the template scales so this = arrowLen.
+    private static let arrowTemplateHeight: CGFloat = 20
+
+    /// The rounded Polygon-6 arrowhead at `tip`, pointing along (tip − from).
+    /// Constant on-screen (÷mag): the template (apex up) is rotated so its apex
+    /// points toward the tip, scaled to `arrowLen`, and translated onto the tip.
     private func arrowPath(tip: CGPoint, from: CGPoint, mag: CGFloat) -> CGPath {
         let dx = tip.x - from.x, dy = tip.y - from.y
         let len = max(hypot(dx, dy), 0.0001)
         let ux = dx / len, uy = dy / len
-        let size = Self.arrowLen / mag
-        let half = Self.arrowHalf / mag
-        let baseX = tip.x - ux * size, baseY = tip.y - uy * size
-        let px = -uy, py = ux
-        let path = CGMutablePath()
-        path.move(to: tip)
-        path.addLine(to: CGPoint(x: baseX + px * half, y: baseY + py * half))
-        path.addLine(to: CGPoint(x: baseX - px * half, y: baseY - py * half))
-        path.closeSubpath()
-        return path
+        let scale = (Self.arrowLen / mag) / Self.arrowTemplateHeight
+        let theta = atan2(uy, ux) + .pi / 2          // maps the template "up" (0,−1) → (ux,uy)
+        var tf = CGAffineTransform(translationX: tip.x, y: tip.y)
+        tf = tf.rotated(by: theta)
+        tf = tf.scaledBy(x: scale, y: scale)
+        tf = tf.translatedBy(x: -Self.arrowApex.x, y: -Self.arrowApex.y)
+        return Self.arrowTemplate.copy(using: &tf) ?? Self.arrowTemplate
     }
 
     /// Position the midpoint label in CONTENT space (so it scales with zoom like

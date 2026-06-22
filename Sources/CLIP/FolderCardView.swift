@@ -2,27 +2,22 @@ import AppKit
 import CoreImage
 
 /// Native folder card. Renders the exact Figma folder vector (`Folder_Rest.svg`,
-/// text stripped) as the shape — back panel + tab notch, gradients, and the
-/// 4-layer drop shadow — then overlays the LIVE item-count + name + identity
+/// text stripped) as the shape — back panel + tab notch, gradients, and a
+/// silhouette drop shadow — then overlays the LIVE item-count + name + identity
 /// icon natively so they update. The SVG's shadow margin bleeds *outside* the
 /// node bounds so the folder itself fills the node. Refreshes in place via
 /// `NativeCardUpdatable`.
-/// One level of the folder's Figma drop shadow (node 953×818). Values are in the
-/// 953-wide design space and are scaled to the rendered folder.
-private struct FolderShadowLevel { let alpha: Float; let radius: CGFloat; let dy: CGFloat }
-
 final class FolderCardView: NSView, NativeCardUpdatable {
     private let shapeView = NSImageView()
-    /// Figma's 4-layer drop shadow, softest/largest last. Each level is cast by a
-    /// dedicated image view stacked BEHIND `shapeView` (a CALayer holds only one
-    /// shadow), deriving its shape from the clean folder silhouette's alpha.
-    private static let shadowLevels: [FolderShadowLevel] = [
-        .init(alpha: 0.09, radius: 6,  dy: 3),
-        .init(alpha: 0.07, radius: 11, dy: 11),
-        .init(alpha: 0.04, radius: 14, dy: 24),
-        .init(alpha: 0.01, radius: 17, dy: 43),
-    ]
-    private let shadowViews: [NSImageView] = (0..<4).map { _ in NSImageView() }
+    /// Single silhouette shadow caster stacked BEHIND `shapeView`, deriving its
+    /// shape from the clean folder alpha. Driven by the GLOBAL object-shadow
+    /// settings (see `updateShadow`) so folders lift/zoom-fade exactly like cards.
+    private let shadowView = NSImageView()
+    /// Global object shadow zoom-fade window (matches CardItemView.updateShadow).
+    private static let shadowMinMag: CGFloat = 0.30
+    private static let shadowFullMag: CGFloat = 0.55
+    /// Current scroll magnification (for the shadow's zoom fade), pushed via setState.
+    private var currentMag: CGFloat = 1
     private let countField = NSTextField(labelWithString: "No items")
     private let titleField = NSTextField(labelWithString: "Untitled")
     private let iconChip = NSView()
@@ -102,19 +97,16 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         wantsLayer = true
         layer?.masksToBounds = false
 
-        // Shadow casters FIRST so they sit behind the folder fill. Each shows the
-        // (clean) folder image purely to derive its alpha shadow — the image
-        // itself is hidden by the opaque `shapeView` directly on top.
-        for (i, sv) in shadowViews.enumerated() {
-            sv.image = Self.restImage
-            sv.imageScaling = .scaleAxesIndependently
-            sv.wantsLayer = true
-            sv.layer?.masksToBounds = false
-            sv.layer?.shadowColor = NSColor.black.cgColor
-            sv.layer?.shadowOpacity = Self.shadowLevels[i].alpha
-            sv.layer?.shadowOffset = .zero    // scaled in layout()
-            addSubview(sv)
-        }
+        // Shadow caster FIRST so it sits behind the folder fill: it shows the
+        // (clean) folder image purely to derive its alpha silhouette shadow — the
+        // image itself is hidden by the opaque `shapeView` directly on top.
+        shadowView.image = Self.restImage
+        shadowView.imageScaling = .scaleAxesIndependently
+        shadowView.wantsLayer = true
+        shadowView.layer?.masksToBounds = false
+        shadowView.layer?.shadowColor = NSColor.black.cgColor
+        shadowView.layer?.shadowOffset = .zero    // set in updateShadow()
+        addSubview(shadowView)
 
         shapeView.image = Self.restImage
         shapeView.imageScaling = .scaleAxesIndependently
@@ -193,17 +185,19 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         // Always the per-count art (so the count + card peek stay visible when
         // selected); selection is shown by the scale + ring, not an art swap.
         shapeView.image = Self.art(forCount: currentCount)
-        // Shadow casters trace the SAME (clean, untinted) silhouette so the drop
+        // Shadow caster traces the SAME (clean, untinted) silhouette so the drop
         // shadow is identical whether or not the folder is recoloured.
-        for sv in shadowViews { sv.image = shapeView.image }
+        shadowView.image = shapeView.image
         currentArtHeight = 1044
     }
 
     /// Hover/selected feedback. `lifted` (hover OR select) drives the 1.06 scale;
     /// `selected` drives the curved offset outline (hover shows scale only, to
     /// match the cards' Figma-exact hover). Called from CardItemView.updateChrome.
-    func setState(lifted: Bool, selected: Bool) {
-        if lifted != isLifted {
+    func setState(lifted: Bool, selected: Bool, mag: CGFloat) {
+        currentMag = mag
+        let liftChanged = lifted != isLifted
+        if liftChanged {
             isLifted = lifted
             // Scale from the CENTRE. A layer-backed NSView anchors its backing layer
             // at the corner (anchorPoint 0,0), so `CATransform3DMakeScale` alone grows
@@ -231,6 +225,30 @@ final class FolderCardView: NSView, NativeCardUpdatable {
             selectionOutlineView.layer?.opacity = target
             selectionOutlineView.layer?.add(anim, forKey: "fade")
         }
+        updateShadow(animated: liftChanged)
+    }
+
+    /// Global object drop shadow (mirrors CardItemView.updateShadow): rest vs
+    /// lifted depth + a zoom fade so dozens of folders don't read as mud when
+    /// zoomed out. The lift SCALE comes for free — the whole view's transform
+    /// scales this sublayer — so only opacity/offset/radius change here.
+    private func updateShadow(animated: Bool) {
+        guard let l = shadowView.layer else { return }
+        let zoomFade = max(0, min(1, (currentMag - Self.shadowMinMag)
+                                     / (Self.shadowFullMag - Self.shadowMinMag)))
+        let opacity: Float    = (isLifted ? 0.17 : 0.13) * Float(zoomFade)
+        let offsetY: CGFloat  = isLifted ? 16 : 6
+        let radius: CGFloat   = isLifted ? 20 : 8
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        if animated {
+            CATransaction.setAnimationDuration(0.14)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        }
+        l.shadowOpacity = opacity
+        l.shadowRadius = radius
+        l.shadowOffset = CGSize(width: 0, height: -offsetY)   // downward (non-flipped sublayer)
+        CATransaction.commit()
     }
 
     override func layout() {
@@ -245,23 +263,19 @@ final class FolderCardView: NSView, NativeCardUpdatable {
                                  y: -Self.folderRect.minY * sy,
                                  width: Self.svgSize.width * sx,
                                  height: currentArtHeight * sy)
-        // Shadow casters share the folder frame; the Figma values (953-wide design
-        // space) scale by `sx`. Negative height = downward (non-flipped sublayer).
-        for (i, sv) in shadowViews.enumerated() {
-            sv.frame = shapeView.frame
-            let lvl = Self.shadowLevels[i]
-            sv.layer?.shadowRadius = lvl.radius * sx
-            sv.layer?.shadowOffset = CGSize(width: 0, height: -lvl.dy * sx)
-        }
+        // Shadow caster shares the folder frame; its params come from the global
+        // object shadow (updateShadow), independent of the folder's own size.
+        shadowView.frame = shapeView.frame
+        updateShadow(animated: false)
         // Outline art (994×854) is tight to its canvas, same ~1.16 ratio as the
         // folder, so it traces the silhouette when filling the node bounds.
         outlineView.frame = bounds
-        // Selection outline: the same silhouette stretched into a frame inset by
-        // a negative gap, so the traced edge sits just OUTSIDE the folder — a
-        // curved offset outline. The gap scales with the folder (≈4%) so it reads
-        // the same at any folder size / zoom.
-        let gap = max(6, min(w, h) * 0.04)
-        selectionOutlineView.frame = bounds.insetBy(dx: -gap, dy: -gap)
+        // Selection outline: the same silhouette grown by a UNIFORM fraction so it
+        // scales isotropically and stays PARALLEL to the folder edge (an equal
+        // dx/dy inset warps a non-square silhouette off-parallel — that was the
+        // "weird offset"). Small fraction so the outline hugs the folder.
+        let g: CGFloat = 0.016
+        selectionOutlineView.frame = bounds.insetBy(dx: -w * g, dy: -h * g)
 
         // Live text, lower-left (the baked text sat at ≈12% in, 69%/77% down).
         let pad = w * 0.118
