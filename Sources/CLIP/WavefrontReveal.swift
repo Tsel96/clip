@@ -915,12 +915,41 @@ func renderOffscreen<V: View>(_ view: V, width: CGFloat, fixedHeight: CGFloat?,
 /// Wraps any card view: when the node is freshly added, the on-screen card is
 /// hidden while an off-screen copy loads, then it materialises through the same
 /// aurora wave (incl. lens distortion) as images — never appearing beforehand.
+/// TEMP DIAG (reveal): append one line to /tmp/clip_reveal.txt. Remove once the
+/// blank-card / missing-aurora issue is understood.
+func clipRevealLog(_ s: String) {
+    let line = "[reveal] \(s)\n"
+    let p = "/tmp/clip_reveal.txt"
+    if let h = FileHandle(forWritingAtPath: p) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
+    else { try? line.write(toFile: p, atomically: true, encoding: .utf8) }
+}
+
+/// TEMP DIAG: downsample a captured CGImage to 8×8 and report luminance spread.
+/// min≈max≈high → the capture is blank/white (e.g. an off-screen WKWebView that
+/// never painted); a real spread → the capture has actual content.
+func clipImageStats(_ cg: CGImage) -> String {
+    let n = 8, bpr = n * 4
+    var buf = [UInt8](repeating: 0, count: bpr * n)
+    guard let ctx = CGContext(data: &buf, width: n, height: n, bitsPerComponent: 8,
+                              bytesPerRow: bpr, space: CGColorSpaceCreateDeviceRGB(),
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return "stats?" }
+    ctx.draw(cg, in: CGRect(x: 0, y: 0, width: n, height: n))
+    var mn = 255, mx = 0, sum = 0
+    for i in stride(from: 0, to: buf.count, by: 4) {
+        let l = (Int(buf[i]) + Int(buf[i + 1]) + Int(buf[i + 2])) / 3
+        mn = min(mn, l); mx = max(mx, l); sum += l
+    }
+    let blank = (mx - mn) < 6
+    return "lum min=\(mn) max=\(mx) avg=\(sum / (n * n)) \(blank ? "→ BLANK" : "→ has-content")"
+}
+
 struct RevealingCard<Content: View>: View {
     let shouldReveal: Bool
     let onConsumed: () -> Void
     let captureWidth: CGFloat
     let captureHeight: CGFloat?     // nil = auto (tweet → sized to media aspect)
     let content: Content
+    var debugKind: String = "?"
     var settleNanos: UInt64 = 650_000_000
     var duration: CFTimeInterval = 1.5
 
@@ -929,12 +958,13 @@ struct RevealingCard<Content: View>: View {
     private enum Phase { case idle, preparing, revealing, done }
 
     init(shouldReveal: Bool, onConsumed: @escaping () -> Void,
-         captureWidth: CGFloat, captureHeight: CGFloat?,
+         captureWidth: CGFloat, captureHeight: CGFloat?, debugKind: String = "?",
          @ViewBuilder content: () -> Content) {
         self.shouldReveal = shouldReveal
         self.onConsumed = onConsumed
         self.captureWidth = captureWidth
         self.captureHeight = captureHeight
+        self.debugKind = debugKind
         self.content = content()
     }
 
@@ -956,13 +986,15 @@ struct RevealingCard<Content: View>: View {
 
     @MainActor
     private func maybeStart() async {
+        clipRevealLog("\(debugKind) appear shouldReveal=\(shouldReveal) phase=\(phase) avail=\(RevealEngine.isAvailable) reduceMotion=\(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) w=\(captureWidth) h=\(captureHeight.map { "\($0)" } ?? "nil")")
         guard phase == .idle, shouldReveal else { return }
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
               RevealEngine.isAvailable, captureWidth >= 1
-        else { onConsumed(); return }
+        else { clipRevealLog("\(debugKind) SKIP (reduceMotion or !available or width<1) → card just appears"); onConsumed(); return }
         phase = .preparing                      // hide the on-screen card now
         let cg = await renderOffscreen(content, width: captureWidth,
                                        fixedHeight: captureHeight, settleNanos: settleNanos)
+        clipRevealLog("\(debugKind) captured \(cg.map { "\($0.width)x\($0.height) — " + clipImageStats($0) } ?? "nil")")
         guard phase == .preparing else { return }
         if let cg {
             renderer = RevealRenderer(cgImage: cg, style: .aurora)
@@ -980,13 +1012,24 @@ extension View {
     /// Sweeps a luminous band across this card once, when its node was just
     /// added to the canvas (the node id is in `pendingRevealNodeIDs`).
     func revealOnAdd(state: CanvasState, node: CanvasNode) -> some View {
-        RevealingCard(
+        let kind: String
+        switch node.kind {
+        case .tweet:     kind = "tweet"
+        case .instagram: kind = "instagram"
+        case .youtube:   kind = "youtube"
+        case .webclip:   kind = "webclip"
+        case .image:     kind = "image"
+        case .video:     kind = "video"
+        default:         kind = "other"
+        }
+        return RevealingCard(
             shouldReveal: state.pendingRevealNodeIDs.contains(node.id),
             onConsumed: { state.pendingRevealNodeIDs.remove(node.id) },
             // Tweets have nil height → the off-screen render sizes them to their
             // media aspect (matching the on-screen card); other cards use theirs.
             captureWidth: node.width,
-            captureHeight: node.height
+            captureHeight: node.height,
+            debugKind: kind
         ) { self }
     }
 }
