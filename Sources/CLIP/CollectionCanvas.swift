@@ -777,6 +777,9 @@ final class CardItemView: NSView {
     /// rides this layer's `opacity` (composite-time → no re-raster); only a
     /// lift/resize changes the baked `shadowPath`/radius and re-bakes.
     private let shadowLayer = CALayer()
+    /// Tracks the select→deselect edge so we only bump the persistent z ONCE per
+    /// selection (not on every chrome refresh).
+    private var wasSelectedForZ = false
     /// Hover/selected scale, applied to every canvas object EXCEPT marker
     /// drawings (user spec). Same factor for hover and select (not compounded).
     static let liftScale: CGFloat = 1.02
@@ -848,9 +851,15 @@ final class CardItemView: NSView {
         let selected = valid && isSelectedNow
         let hovered = valid && isHoveredNow
         let lifted = selected || hovered
-        // Selected cards float ABOVE every other card (z-order to front), so the
-        // selection + its shadow are never occluded by neighbours.
-        layer?.zPosition = selected ? 1 : 0
+        // Bring a card to front on selection and KEEP it there after deselect — via
+        // a PERSISTENT per-node zPosition held by the coordinator (NOT a model
+        // reorder, which would force a `reloadData` and blink videos). The z value
+        // survives reload because each item re-reads it here.
+        if let id = nodeID {
+            if selected && !wasSelectedForZ { coordinator?.raiseZ(id) }
+            wasSelectedForZ = selected
+            layer?.zPosition = coordinator?.zFor(id) ?? 0
+        }
         var isDrawing = false, wantsHairline = false
         switch node?.kind {
         case .drawing: isDrawing = true
@@ -1142,18 +1151,32 @@ final class HostingCollectionItem: NSCollectionViewItem {
     /// Install native content for the node if a native renderer exists; else
     /// host the SwiftUI fallback. `swiftUI` is an autoclosure so we don't build
     /// the SwiftUI card for natively-rendered kinds.
+    /// The node id whose content is currently installed (for the idempotent skip).
+    private var currentContentID: UUID?
+
     func setContent(node: CanvasNode, swiftUI: @autoclosure () -> AnyView,
                     isEditing: Bool = false) {
-        // The outgoing video VIEW is cached by node id (NativeVideoCache) so it's
-        // re-parented to its next item instead of rebuilt — no reload/blink. Tell
-        // the cache it detached so off-screen videos still tear down ~1.2s later.
+        let native = isEditing ? nil : makeNativeCardContent(for: node)
+        // IDEMPOTENT: if the SAME cached native view is already installed (the most
+        // common case is the video view for an unchanged node on a drag-release /
+        // bring-to-front `reloadData`), leave it untouched. Re-parenting the
+        // AVPlayer-backed view (removeFromSuperview → addSubview) flashes its
+        // AVPlayerLayer black for a frame — THE video blink. Skipping it = stable.
+        if let native, native === nativeContent {
+            cardView.usesNativeContent = true
+            currentContentID = node.id
+            return
+        }
+        // We ARE swapping content now — park the outgoing video so its AVPlayer is
+        // reclaimed (not rebuilt) if it reappears, else torn down ~1.2s later.
         if FeatureFlags.useWebViewCache,
            let vid = nativeContent as? CardVideoContentView, let id = vid.cacheNodeID {
             NativeVideoCache.shared.park(id)
         }
+        currentContentID = node.id
         // A text node in edit mode falls back to the SwiftUI inline editor
         // (auto-sizing field + focus); every other case prefers native content.
-        if let native = isEditing ? nil : makeNativeCardContent(for: node) {
+        if let native {
             hosting?.removeFromSuperview(); hosting = nil
             nativeContent?.removeFromSuperview()
             native.translatesAutoresizingMaskIntoConstraints = false

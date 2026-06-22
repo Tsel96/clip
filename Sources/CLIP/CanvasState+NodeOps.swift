@@ -167,17 +167,6 @@ extension CanvasState {
         selectedConnectorIDs = []
     }
 
-    /// Move `ids` to the END of `nodes` (front in z-order) so a selected card
-    /// STAYS on top after it's deselected. Non-undoable and skipped when the ids
-    /// are already frontmost — so a normal click doesn't trigger a `reloadData`.
-    func raiseToFront(_ ids: Set<UUID>) {
-        guard !ids.isEmpty else { return }
-        guard Set(nodes.suffix(ids.count).map(\.id)) != ids else { return }
-        let moving = nodes.filter { ids.contains($0.id) }
-        let rest   = nodes.filter { !ids.contains($0.id) }
-        nodes = rest + moving
-    }
-
     /// Move the given node ids to the END of the array (front in z-order
     /// because we render via `ForEach` and later items paint on top).
     func bringToFront(_ ids: Set<UUID>) {
