@@ -36,15 +36,15 @@ final class ConnectorOverlayController {
     private var liveOffsets: [UUID: CGPoint] = [:]
 
     // Base on-screen sizes (divided by magnification each refresh).
-    private static let screenLineWidth: CGFloat = 2
-    private static let selectedLineWidth: CGFloat = 3.5
+    private static let screenLineWidth: CGFloat = 1      // 1px thinner
+    private static let selectedLineWidth: CGFloat = 2.5
     private static let arrowLen: CGFloat = 10
     private static let arrowHalf: CGFloat = 4.5
     private static let labelFontSize: CGFloat = 18   // SCREEN-constant (÷mag)
-    private static let dotDiameter: CGFloat = 14     // source port — green ring + yellow centre (Figma 88-480, same as hover)
-    private static let dotRing: CGFloat = 3
-    private static let hoverDotDiameter: CGFloat = 16  // connect-hover port (Figma 100-297)
-    private static let hoverDotRing: CGFloat = 3
+    private static let dotDiameter: CGFloat = 11     // source port (≈20% smaller) — green ring + yellow centre
+    private static let dotRing: CGFloat = 2.5
+    private static let hoverDotDiameter: CGFloat = 13  // connect-hover port (≈20% smaller)
+    private static let hoverDotRing: CGFloat = 2.5
     /// Canvas backdrop colour (light theme #EDF0F1) — masks the line behind the label.
     private static let labelBackground = NSColor(srgbRed: 0.929, green: 0.941, blue: 0.945, alpha: 1)
     /// Label text #16181A (Figma).
@@ -162,7 +162,9 @@ final class ConnectorOverlayController {
             let b = bundles[c.id] ?? makeBundle(for: c.id)
             let color = (isSel ? Self.greenSelected : Self.green).cgColor
 
-            b.line.path = route.path
+            // Break the line under the label so it doesn't cross the text (Figma).
+            b.line.path = c.label.isEmpty ? route.path
+                : gappedLinePath(route, gap: labelGapWidth(c.label, mag: mag, selected: isSel))
             b.line.lineWidth = (isSel ? Self.selectedLineWidth : Self.screenLineWidth) / mag
             b.line.strokeColor = color
 
@@ -342,5 +344,50 @@ final class ConnectorOverlayController {
             .foregroundColor: Self.labelTextColor      // Figma #16181A
         ])
         b.labelText.contentsScale = 3              // crisp when zoomed in
+    }
+
+    // MARK: - Label line gap
+
+    /// Width (content units) of the gap the line should leave for the label.
+    private func labelGapWidth(_ text: String, mag: CGFloat, selected: Bool) -> CGFloat {
+        let m = sqrt(mag)
+        let font = NSFont.monospacedSystemFont(ofSize: Self.labelFontSize / m, weight: .semibold)
+        let w = (text.uppercased() as NSString).size(withAttributes: [.font: font]).width
+        return w + (selected ? 44 : 22) / m            // text + the pill / breathing room
+    }
+
+    /// The bezier with a centred `gap` removed (two sub-curves) so the label sits
+    /// in a clean break in the line (Figma — line interrupts under the label).
+    private func gappedLinePath(_ r: BezierRoute, gap: CGFloat) -> CGPath {
+        let p0 = r.sourceAnchor, p1 = r.control1, p2 = r.control2, p3 = r.arrowFrom
+        let chord = hypot(p3.x - p0.x, p3.y - p0.y)
+        let net = hypot(p1.x - p0.x, p1.y - p0.y) + hypot(p2.x - p1.x, p2.y - p1.y)
+                + hypot(p3.x - p2.x, p3.y - p2.y)
+        let len = max((chord + net) / 2, 1)            // cheap cubic-length estimate
+        let tHalf = min(0.42, (gap / 2) / len)
+        let path = CGMutablePath()
+        let s1 = Self.subCurve(p0, p1, p2, p3, 0, 0.5 - tHalf)
+        path.move(to: s1.0); path.addCurve(to: s1.3, control1: s1.1, control2: s1.2)
+        let s2 = Self.subCurve(p0, p1, p2, p3, 0.5 + tHalf, 1)
+        path.move(to: s2.0); path.addCurve(to: s2.3, control1: s2.1, control2: s2.2)
+        return path
+    }
+
+    private static func lerp(_ a: CGPoint, _ b: CGPoint, _ t: CGFloat) -> CGPoint {
+        CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+    }
+
+    /// The [ta, tb] portion of cubic bezier (p0,p1,p2,p3) → (start, c1, c2, end).
+    private static func subCurve(_ p0: CGPoint, _ p1: CGPoint, _ p2: CGPoint, _ p3: CGPoint,
+                                 _ ta: CGFloat, _ tb: CGFloat) -> (CGPoint, CGPoint, CGPoint, CGPoint) {
+        // De Casteljau: split at ta, keep the second half [ta,1] …
+        let a1 = lerp(p0, p1, ta), b1 = lerp(p1, p2, ta), c1 = lerp(p2, p3, ta)
+        let d1 = lerp(a1, b1, ta), e1 = lerp(b1, c1, ta)
+        let q0 = lerp(d1, e1, ta), q1 = e1, q2 = c1, q3 = p3
+        // … then take [0, u] of that, where u maps tb onto the sub-curve.
+        let u = (tb - ta) / max(1 - ta, 0.0001)
+        let a2 = lerp(q0, q1, u), b2 = lerp(q1, q2, u), c2 = lerp(q2, q3, u)
+        let d2 = lerp(a2, b2, u), e2 = lerp(b2, c2, u)
+        return (q0, a2, d2, lerp(d2, e2, u))
     }
 }
