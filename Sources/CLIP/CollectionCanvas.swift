@@ -545,18 +545,97 @@ struct CollectionCanvas: NSViewRepresentable {
         /// (it re-applies its cached layout every pass, which is why direct frame
         /// sets "did nothing"), but it does NOT touch the layer transform — so a
         /// translate rides on top of the layout and actually moves the card.
+        // MARK: - Folder drop-over (Spatial: lid opens + dragged card shrinks)
+
+        /// The folder the dragged cards are held over (drives lid-open + card-shrink).
+        private var dropTargetID: UUID?
+
+        /// Bounding-rect centre of the dragged cards at their LIVE position.
+        private func draggedCentre(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) -> CGPoint? {
+            var rect: CGRect?
+            for (id, sp) in startPos {
+                guard let n = nodes.first(where: { $0.id == id }) else { continue }
+                let r = CGRect(x: sp.x + dx, y: sp.y + dy, width: n.width, height: n.height ?? n.width)
+                rect = rect?.union(r) ?? r
+            }
+            return rect.map { CGPoint(x: $0.midX, y: $0.midY) }
+        }
+
+        /// The live native `FolderCardView` for a folder node id (visible items).
+        func folderContentView(_ id: UUID) -> FolderCardView? {
+            guard let cv = collection else { return nil }
+            for item in cv.visibleItems() {
+                if let h = item as? HostingCollectionItem, h.cardView.nodeID == id,
+                   let fv = h.nativeContentView as? FolderCardView { return fv }
+            }
+            return nil
+        }
+
         func liveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
             guard let cv = collection else { return }
-            let t = CATransform3DMakeTranslation(dx, dy, 0)
-            CATransaction.begin(); CATransaction.setDisableActions(true)
-            for id in startPos.keys {
-                guard let idx = nodes.firstIndex(where: { $0.id == id }) else { continue }
-                cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = t
+            let draggedIDs = Set(startPos.keys)
+
+            // Drop-target: the dragged centre over a non-dragged folder (Spatial:
+            // the shrunk card's centre lands on the folder).
+            var newTarget: UUID?
+            var fit: CGFloat = 1
+            if let centre = draggedCentre(startPos, dx: dx, dy: dy) {
+                for n in nodes {
+                    guard case .folder = n.kind, !draggedIDs.contains(n.id) else { continue }
+                    let fr = CGRect(x: n.position.x, y: n.position.y,
+                                    width: n.width, height: n.height ?? 172)
+                    if fr.contains(centre) {
+                        newTarget = n.id
+                        let cardH = startPos.keys.compactMap { id in nodes.first { $0.id == id } }
+                            .map { $0.height ?? $0.width }.max() ?? 1
+                        fit = max(0.28, min(0.6, (n.height ?? 172) * 0.5 / max(cardH, 1)))
+                        break
+                    }
+                }
             }
-            CATransaction.commit()
-            // Native connectors track the dragged cards live: feed the offset to
-            // the controller, which re-applies it on every redraw (so nothing can
-            // reset the lines mid-drag). Model commits on mouse-up.
+            let targetChanged = newTarget != dropTargetID
+            if targetChanged {
+                dropTargetID.flatMap(folderContentView)?.setDropHover(false)     // close old lid
+                if let new = newTarget {
+                    folderContentView(new)?.setDropHover(true)                   // open new lid
+                    MainActor.assumeIsolated { Haptics.generic() }               // one tap on enter
+                }
+                dropTargetID = newTarget
+            }
+
+            // Translate (+ shrink toward the folder) each dragged item.
+            let t = CATransform3DMakeTranslation(dx, dy, 0)
+            for id in startPos.keys {
+                guard let idx = nodes.firstIndex(where: { $0.id == id }),
+                      let view = cv.item(at: IndexPath(item: idx, section: 0))?.view else { continue }
+                let xform: CATransform3D
+                if newTarget != nil {
+                    let cx = view.bounds.width / 2, cy = view.bounds.height / 2
+                    let s = CATransform3DConcat(
+                        CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
+                                            CATransform3DMakeScale(fit, fit, 1)),
+                        CATransform3DMakeTranslation(cx, cy, 0))
+                    xform = CATransform3DConcat(s, t)
+                } else {
+                    xform = t
+                }
+                if targetChanged {
+                    // Animate the shrink / grow on enter / exit (0.16s ease).
+                    let a = CABasicAnimation(keyPath: "transform")
+                    a.fromValue = view.layer?.presentation()?.transform ?? view.layer?.transform ?? xform
+                    a.toValue = xform
+                    a.duration = 0.16
+                    a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    view.layer?.transform = xform
+                    view.layer?.add(a, forKey: "dropShrink")
+                } else {
+                    CATransaction.begin(); CATransaction.setDisableActions(true)
+                    view.layer?.transform = xform
+                    CATransaction.commit()
+                }
+            }
+
+            // Native connectors track the dragged cards live (model commits on up).
             if let cc = connectorController {
                 var offs: [UUID: CGPoint] = [:]
                 for id in startPos.keys { offs[id] = CGPoint(x: dx, y: dy) }
@@ -571,6 +650,9 @@ struct CollectionCanvas: NSViewRepresentable {
         /// low-zoom group move "didn't move" no matter what we set. `reloadData`
         /// forces a full repaint, so the commit lands at ANY magnification.
         func endLiveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
+            // Close any open folder lid; if a card was filed, apply()'s refresh +
+            // spawnFolderDropSnapshots take over the "jump inside".
+            if let t = dropTargetID { folderContentView(t)?.setDropHover(false); dropTargetID = nil }
             guard let cv = collection, let layout = layout else { return }
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
             CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -677,20 +759,23 @@ struct CollectionCanvas: NSViewRepresentable {
                 else { continue }
                 card.cacheDisplay(in: card.bounds, to: rep)
                 guard let cg = rep.cgImage else { continue }
-                // Start at the card's current visual position (fold in the live drag
-                // translation if it's still on the layer, so the fly-in begins where
-                // the user released rather than at the card's home slot).
-                var frame = container.convert(card.bounds, from: card)
-                if let t = card.layer?.transform { frame.origin.x += t.m41; frame.origin.y += t.m42 }
+                // The dragged card is corner-anchored (layer anchorPoint 0,0) and may
+                // be SHRUNK + translated over the folder. Reproduce its exact current
+                // transform on the ghost (same anchor + home frame) so the fly-in
+                // begins seamlessly from the shrunk card, then springs it to a dot at
+                // the folder centre.
+                let live = card.layer?.transform ?? CATransform3DIdentity
+                let home = container.convert(card.bounds, from: card)   // full-size home rect
                 let ghost = CALayer()
                 ghost.contents = cg
-                ghost.frame = frame
                 ghost.contentsGravity = .resizeAspect
                 ghost.zPosition = 60
+                ghost.anchorPoint = .zero                               // match the card's layer
+                ghost.frame = home
                 container.layer?.addSublayer(ghost)
 
-                let c = CGPoint(x: ghost.bounds.midX, y: ghost.bounds.midY)
-                let dx = folderCenter.x - frame.midX, dy = folderCenter.y - frame.midY
+                let c = CGPoint(x: home.width / 2, y: home.height / 2)
+                let dx = folderCenter.x - home.midX, dy = folderCenter.y - home.midY
                 let target = CATransform3DConcat(
                     CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
                                         CATransform3DMakeScale(0.12, 0.12, 1)),
@@ -698,7 +783,7 @@ struct CollectionCanvas: NSViewRepresentable {
                 CATransaction.begin()
                 CATransaction.setCompletionBlock { ghost.removeFromSuperlayer() }
                 let s = CASpringAnimation(keyPath: "transform")
-                s.fromValue = CATransform3DIdentity; s.toValue = target
+                s.fromValue = live; s.toValue = target
                 s.stiffness = CLIPSpring.Preset.settle.stiffness
                 s.damping = CLIPSpring.Preset.settle.caDamping
                 s.duration = s.settlingDuration

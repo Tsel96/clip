@@ -197,6 +197,7 @@ final class FolderCardView: NSView, NativeCardUpdatable {
             iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
         }
         currentCount = childIDs.count
+        nodeColorHex = node.folderColor
         refreshArt()
         // Folder tint from the flower picker (nil → default lavender): recolour
         // the folder IMAGE so the picked hue actually shows.
@@ -261,6 +262,40 @@ final class FolderCardView: NSView, NativeCardUpdatable {
             haloView.layer?.add(anim, forKey: "fade")
         }
         updateShadow(animated: liftChanged)
+    }
+
+    /// Drop-hover (a card is held over this folder): the lid OPENS — crossfade to
+    /// the open-lid `Folder_Hovered` art — and the selection outline fades in. On
+    /// exit it closes back to the per-count art. Driven natively from the drag
+    /// loop (CollectionCanvas.liveReposition) so it's smooth + SwiftUI-free.
+    func setDropHover(_ hovering: Bool) {
+        guard hovering != isDropHovered else { return }
+        isDropHovered = hovering
+        let base: NSImage? = hovering ? Self.hoveredImage : Self.art(forCount: currentCount)
+        let art: NSImage?
+        if let hex = nodeColorHex, let color = Self.color(fromHex: hex), let b = base {
+            art = Self.tinted(b, with: color)
+        } else {
+            art = base
+        }
+        // Lid open/close = a soft crossfade between the rest + open-lid art.
+        let fade = CATransition()
+        fade.type = .fade
+        fade.duration = 0.18
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        shapeView.layer?.add(fade, forKey: "lid")
+        shapeView.image = art
+        shadowView.image = base                       // shadow follows the shape
+
+        // Selection-style outline while hovering (kept on if genuinely selected).
+        let op: Float = hovering ? 1 : (showsSelectionOutline ? 1 : 0)
+        let o = CABasicAnimation(keyPath: "opacity")
+        o.fromValue = haloView.layer?.presentation()?.opacity ?? haloView.layer?.opacity
+        o.toValue = op
+        o.duration = 0.16
+        o.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        haloView.layer?.opacity = op
+        haloView.layer?.add(o, forKey: "fade")
     }
 
     /// Global object drop shadow (mirrors CardItemView.updateShadow): rest vs
