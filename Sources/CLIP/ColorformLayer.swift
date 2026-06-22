@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Colorform's background visualisation. The soft color field is now rendered on
 /// the GPU (`ColorformMetalView` — a gaussian-weighted blend of the bulb colours,
@@ -36,44 +37,44 @@ struct ColorformLayer: View {
 
 // MARK: - Colorform pan / zoom
 
-/// Direct pan/zoom for Colorform — drives the shared `CameraStore` so the GPU
-/// field + labels move. (The native scroll view doesn't drive the camera in this
-/// read-only view mode, so we own navigation here.) Drag = pan, pinch = zoom
-/// about the viewport centre, matching the canvas projection `screen = world·zoom + camOffset`.
-struct ColorformPanZoom: View {
-    @EnvironmentObject var cameraStore: CameraStore
-    @State private var panBase: Camera?
-    @State private var zoomBase: Camera?
-
-    var body: some View {
-        GeometryReader { geo in
-            Color.clear
-                .contentShape(Rectangle())
-                .gesture(
-                    SimultaneousGesture(
-                        DragGesture(minimumDistance: 1)
-                            .onChanged { v in
-                                let base = panBase ?? cameraStore.camera
-                                if panBase == nil { panBase = base }
-                                cameraStore.camera = Camera(x: base.x + v.translation.width,
-                                                            y: base.y + v.translation.height,
-                                                            zoom: base.zoom)
-                            }
-                            .onEnded { _ in panBase = nil },
-                        MagnificationGesture()
-                            .onChanged { scale in
-                                let base = zoomBase ?? cameraStore.camera
-                                if zoomBase == nil { zoomBase = base }
-                                let nz = min(max(base.zoom * scale, 0.05), 8)
-                                let f = nz / max(base.zoom, 0.0001)
-                                let cx = geo.size.width / 2, cy = geo.size.height / 2
-                                cameraStore.camera = Camera(x: cx * (1 - f) + base.x * f,
-                                                            y: cy * (1 - f) + base.y * f,
-                                                            zoom: nz)
-                            }
-                            .onEnded { _ in zoomBase = nil }
-                    )
-                )
-        }
+/// Native scroll/magnify capture for Colorform — drives the shared `CameraStore`
+/// so the GPU field + labels move. (The native scroll view doesn't drive the
+/// camera in this read-only view mode, so we own navigation here.) Two-finger
+/// scroll = pan, pinch = zoom about the cursor — matching `screen = world·zoom + camOffset`.
+private final class ColorformPanZoomView: NSView {
+    var onScroll: (@MainActor (CGFloat, CGFloat) -> Void)?
+    var onMagnify: (@MainActor (CGFloat, CGPoint) -> Void)?
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { self }   // capture nav events
+    override func scrollWheel(with event: NSEvent) {
+        let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+        MainActor.assumeIsolated { onScroll?(dx, dy) }
     }
+    override func magnify(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil), m = event.magnification
+        MainActor.assumeIsolated { onMagnify?(1 + m, p) }
+    }
+}
+
+struct ColorformPanZoom: NSViewRepresentable {
+    @EnvironmentObject var cameraStore: CameraStore
+
+    func makeNSView(context: Context) -> NSView {
+        let v = ColorformPanZoomView()
+        let cam = cameraStore
+        v.onScroll = { dx, dy in
+            let c = cam.camera
+            cam.camera = Camera(x: c.x + dx, y: c.y + dy, zoom: c.zoom)
+        }
+        v.onMagnify = { f, anchor in
+            let base = cam.camera
+            let nz = min(max(base.zoom * f, 0.05), 8)
+            let r = nz / max(base.zoom, 0.0001)
+            cam.camera = Camera(x: anchor.x * (1 - r) + base.x * r,
+                                y: anchor.y * (1 - r) + base.y * r,
+                                zoom: nz)
+        }
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

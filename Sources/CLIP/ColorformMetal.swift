@@ -204,11 +204,13 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
             csum += w * float3(bulbs[i].r, bulbs[i].g, bulbs[i].b);
         }
         float3 col = csum / max(wsum, 1e-6);
-        // Push saturation + a little luminance so the (often muted) extracted card
-        // colours read as the vibrant rainbow of the reference.
+        // Vibrancy: NORMALISE to full value (the extracted card colours are often
+        // dark → that's the "dark bg"), then boost saturation → the luminous
+        // rainbow of the reference instead of muddy darks.
+        float mx = max(col.r, max(col.g, col.b));
+        col = col / max(mx, 0.02) * 0.93;              // lift to near-full brightness
         float lum = dot(col, float3(0.299, 0.587, 0.114));
-        col = mix(float3(lum), col, 1.7);              // saturation ×1.7
-        col = clamp(col * 1.06 + 0.02, 0.0, 1.0);      // slight lift
+        col = clamp(mix(float3(lum), col, 1.45), 0.0, 1.0);   // saturation boost
         return float4(col, 1.0);                       // opaque, full-bleed
     }
     """
