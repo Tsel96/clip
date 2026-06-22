@@ -1592,6 +1592,21 @@ private final class FolderActionBarView: NSView {
          boldBtn, italicBtn, underlineBtn, strikeBtn, eraserBtn]
     }
 
+    private var formatObserver: NSObjectProtocol?
+    deinit { if let o = formatObserver { NotificationCenter.default.removeObserver(o) } }
+
+    /// Reflect the active editor's enabled styles on the toggle buttons (green
+    /// circle = ON, like a selected tool). The eraser is a one-shot action — never
+    /// "enabled" — so it's excluded.
+    private func refreshFormatState() {
+        guard mode == .textFormat else { return }
+        let s = StickyTextFormatting.currentState()
+        boldBtn.setActive(s.bold, animated: true)
+        italicBtn.setActive(s.italic, animated: true)
+        underlineBtn.setActive(s.underline, animated: true)
+        strikeBtn.setActive(s.strike, animated: true)
+    }
+
     override init(frame: NSRect) { super.init(frame: frame); commonInit() }
     required init?(coder: NSCoder) { super.init(coder: coder); commonInit() }
 
@@ -1620,6 +1635,12 @@ private final class FolderActionBarView: NSView {
         underlineBtn.onTap = { StickyTextFormatting.toggleUnderline() }
         strikeBtn.onTap    = { StickyTextFormatting.toggleStrikethrough() }
         eraserBtn.onTap    = { StickyTextFormatting.clearFormatting() }
+        // Light up enabled styles (green circle, like a selected tool) whenever the
+        // editor's selection/format changes.
+        formatObserver = NotificationCenter.default.addObserver(
+            forName: StickyTextFormatting.didChange, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshFormatState()
+            }
         // Native tooltips.
         download.tipText = "Download"
         colorBtn.tipText = "Colour"

@@ -73,6 +73,10 @@ struct StickyRichTextEditor: NSViewRepresentable {
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.isAutomaticTextReplacementEnabled = false
         tv.typingAttributes = Self.defaultAttributes(textColor)
+        tv.selectedTextAttributes = [
+            .backgroundColor: NSColor.selectedTextBackgroundColor,
+            .foregroundColor: NSColor.selectedTextColor,
+        ]
         tv.isEditable = isEditing
         tv.isSelectable = isEditing
         context.coordinator.load(node: node, textColor: textColor)
@@ -131,6 +135,12 @@ struct StickyRichTextEditor: NSViewRepresentable {
             parent.onEndEditing()
         }
 
+        /// Caret / selection moved → the enabled styles may differ; tell the bar to
+        /// re-light its buttons.
+        func textViewDidChangeSelection(_ notification: Notification) {
+            StickyTextFormatting.notifyChanged()
+        }
+
         /// Esc commits + ends editing (parity with the old editor's onExitCommand).
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             if selector == #selector(NSResponder.cancelOperation(_:)) {
@@ -163,6 +173,37 @@ enum StickyTextFormatting {
 
     static var hasActiveEditor: Bool { activeTextView() != nil }
 
+    /// Posted whenever the active editor's formatting MIGHT have changed (a toggle
+    /// or a selection move) — the bottom bar listens and lights up the enabled
+    /// buttons (green circle, like the toolbar's selected tool).
+    static let didChange = Notification.Name("StickyTextFormattingDidChange")
+    static func notifyChanged() { NotificationCenter.default.post(name: didChange, object: nil) }
+
+    /// Which inline styles are currently ON for the selection (or the typing
+    /// attributes when the selection is empty).
+    struct State: Equatable { var bold = false, italic = false, underline = false, strike = false }
+    static func currentState() -> State {
+        guard let tv = activeTextView() else { return State() }
+        let range = tv.selectedRange()
+        let attrs: [NSAttributedString.Key: Any]
+        if range.length == 0 {
+            attrs = tv.typingAttributes
+        } else if let storage = tv.textStorage, range.location < storage.length {
+            attrs = storage.attributes(at: range.location, effectiveRange: nil)
+        } else {
+            attrs = tv.typingAttributes
+        }
+        var s = State()
+        if let f = attrs[.font] as? NSFont {
+            let traits = NSFontManager.shared.traits(of: f)
+            s.bold = traits.contains(.boldFontMask)
+            s.italic = traits.contains(.italicFontMask)
+        }
+        s.underline = ((attrs[.underlineStyle] as? Int) ?? 0) != 0
+        s.strike = ((attrs[.strikethroughStyle] as? Int) ?? 0) != 0
+        return s
+    }
+
     static func toggleBold()   { toggleTrait(.boldFontMask) }
     static func toggleItalic() { toggleTrait(.italicFontMask) }
 
@@ -179,6 +220,7 @@ enum StickyTextFormatting {
             tv.typingAttributes[.font] = on
                 ? fm.convert(cur, toNotHaveTrait: trait)
                 : fm.convert(cur, toHaveTrait: trait)
+            notifyChanged()
             return
         }
 
@@ -197,6 +239,7 @@ enum StickyTextFormatting {
         }
         storage.endEditing()
         tv.didChangeText()
+        notifyChanged()
     }
 
     static func toggleUnderline()     { toggleLine(.underlineStyle) }
@@ -210,6 +253,7 @@ enum StickyTextFormatting {
         if range.length == 0 {
             let cur = (tv.typingAttributes[key] as? Int) ?? 0
             tv.typingAttributes[key] = cur == 0 ? single : 0
+            notifyChanged()
             return
         }
         let curFirst = (storage.attribute(key, at: range.location, effectiveRange: nil) as? Int) ?? 0
@@ -218,6 +262,7 @@ enum StickyTextFormatting {
         storage.addAttribute(key, value: newVal, range: range)
         storage.endEditing()
         tv.didChangeText()
+        notifyChanged()
     }
 
     /// Eraser (Figma 104:593) — strip bold/italic/underline/strike back to the
@@ -227,10 +272,11 @@ enum StickyTextFormatting {
         let color = (tv.typingAttributes[.foregroundColor] as? NSColor) ?? .black
         let attrs = StickyRichTextEditor.defaultAttributes(color)
         let range = tv.selectedRange()
-        if range.length == 0 { tv.typingAttributes = attrs; return }
+        if range.length == 0 { tv.typingAttributes = attrs; notifyChanged(); return }
         storage.beginEditing()
         storage.setAttributes(attrs, range: range)
         storage.endEditing()
         tv.didChangeText()
+        notifyChanged()
     }
 }
