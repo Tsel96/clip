@@ -408,12 +408,13 @@ private final class PropButton: NSView {
         wantsLayer = true
         layer?.masksToBounds = false        // art overflows; never clip the pop
         imageView.image = image
-        for iv in [imageView, hoverImageView] {
+        for iv in [imageView, hoverImageView, selectedImageView] {
             iv.imageScaling = .scaleAxesIndependently
             iv.wantsLayer = true
             addSubview(iv)
         }
         hoverImageView.alphaValue = 0       // hidden until hover
+        selectedImageView.alphaValue = 0    // hidden until selected
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
@@ -429,19 +430,35 @@ private final class PropButton: NSView {
         hoverImageView.alphaValue = 0
     }
 
-    /// Reflects whether this prop's tool (Draw) is the active mode — the 3D art
-    /// pops up a touch. No-op for crossfade props (sticky has no active state).
-    func setActive(_ active: Bool) {
-        guard !usesStateImages, active != isActive else { return }
-        isActive = active
-        refreshScale()
+    /// Marker prop: rest art + the selected art (the rest art already lifted +
+    /// glowing). On hover the rest art slides up `lift`pt (a slide — the SVGs
+    /// differ by exactly a 10pt lift); on select the selected art crossfades in
+    /// over the lifted rest (the glow).
+    func setMarkerStates(rest: NSImage?, selected: NSImage?, lift: CGFloat) {
+        usesMarkerStates = true
+        imageView.image = rest
+        selectedImageView.image = selected
+        selectedImageView.alphaValue = 0
+        markerLift = lift
     }
 
+    /// Reflects whether this prop's tool (Draw) is the active mode.
+    func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        if usesMarkerStates { refreshMarker() }
+        else if !usesStateImages { refreshScale() }
+    }
+
+    private var markerLifted = false
     override var isFlipped: Bool { true }
     override func layout() {
         super.layout()
-        imageView.frame = bounds
+        // Keep the lift through a relayout (flipped view → negative y is up).
+        imageView.frame = CGRect(x: 0, y: markerLifted ? -markerLift : 0,
+                                 width: bounds.width, height: bounds.height)
         hoverImageView.frame = bounds
+        selectedImageView.frame = bounds
     }
 
     // MARK: Hover tracking
@@ -469,7 +486,10 @@ private final class PropButton: NSView {
     }
 
     private func refresh() {
-        if usesStateImages {
+        if usesMarkerStates {
+            refreshMarker()                                        // slide-lift + glow crossfade
+            CLIPSpring.scale(self, to: isPressed ? 0.94 : 1.0, key: "xform")
+        } else if usesStateImages {
             crossfadeHover(isHovered)                              // rest ↔ hover artwork
             CLIPSpring.scale(self, to: isPressed ? 0.94 : 1.0, key: "xform")  // subtle press only
         } else {
@@ -484,6 +504,19 @@ private final class PropButton: NSView {
             ctx.timingFunction = CLIPSpring.easeOutSoft
             ctx.allowsImplicitAnimation = true
             hoverImageView.animator().alphaValue = on ? 1 : 0
+        }
+    }
+
+    /// Marker: slide the base art up on hover/select (the 10pt lift), and
+    /// crossfade the selected art (lift + glow) in when the Draw tool is active.
+    private func refreshMarker() {
+        markerLifted = isHovered || isActive
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CLIPSpring.easeOutSoft
+            ctx.allowsImplicitAnimation = true
+            imageView.animator().setFrameOrigin(CGPoint(x: 0, y: markerLifted ? -markerLift : 0))
+            selectedImageView.animator().alphaValue = isActive ? 1 : 0
         }
     }
 
@@ -602,9 +635,13 @@ private final class MainPillView: NSView {
         // --- Decorative props (clickable: Marker = Draw, Stickers = Sticky) ---
         // Marker button crossfades rest↔hover artwork on hover (Figma 72:36900),
         // same treatment as the sticky button; no active state.
-        markerView.setStateImages(
-            rest:  loadBundleImage(named: "marker-btn-rest"),
-            hover: loadBundleImage(named: "marker-btn-hovered"))
+        // 3 states (Figma marker-rest/hovered/selected, 71×84): rest, the 10pt
+        // lift (hover/select), and the lift + glow (selected). Implemented as a
+        // slide (the lift) + crossfade (the glow).
+        markerView.setMarkerStates(
+            rest:     loadBundleImage(named: "marker-rest"),
+            selected: loadBundleImage(named: "marker-selected"),
+            lift:     10)
         markerView.onTap = { [weak self] in self?.onToolTap?(.draw) }
         addSubview(markerView)
 
@@ -678,9 +715,9 @@ private final class MainPillView: NSView {
         }
 
         // Decorative props (Figma gives positions relative to inner capsule top)
-        // Marker: 66 × 68, at (129, -10) from inner capsule top
-        let markerW: CGFloat = 66
-        let markerH: CGFloat = 68
+        // Marker: 71 × 84 (new marker-* SVGs; the extra height is shadow margin)
+        let markerW: CGFloat = 71
+        let markerH: CGFloat = 84
         markerView.frame = NSRect(
             x: innerOriginX + Self.markerX,
             y: innerOriginY + Self.markerY,
