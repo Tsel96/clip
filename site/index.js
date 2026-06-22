@@ -226,8 +226,45 @@ function wireModal() {
 function wireBgToggle() {
   const btn = document.getElementById('bgToggle');
   if (!btn) return;
+
+  const brand    = document.querySelector('.ui-brand');
+  const topRight = document.querySelector('.ui-top-right');
+  const desc     = document.querySelector('.ui-description');
+  const botRight = document.querySelector('.ui-bottom-right');
+
+  function computeGap(mat) {
+    if (mat) {
+      const vmin = Math.min(window.innerWidth, window.innerHeight) / 100;
+      return Math.min(Math.max(46, 2 * vmin + 26), 62);
+    }
+    return Math.min(Math.max(14, 26 / 2340 * window.innerWidth), 44);
+  }
+  function computeBotGap(mat) {
+    if (mat) return computeGap(true);
+    return Math.min(Math.max(14, 38 / 2340 * window.innerWidth), 56);
+  }
+
+  const SPRING_POS = { type: 'spring', visualDuration: 0.45, bounce: 0.12 };
+
   btn.addEventListener('click', () => {
     document.body.classList.toggle('mat-active');
+    const mat = document.body.classList.contains('mat-active');
+    const g  = computeGap(mat);
+    const bg = computeBotGap(mat);
+
+    if (REDUCE || !M) {
+      if (brand)    Object.assign(brand.style,    { top: g + 'px', left: g + 'px' });
+      if (topRight) Object.assign(topRight.style, { top: g + 'px', right: g + 'px' });
+      if (desc)     Object.assign(desc.style,     { bottom: g + 'px', left: g + 'px' });
+      if (botRight) Object.assign(botRight.style, { bottom: bg + 'px', right: g + 'px' });
+      return;
+    }
+
+    const { animate } = M;
+    animate(brand,    { top: g,  left:  g  }, SPRING_POS);
+    animate(topRight, { top: g,  right: g  }, SPRING_POS);
+    animate(desc,     { bottom: g,  left:  g  }, SPRING_POS);
+    animate(botRight, { bottom: bg, right: g  }, SPRING_POS);
   });
 }
 

@@ -277,23 +277,31 @@ html, body {
 
 .modal-footer {
   flex-shrink: 0;
-  /* gradient fades from transparent → white so the button floats above scroll content */
-  background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, #fff 42%);
-  padding: clamp(36px, calc(64 / 2340 * 100vw), 88px) calc(99 / 2340 * 100vw) clamp(20px, calc(32 / 2340 * 100vw), 44px);
-  margin-top: clamp(-36px, calc(-64 / 2340 * 100vw), -20px);
+  background: linear-gradient(
+    to bottom,
+    rgba(255,255,255,0)   0%,
+    rgba(255,255,255,0.5) 30%,
+    rgba(255,255,255,0.9) 58%,
+    #fff                  78%
+  );
+  padding: clamp(56px, calc(88 / 2340 * 100vw), 116px)
+           calc(99 / 2340 * 100vw)
+           clamp(24px, calc(36 / 2340 * 100vw), 50px)
+           calc(99 / 2340 * 100vw);
+  margin-top: clamp(-56px, calc(-88 / 2340 * 100vw), -30px);
   position: relative;
   z-index: 2;
-  pointer-events: none;   /* gradient area doesn't block scroll */
+  pointer-events: none;
 }
 .modal-footer > * {
   pointer-events: auto;
 }
 
 .modal-download {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
+  width: auto;
   height: var(--pill-h);
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   font-size: var(--fs);
@@ -568,49 +576,6 @@ button.ui-git {
 }
 
 /* ── Canvas mat background ── */
-
-/* Smooth inward slide when mat activates */
-.ui-brand {
-  transition:
-    top  0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    left 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ui-top-right {
-  transition:
-    top   0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    right 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ui-description {
-  transition:
-    bottom 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    left   0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    color  0.6s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ui-bottom-right {
-  transition:
-    bottom 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    right  0.6s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* When mat is active, push elements past the mat border (F ≈ 1.8vmin + some room) */
-body.mat-active .ui-brand {
-  top:  clamp(46px, calc(2vmin + 26px), 62px);
-  left: clamp(46px, calc(2vmin + 26px), 62px);
-}
-body.mat-active .ui-top-right {
-  top:   clamp(46px, calc(2vmin + 26px), 62px);
-  right: clamp(46px, calc(2vmin + 26px), 62px);
-}
-body.mat-active .ui-description {
-  bottom: clamp(46px, calc(2vmin + 26px), 62px);
-  left:   clamp(46px, calc(2vmin + 26px), 62px);
-}
-body.mat-active .ui-bottom-right {
-  bottom: clamp(46px, calc(2vmin + 26px), 62px);
-  right:  clamp(46px, calc(2vmin + 26px), 62px);
-}
-
 body.mat-active {
   background-color: #0d4d3b;
 }
