@@ -343,7 +343,6 @@ struct CollectionCanvas: NSViewRepresentable {
             }
             seenNodeIDs = currentIDs
             didInitialApply = true
-            var removedIntoFolder = false
             if !removedIDs.isEmpty {
                 // A card that left the canvas because it was FILED into a folder
                 // flies INTO that folder (Spatial's "jump inside"); a genuinely
@@ -365,7 +364,6 @@ struct CollectionCanvas: NSViewRepresentable {
                 // (preferred over a fly-into-folder jump).
                 let exiting = deleted.union(filed.values.reduce(into: Set<UUID>()) { $0.formUnion($1) })
                 if !exiting.isEmpty { spawnExitSnapshots(exiting) }
-                removedIntoFolder = !filed.isEmpty
             }
             // World-extent geometry — doesn't affect the data-source count, so it's
             // safe to apply before any batch update.
@@ -379,18 +377,18 @@ struct CollectionCanvas: NSViewRepresentable {
                 overlayHost?.setFrameSize(p.worldBounds.size)
             }
 
-            // Count-change strategy. A PURE insert/delete — no folder-filing, and the
-            // surviving cards keep their relative order — is applied with
-            // `performBatchUpdates` so the SURVIVING item views (and their cached
-            // AVPlayer / WKWebView layers) are NOT re-created or re-parented: that
-            // re-parent is the add/delete video blink. `reloadData` stays the
-            // fallback for reorders / folder-filing (the latter once crashed the
-            // incremental diff with an NSInternalInconsistencyException).
+            // Count-change strategy. An insert/delete/folder-fill that keeps the
+            // surviving cards' relative order is applied with `performBatchUpdates`
+            // so the SURVIVING item views (and their cached AVPlayer / WKWebView
+            // layers) are NOT re-created or re-parented — that re-parent is the
+            // add/delete/fill video blink. The data source is mutated INSIDE the
+            // batch (count-safe), and the folder survivor's count refreshes via the
+            // content pass below. `reloadData` stays the fallback for REORDERS only.
             let oldIDset = Set(oldOrderedIDs)
             let newIDs = p.nodes.map(\.id)
             let orderPreserved = oldOrderedIDs.filter { currentIDs.contains($0) }
                                == newIDs.filter { oldIDset.contains($0) }
-            let pureBatch = countChanged && !removedIntoFolder && orderPreserved
+            let pureBatch = countChanged && orderPreserved
 
             if pureBatch, let cv = collection {
                 let deletedPaths = Set(oldOrderedIDs.enumerated()
@@ -457,11 +455,12 @@ struct CollectionCanvas: NSViewRepresentable {
                 nodes = p.nodes
                 layout?.itemFrames = frames
             }
-            // Content-only refresh: a native card (section/sticky/text) whose
-            // payload changed — e.g. a section recolour via the `c` picker —
-            // doesn't change count or frame, so neither branch above touches it.
-            // Push the new node into the existing native view (no re-host).
-            if !countChanged, let cv = collection {
+            // Content-only refresh: a native card (section/sticky/text/folder) whose
+            // payload changed — e.g. a section recolour, or a FOLDER whose item count
+            // changed when a card was filed (the survivor isn't re-created in the
+            // batch path, so its count must be pushed in here). Runs after a
+            // `pureBatch` too, since that path doesn't re-host survivors.
+            if !countChanged || pureBatch, let cv = collection {
                 for ip in cv.indexPathsForVisibleItems() where ip.item < p.nodes.count {
                     let newNode = p.nodes[ip.item]
                     guard let it = cv.item(at: ip) as? HostingCollectionItem else { continue }

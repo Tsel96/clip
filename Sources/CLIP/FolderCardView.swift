@@ -450,8 +450,8 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         countField.font = .systemFont(ofSize: max(8, h * 0.0714), weight: .light)
         titleField.font = NSFont.monospacedSystemFont(ofSize: max(9, h * 0.0714), weight: .medium)
         countField.sizeToFit(); titleField.sizeToFit()
-        countField.frame.origin = CGPoint(x: pad, y: h * 0.688 + 3)   // +3pt (per user)
-        titleField.frame.origin = CGPoint(x: pad, y: h * 0.768 + 3)
+        countField.frame.origin = CGPoint(x: pad, y: h * 0.688)        // rest position
+        titleField.frame.origin = CGPoint(x: pad, y: h * 0.768)        // (slides +3 on hover)
 
         // Identity-icon chip, lower-right.
         let chip = min(w, h) * 0.20
