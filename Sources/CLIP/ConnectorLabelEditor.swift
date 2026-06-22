@@ -8,14 +8,14 @@ import AppKit
 /// Return / click-outside / focus-loss; cancel on Escape.
 extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
 
-    private static let fieldFontSize: CGFloat = 17       // SF Mono Semibold (Figma link input)
-    private static let innerHeight: CGFloat   = 50       // white input pill (Figma 88-423 h-50)
-    private static let pillPadding: CGFloat   = 4        // green border (→ 58 outer)
-    private static let innerPadL: CGFloat      = 19
-    private static let innerPadR: CGFloat      = 13
-    private static let enterSize: CGFloat      = 22
-    private static let enterGap: CGFloat       = 10
-    private static let minInnerWidth: CGFloat  = 90
+    private static let fieldFontSize: CGFloat = 18       // matches the rendered label (no size jump)
+    private static let innerHeight: CGFloat   = 40       // white input pill (≈ the selected pill height)
+    private static let pillPadding: CGFloat   = 4        // green border
+    private static let innerPadL: CGFloat      = 16
+    private static let innerPadR: CGFloat      = 12
+    private static let enterSize: CGFloat      = 20
+    private static let enterGap: CGFloat       = 9
+    private static let minInnerWidth: CGFloat  = 84
     /// #3DA726 pill, #16181A text.
     private static let pillGreen = NSColor(srgbRed: 0.239, green: 0.655, blue: 0.149, alpha: 1)
     private static let labelTextColor = NSColor(srgbRed: 0.086, green: 0.094, blue: 0.102, alpha: 1)
@@ -104,19 +104,23 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
               let container = container, let host = scroll?.superview,
               let mid = connectorController?.midpoints[cid] else { return }
         let center = container.convert(mid, to: host)
+        // DAMPENED zoom (√mag) — matches the rendered label, so the editor scales
+        // gently with zoom instead of staying a fixed (too-big-when-zoomed-out) size.
+        let s = sqrt(max(scroll?.magnification ?? 1, 0.0001))
 
-        let f = NSFont.monospacedSystemFont(ofSize: Self.fieldFontSize, weight: .semibold)
+        let f = NSFont.monospacedSystemFont(ofSize: Self.fieldFontSize * s, weight: .semibold)
         field.font = f
         field.currentEditor()?.font = f
         field.sizeToFit()
         let textW = max(8, field.frame.width)
         let fieldH = field.frame.height
 
-        let pad = Self.pillPadding
-        let innerH = Self.innerHeight
+        let pad = Self.pillPadding * s
+        let innerH = Self.innerHeight * s
+        let enterSz = Self.enterSize * s
         let pillH = innerH + pad * 2
-        let innerW = max(Self.minInnerWidth,
-                         Self.innerPadL + textW + Self.enterGap + Self.enterSize + Self.innerPadR)
+        let innerW = max(Self.minInnerWidth * s,
+                         Self.innerPadL * s + textW + Self.enterGap * s + enterSz + Self.innerPadR * s)
         let pillW = innerW + pad * 2
 
         pill.frame = CGRect(x: (center.x - pillW / 2).rounded(),
@@ -128,10 +132,11 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         inner.frame = CGRect(x: pad, y: pad, width: innerW, height: innerH)
         inner.layer?.cornerRadius = innerH / 2
 
-        field.frame = CGRect(x: Self.innerPadL, y: (innerH - fieldH) / 2, width: textW, height: fieldH)
-        enter.frame = CGRect(x: innerW - Self.innerPadR - Self.enterSize,
-                             y: (innerH - Self.enterSize) / 2,
-                             width: Self.enterSize, height: Self.enterSize)
+        field.frame = CGRect(x: Self.innerPadL * s, y: (innerH - fieldH) / 2, width: textW, height: fieldH)
+        enter.frame = CGRect(x: innerW - Self.innerPadR * s - enterSz,
+                             y: (innerH - enterSz) / 2, width: enterSz, height: enterSz)
+        // Enter icon fully opaque only once there's text (Figma — faded placeholder state).
+        enter.alphaValue = field.stringValue.isEmpty ? 0.4 : 1.0
     }
 
     func finishConnectorLabelEdit(commit: Bool) {

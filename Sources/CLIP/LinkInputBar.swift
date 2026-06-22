@@ -93,7 +93,7 @@ struct LinkInputBar: View {
                     }
                 }
                 .frame(width: 24, height: 24)
-                .opacity(0.4)
+                .opacity(text.isEmpty ? 0.4 : 1.0)   // fully opaque once there's text
             }
             .buttonStyle(.plain)
             .help("Add link to canvas")

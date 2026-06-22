@@ -279,11 +279,13 @@ final class ConnectorOverlayController {
             b.labelBG.isHidden = true; b.labelWhite.isHidden = true; b.labelText.isHidden = true
             return
         }
-        b.labelBG.isHidden = false; b.labelText.isHidden = false
+        b.labelText.isHidden = false
 
         let shown = text.uppercased()              // Figma: uppercase label text
-        // Screen-CONSTANT size (÷mag): the label stays the same size at any zoom.
-        let fs = Self.labelFontSize / mag
+        // DAMPENED zoom: content size = base / √mag → on-screen size = base · √mag, so
+        // it shrinks when zooming out but far less than the cards (which scale by mag).
+        let m = sqrt(mag)
+        let fs = Self.labelFontSize / m
         let font = NSFont.monospacedSystemFont(ofSize: fs, weight: .semibold)   // SF Mono Semibold (Figma)
         let measured = (shown as NSString).size(withAttributes: [.font: font])
         func centred(_ w: CGFloat, _ h: CGFloat) -> CGRect {
@@ -292,8 +294,9 @@ final class ConnectorOverlayController {
 
         if selected {
             // Green pill + white inner pill (Figma 100-319).
-            let whitePadH = 14 / mag, whitePadV = 8 / mag, greenPad = 4 / mag
+            let whitePadH = 14 / m, whitePadV = 8 / m, greenPad = 4 / m
             let whiteW = measured.width + whitePadH * 2, whiteH = measured.height + whitePadV * 2
+            b.labelBG.isHidden = false
             b.labelBG.frame = centred(whiteW + greenPad * 2, whiteH + greenPad * 2)
             b.labelBG.cornerRadius = (whiteH + greenPad * 2) / 2
             b.labelBG.backgroundColor = Self.green.cgColor
@@ -301,11 +304,8 @@ final class ConnectorOverlayController {
             b.labelWhite.frame = centred(whiteW, whiteH)
             b.labelWhite.cornerRadius = whiteH / 2
         } else {
-            // Plain label — a canvas-coloured chip masks the line (Figma 88-482).
-            let padH: CGFloat = 10 / mag, padV: CGFloat = 5 / mag
-            b.labelBG.frame = centred(measured.width + padH * 2, measured.height + padV * 2)
-            b.labelBG.cornerRadius = 6 / mag
-            b.labelBG.backgroundColor = Self.labelBackground.cgColor
+            // Rest: plain text on the line, NO background chip (Figma 88-482).
+            b.labelBG.isHidden = true
             b.labelWhite.isHidden = true
         }
 
