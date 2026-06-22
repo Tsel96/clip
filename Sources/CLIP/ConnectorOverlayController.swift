@@ -148,10 +148,10 @@ final class ConnectorOverlayController {
         lastFrames = nodeFrames
         lastSelected = selected
         lastMag = max(magnification, 0.0001)
-        // The committed model now carries the dragged label's offset, so drop any
-        // live drag offset (clearing it on mouse-up instead would briefly snap the
-        // label back to the midpoint before this update lands).
-        liveLabelDrag = nil
+        // NB: do NOT clear `liveLabelDrag` here — an unrelated refresh mid-drag
+        // would wipe the offset and the label would stop following the cursor.
+        // It's cleared explicitly by `commitLabelOffset` on mouse-up (which also
+        // patches the cache so there's no snap-back).
         redraw()
     }
 
@@ -289,6 +289,16 @@ final class ConnectorOverlayController {
     /// Live label drag — visual only, redraws immediately; cleared on drop.
     func setLiveLabelOffset(id: UUID, offset: CGPoint) { liveLabelDrag = (id, offset); redraw() }
     func clearLiveLabelOffset() { liveLabelDrag = nil; redraw() }
+    /// Commit a dragged label offset: patch the cached connector so the redraw
+    /// keeps it in place, then clear the live drag (no snap-back before the model
+    /// round-trips). The undoable model write happens separately via the config.
+    func commitLabelOffset(_ id: UUID, _ offset: CGPoint) {
+        if let i = lastConnectors.firstIndex(where: { $0.id == id }) {
+            lastConnectors[i].labelOffset = offset
+        }
+        liveLabelDrag = nil
+        redraw()
+    }
 
     /// The connector whose line passes within `tolerance` (content units) of
     /// `point` — used by CanvasInputView to select / edit / delete a connector.

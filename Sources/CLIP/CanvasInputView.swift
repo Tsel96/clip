@@ -507,9 +507,8 @@ final class CanvasInputView: NSView {
                                   y: labelDragStartOffset.y + (pt.y - labelDragStart.y))
                 let moved = abs(off.x - labelDragStartOffset.x) > 1 || abs(off.y - labelDragStartOffset.y) > 1
                 if moved {
-                    // Keep the live offset showing; the model-driven `update` clears
-                    // it (no snap-back). Commit persists it.
-                    p.onMoveConnectorLabel(id, off)
+                    p.onMoveConnectorLabel(id, off)                              // persist (undoable)
+                    coordinator?.connectorController?.commitLabelOffset(id, off) // patch cache + clear live (no snap-back)
                 } else {
                     p.onSelectConnector(id)
                     coordinator?.connectorController?.clearLiveLabelOffset()

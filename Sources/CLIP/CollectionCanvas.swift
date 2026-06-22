@@ -547,16 +547,24 @@ struct CollectionCanvas: NSViewRepresentable {
         func endLiveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
             guard let cv = collection, let layout = layout else { return }
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
+            CATransaction.begin(); CATransaction.setDisableActions(true)
             for (id, sp) in startPos {
                 guard let idx = nodes.firstIndex(where: { $0.id == id }), idx < layout.itemFrames.count
                 else { continue }
                 let n = nodes[idx]
-                layout.itemFrames[idx] = CGRect(x: sp.x + dx - minX, y: sp.y + dy - minY,
-                                                width: max(1, n.width), height: max(1, n.height ?? 120))
-                // Clear the live drag transform explicitly (don't rely on reloadData
-                // to discard it — required if item recycling is ever enabled).
-                cv.item(at: IndexPath(item: idx, section: 0))?.view.layer?.transform = CATransform3DIdentity
+                let f = CGRect(x: sp.x + dx - minX, y: sp.y + dy - minY,
+                               width: max(1, n.width), height: max(1, n.height ?? 120))
+                layout.itemFrames[idx] = f
+                // Commit the move by repositioning the item VIEW DIRECTLY (and clear
+                // its live-drag transform) — NOT via `reloadData`, which re-parents
+                // the cached AVPlayer video views and flashes their AVPlayerLayer
+                // black for a frame (the drag-release / quick-select video blink).
+                if let item = cv.item(at: IndexPath(item: idx, section: 0)) {
+                    item.view.layer?.transform = CATransform3DIdentity
+                    item.view.frame = f
+                }
             }
+            CATransaction.commit()
             // Redraw connectors at the COMMITTED positions and clear the live
             // drag offset in one shot (avoids a double-offset / snap-back flicker
             // before SwiftUI's updateNSView round-trips the new model positions).
@@ -573,7 +581,9 @@ struct CollectionCanvas: NSViewRepresentable {
                           magnification: scroll?.magnification ?? 1)
             }
             layout.invalidateLayout()
-            cv.reloadData()
+            // NB: no `reloadData()` here — the moved item views were repositioned
+            // directly above, so videos never re-parent (no blink). The model
+            // round-trip via `apply`'s `framesChanged` path confirms the commit.
         }
 
         /// Spatial-style zoom-OUT on delete: the collection removes the item
