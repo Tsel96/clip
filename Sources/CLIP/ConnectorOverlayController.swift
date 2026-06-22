@@ -24,6 +24,9 @@ final class ConnectorOverlayController {
     /// Midpoint of each connector in content space — used by the double-click
     /// label editor to position its field. Refreshed every `redraw`.
     private(set) var midpoints: [UUID: CGPoint] = [:]
+    /// Clickable label region per connector (content space) — so clicking the
+    /// label text selects the connector even in the rest (no-pill) state.
+    private(set) var labelHitRects: [UUID: CGRect] = [:]
 
     // Cached inputs from the last full `update`, so a live card drag can redraw
     // from them + `liveOffsets` without rebuilding from the committed model.
@@ -80,13 +83,14 @@ final class ConnectorOverlayController {
 
     func showHoverDot(at point: CGPoint, mag: CGFloat) {
         hoverGen += 1
-        let d = Self.hoverDotDiameter / mag
+        let dz = sqrt(mag)                   // dampened zoom, matching the source port + labels
+        let d = Self.hoverDotDiameter / dz
         let wasHidden = hoverDot.isHidden
         // Centred bounds + position so the scale spring grows from the dot's centre.
         CATransaction.begin(); CATransaction.setDisableActions(true)
         hoverDot.bounds = CGRect(x: 0, y: 0, width: d, height: d)
         hoverDot.position = point
-        hoverDot.lineWidth = Self.hoverDotRing / mag
+        hoverDot.lineWidth = Self.hoverDotRing / dz
         hoverDot.path = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: d, height: d), transform: nil)
         hoverDot.transform = CATransform3DIdentity
         hoverDot.isHidden = false
@@ -148,6 +152,7 @@ final class ConnectorOverlayController {
         let mag = lastMag
         var seen = Set<UUID>()
         var mids: [UUID: CGPoint] = [:]
+        var lblRects: [UUID: CGRect] = [:]
 
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for c in lastConnectors {
@@ -171,15 +176,20 @@ final class ConnectorOverlayController {
             b.arrow.path = arrowPath(tip: route.arrowTip, from: route.arrowFrom, mag: mag)
             b.arrow.fillColor = color
 
-            // Source port (Figma 88-480): green ring + yellow centre, screen-constant.
-            let d = Self.dotDiameter / mag
-            b.dot.lineWidth = Self.dotRing / mag
+            // Source port (Figma 88-480): green ring + yellow centre, DAMPENED zoom
+            // (√mag) like the labels — shrinks gently instead of looking huge zoomed out.
+            let dz = sqrt(mag)
+            let d = Self.dotDiameter / dz
+            b.dot.lineWidth = Self.dotRing / dz
             b.dot.path = CGPath(ellipseIn: CGRect(x: route.sourceAnchor.x - d / 2,
                                                   y: route.sourceAnchor.y - d / 2,
                                                   width: d, height: d), transform: nil)
 
-            layoutLabel(b, text: c.label, center: route.midpoint, mag: mag, selected: isSel)
+            if let r = layoutLabel(b, text: c.label, center: route.midpoint, mag: mag, selected: isSel) {
+                lblRects[c.id] = r
+            }
         }
+        labelHitRects = lblRects
         // Drop layers for connectors that no longer exist.
         for (id, b) in bundles where !seen.contains(id) {
             b.line.removeFromSuperlayer(); b.arrow.removeFromSuperlayer()
@@ -231,6 +241,8 @@ final class ConnectorOverlayController {
     /// The connector whose line passes within `tolerance` (content units) of
     /// `point` — used by CanvasInputView to select / edit / delete a connector.
     func hitTest(_ point: CGPoint, tolerance: CGFloat) -> UUID? {
+        // A click on the label region counts as a hit on its connector.
+        for (id, rect) in labelHitRects where rect.contains(point) { return id }
         for (id, b) in bundles {
             guard let path = b.line.path else { continue }
             let outline = path.copy(strokingWithWidth: max(tolerance, 1),
@@ -303,10 +315,11 @@ final class ConnectorOverlayController {
     /// the cards / Obsidian). A subtle canvas-coloured chip masks the line behind
     /// the dark text. Uses an attributed string so the font + colour render
     /// reliably (a bare `CATextLayer.font = NSFont` often draws nothing).
-    private func layoutLabel(_ b: Bundle, text: String, center: CGPoint, mag: CGFloat, selected: Bool) {
+    @discardableResult
+    private func layoutLabel(_ b: Bundle, text: String, center: CGPoint, mag: CGFloat, selected: Bool) -> CGRect? {
         guard !text.isEmpty else {
             b.labelBG.isHidden = true; b.labelWhite.isHidden = true; b.labelText.isHidden = true
-            return
+            return nil
         }
         b.labelText.isHidden = false
 
@@ -344,6 +357,9 @@ final class ConnectorOverlayController {
             .foregroundColor: Self.labelTextColor      // Figma #16181A
         ])
         b.labelText.contentsScale = 3              // crisp when zoomed in
+        // Clickable region (a touch larger than the glyphs) so a click on the label
+        // selects the connector even in the rest (no-pill) state.
+        return centred(measured.width + 18 / m, measured.height + 14 / m)
     }
 
     // MARK: - Label line gap
@@ -360,11 +376,13 @@ final class ConnectorOverlayController {
     /// in a clean break in the line (Figma — line interrupts under the label).
     private func gappedLinePath(_ r: BezierRoute, gap: CGFloat) -> CGPath {
         let p0 = r.sourceAnchor, p1 = r.control1, p2 = r.control2, p3 = r.arrowFrom
-        let chord = hypot(p3.x - p0.x, p3.y - p0.y)
-        let net = hypot(p1.x - p0.x, p1.y - p0.y) + hypot(p2.x - p1.x, p2.y - p1.y)
-                + hypot(p3.x - p2.x, p3.y - p2.y)
-        let len = max((chord + net) / 2, 1)            // cheap cubic-length estimate
-        let tHalf = min(0.42, (gap / 2) / len)
+        // Convert the fixed-width gap to a t-range using the LOCAL speed |B'(0.5)|
+        // (the curve is parameterised by t, not arc length) so it tracks the text
+        // width even for long labels.
+        let vx = 0.75 * (p1.x - p0.x) + 1.5 * (p2.x - p1.x) + 0.75 * (p3.x - p2.x)
+        let vy = 0.75 * (p1.y - p0.y) + 1.5 * (p2.y - p1.y) + 0.75 * (p3.y - p2.y)
+        let speed = max(hypot(vx, vy), 1)
+        let tHalf = min(0.47, (gap / 2) / speed)
         let path = CGMutablePath()
         let s1 = Self.subCurve(p0, p1, p2, p3, 0, 0.5 - tHalf)
         path.move(to: s1.0); path.addCurve(to: s1.3, control1: s1.1, control2: s1.2)
