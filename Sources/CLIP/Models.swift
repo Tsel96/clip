@@ -365,6 +365,19 @@ struct DrawingStroke: Equatable, Codable {
     var points: [CGPoint]
     var color: StrokeColor
     var width: CGFloat
+    /// < 1 = a translucent highlighter (Freeform-style marker); 1 = opaque pen.
+    var opacity: CGFloat = 1
+
+    init(points: [CGPoint], color: StrokeColor, width: CGFloat, opacity: CGFloat = 1) {
+        self.points = points; self.color = color; self.width = width; self.opacity = opacity
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        points = try c.decode([CGPoint].self, forKey: .points)
+        color = try c.decode(StrokeColor.self, forKey: .color)
+        width = try c.decode(CGFloat.self, forKey: .width)
+        opacity = try c.decodeIfPresent(CGFloat.self, forKey: .opacity) ?? 1   // old strokes = opaque
+    }
 }
 
 /// Pre-defined draw colors. Not using `Color` directly because it
@@ -382,6 +395,8 @@ struct StrokeColor: Equatable, Hashable, Codable {
     static let pink   = StrokeColor(red: 0.925, green: 0.282, blue: 0.600)
     static let cyan   = StrokeColor(red: 0.024, green: 0.714, blue: 0.831)
     static let black  = StrokeColor(red: 0.106, green: 0.106, blue: 0.122)
+    /// Marker / highlighter yellow (drawn translucent + wide).
+    static let highlighter = StrokeColor(red: 1.0, green: 0.93, blue: 0.25)
 
     static let palette: [StrokeColor] = [.blue, .red, .green, .amber, .purple, .pink, .cyan, .black]
 

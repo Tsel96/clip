@@ -352,7 +352,7 @@ struct CanvasView: View {
                             drawColor: {
                                 let c = state.drawColor
                                 return NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green),
-                                               blue: CGFloat(c.blue), alpha: 1)
+                                               blue: CGFloat(c.blue), alpha: state.drawOpacity)
                             },
                             drawWidth: { state.drawWidth },
                             onCommitStroke: { world in state.commitStroke(worldPoints: world) },

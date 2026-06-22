@@ -331,7 +331,7 @@ final class CardDrawingContentView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext, stroke.points.count > 1 else { return }
         ctx.addPath(smoothCGPath(through: stroke.points))
         ctx.setStrokeColor(NSColor(srgbRed: stroke.color.red, green: stroke.color.green,
-                                   blue: stroke.color.blue, alpha: 1).cgColor)
+                                   blue: stroke.color.blue, alpha: stroke.opacity).cgColor)
         ctx.setLineWidth(stroke.width)
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)

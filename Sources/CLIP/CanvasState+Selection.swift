@@ -27,7 +27,7 @@ extension CanvasState {
 
         let local = simplified.map { CGPoint(x: $0.x - bounds.minX,
                                               y: $0.y - bounds.minY) }
-        let stroke = DrawingStroke(points: local, color: drawColor, width: drawWidth)
+        let stroke = DrawingStroke(points: local, color: drawColor, width: drawWidth, opacity: drawOpacity)
 
         withUndoable {
             nodes.append(.drawing(stroke: stroke,

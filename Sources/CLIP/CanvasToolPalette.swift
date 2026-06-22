@@ -1181,8 +1181,13 @@ struct _PaletteRepresentable: NSViewRepresentable {
 
     private func wireCallbacks(_ v: CanvasToolPaletteView, state: CanvasState) {
         v.onToolTap = { mode in
-            // The Marker prop = Draw, with the yellow/amber marker colour.
-            if mode == .draw { state.drawColor = .amber }
+            // The Marker prop = Draw → a Freeform-style yellow highlighter:
+            // wide, translucent yellow stroke.
+            if mode == .draw {
+                state.drawColor = .highlighter
+                state.drawWidth = 18
+                state.drawOpacity = 0.4
+            }
             withAnimation(Motion.feedback) { state.toolMode = mode }
         }
         v.onFolderTap = { state.addFolder() }   // the Folder button

@@ -635,6 +635,7 @@ final class CanvasState: ObservableObject {
     @Published var toolMode: ToolMode = .select
     @Published var drawColor: StrokeColor = .blue
     @Published var drawWidth: CGFloat = 3
+    @Published var drawOpacity: CGFloat = 1   // < 1 = highlighter (marker)
 
     // MARK: - Colorform mode (transient — not persisted)
 

@@ -12,7 +12,7 @@ struct DrawingNodeView: View {
         ZStack(alignment: .topTrailing) {
             PathMath.smoothPath(through: stroke.points)
                 .stroke(
-                    stroke.color.swiftUIColor,
+                    stroke.color.swiftUIColor.opacity(stroke.opacity),
                     style: StrokeStyle(
                         lineWidth: stroke.width,
                         lineCap: .round,
