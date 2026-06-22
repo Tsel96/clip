@@ -203,9 +203,10 @@ final class ConnectorOverlayController {
             fullPath.move(to: p0); fullPath.addCurve(to: p3, control1: c1, control2: c2)
 
             // Break the line under the label (at the curve point nearest the label).
+            let lblBox = labelGapBox(c.label, mag: mag, selected: isSel)
             b.line.path = hasLabel
                 ? gappedLinePath(p0: p0, p1: c1, p2: c2, p3: p3, labelCenter: labelCenter,
-                                 gap: labelGapWidth(c.label, mag: mag, selected: isSel))
+                                 labelW: lblBox.w, labelH: lblBox.h)
                 : fullPath
             b.line.lineWidth = (isSel ? Self.selectedLineWidth : Self.screenLineWidth) / mag
             b.line.strokeColor = color
