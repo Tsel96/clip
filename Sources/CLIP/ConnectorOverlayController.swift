@@ -180,8 +180,12 @@ final class ConnectorOverlayController {
             if let o = liveOffsets[c.targetID] { t.origin.x += o.x; t.origin.y += o.y }
             seen.insert(c.id)
             let isSel = lastSelected.contains(c.id)
+            // Standoff is screen-constant (÷mag) so the line always ends where the
+            // (also screen-constant) arrowhead begins — otherwise at high zoom the
+            // 7-content-unit standoff balloons to a big gap before the arrow.
             let route = ConnectorPathMath.route(source: s, target: t,
-                                                sourceSide: c.sourceSide, targetSide: c.targetSide)
+                                                sourceSide: c.sourceSide, targetSide: c.targetSide,
+                                                standoff: ConnectorPathMath.standoffDistance / mag)
 
             let b = bundles[c.id] ?? makeBundle(for: c.id)
             let color = (isSel ? Self.greenSelected : Self.green).cgColor
@@ -265,7 +269,8 @@ final class ConnectorOverlayController {
             previewLine = line; previewArrow = arrow
         }
         let route = ConnectorPathMath.route(source: sourceRect, target: targetRect,
-                                            sourceSide: sourceSide, targetSide: targetSide)
+                                            sourceSide: sourceSide, targetSide: targetSide,
+                                            standoff: ConnectorPathMath.standoffDistance / mag)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         previewLine?.path = route.path
         previewLine?.lineWidth = Self.screenLineWidth / mag

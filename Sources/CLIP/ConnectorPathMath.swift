@@ -78,13 +78,14 @@ enum ConnectorPathMath {
 
     /// Build the bezier between two rects. Sides auto-derived unless supplied.
     static func route(source: CGRect, target: CGRect,
-                      sourceSide: ConnSide? = nil, targetSide: ConnSide? = nil) -> BezierRoute {
+                      sourceSide: ConnSide? = nil, targetSide: ConnSide? = nil,
+                      standoff: CGFloat = standoffDistance) -> BezierRoute {
         let ss = sourceSide ?? bestSide(of: source, toward: target)
         let ts = targetSide ?? bestSide(of: target, toward: source)
         let s  = sideCenter(of: source, ss)
         let t  = sideCenter(of: target, ts)
-        let so = standoff(s, ss)
-        let to = standoff(t, ts)
+        let so = self.standoff(s, ss, standoff)
+        let to = self.standoff(t, ts, standoff)
         let dist = hypot(to.x - so.x, to.y - so.y)
         let arm = max(armMin, dist * armFactor)
         let cp1 = control(so, ss, arm)

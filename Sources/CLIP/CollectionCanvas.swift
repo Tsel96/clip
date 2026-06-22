@@ -341,6 +341,7 @@ struct CollectionCanvas: NSViewRepresentable {
             }
             seenNodeIDs = currentIDs
             didInitialApply = true
+            var removedIntoFolder = false
             if !removedIDs.isEmpty {
                 // A card that left the canvas because it was FILED into a folder
                 // flies INTO that folder (Spatial's "jump inside"); a genuinely
@@ -360,9 +361,10 @@ struct CollectionCanvas: NSViewRepresentable {
                 }
                 if !deleted.isEmpty { spawnExitSnapshots(deleted) }
                 for (fid, cards) in filed { spawnFolderDropSnapshots(cards, into: fid) }
+                removedIntoFolder = !filed.isEmpty
             }
-            nodes = p.nodes
-            layout?.itemFrames = frames
+            // World-extent geometry — doesn't affect the data-source count, so it's
+            // safe to apply before any batch update.
             layout?.contentSize = p.worldBounds.size
             (collection as? WideCollectionView)?.contentWidth = p.worldBounds.size.width
             // Keep the document container + overlay's content-coordinate camera
@@ -372,20 +374,46 @@ struct CollectionCanvas: NSViewRepresentable {
                 collection?.setFrameSize(p.worldBounds.size)
                 overlayHost?.setFrameSize(p.worldBounds.size)
             }
-            if countChanged {
-                // Items added / removed / filtered (e.g. a card filed into a folder
-                // disappears from `canvasDisplayNodes`). `reloadData` is the only
-                // update that can't desync the data-source count from the batch ops:
-                // the incremental `performBatchUpdates` diff raised an
-                // NSInternalInconsistencyException on the folder count-change (the
-                // data-source count and the delete op got out of sync inside a
-                // re-entrant layout pass). Web / video cards reuse their cached
-                // views across the reload (WebViewCache / PlayerCache), so this
-                // does NOT reintroduce the add/delete blink.
-                _ = (oldOrderedIDs, currentIDs)   // (kept for the diff comment above)
+
+            // Count-change strategy. A PURE insert/delete — no folder-filing, and the
+            // surviving cards keep their relative order — is applied with
+            // `performBatchUpdates` so the SURVIVING item views (and their cached
+            // AVPlayer / WKWebView layers) are NOT re-created or re-parented: that
+            // re-parent is the add/delete video blink. `reloadData` stays the
+            // fallback for reorders / folder-filing (the latter once crashed the
+            // incremental diff with an NSInternalInconsistencyException).
+            let oldIDset = Set(oldOrderedIDs)
+            let newIDs = p.nodes.map(\.id)
+            let orderPreserved = oldOrderedIDs.filter { currentIDs.contains($0) }
+                               == newIDs.filter { oldIDset.contains($0) }
+            let pureBatch = countChanged && !removedIntoFolder && orderPreserved
+
+            if pureBatch, let cv = collection {
+                let deletedPaths = Set(oldOrderedIDs.enumerated()
+                    .filter { !currentIDs.contains($0.element) }
+                    .map { IndexPath(item: $0.offset, section: 0) })
+                let insertedPaths = Set(newIDs.enumerated()
+                    .filter { !oldIDset.contains($0.element) }
+                    .map { IndexPath(item: $0.offset, section: 0) })
+                cv.performBatchUpdates({
+                    // Mutate the data source INSIDE the batch: NSCollectionView reads
+                    // the OLD count at entry and the NEW count after the block, so the
+                    // delete/insert ops must straddle the `nodes` swap (deletes index
+                    // the old array, inserts the new — per AppKit's contract).
+                    nodes = p.nodes
+                    layout?.itemFrames = frames
+                    layout?.invalidateLayout()
+                    if !deletedPaths.isEmpty { cv.deleteItems(at: deletedPaths) }
+                    if !insertedPaths.isEmpty { cv.insertItems(at: insertedPaths) }
+                }, completionHandler: nil)
+            } else if countChanged {
+                nodes = p.nodes
+                layout?.itemFrames = frames
                 layout?.invalidateLayout()
                 collection?.reloadData()
             } else if framesChanged {
+                nodes = p.nodes
+                layout?.itemFrames = frames
                 // Position/size change (drag, resize). Refresh the layout cache…
                 layout?.invalidateLayout()
                 if let cv = collection {
@@ -418,6 +446,12 @@ struct CollectionCanvas: NSViewRepresentable {
                         }
                     }
                 }
+            } else {
+                // No count/frame change (content-only — e.g. a section recolour or
+                // sticky edit). Keep the data source + layout in sync; the refresh
+                // below pushes the new payload into the existing item in place.
+                nodes = p.nodes
+                layout?.itemFrames = frames
             }
             // Content-only refresh: a native card (section/sticky/text) whose
             // payload changed — e.g. a section recolour via the `c` picker —
