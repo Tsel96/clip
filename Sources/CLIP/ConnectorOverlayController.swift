@@ -457,19 +457,24 @@ final class ConnectorOverlayController {
 
     // MARK: - Label line gap
 
-    /// Width (content units) of the gap the line should leave for the label.
-    private func labelGapWidth(_ text: String, mag: CGFloat, selected: Bool) -> CGFloat {
+    /// The label's bounding box (content units) incl. breathing room. The line gap
+    /// is the box's extent PROJECTED onto the line direction (computed in
+    /// `gappedLinePath`), so a vertical connector through a wide label only breaks
+    /// for the label's HEIGHT — not its full width (the "huge vertical gap" bug).
+    private func labelGapBox(_ text: String, mag: CGFloat, selected: Bool) -> (w: CGFloat, h: CGFloat) {
         let m = sqrt(mag)
         let font = NSFont.monospacedSystemFont(ofSize: Self.labelFontSize / m, weight: .semibold)
-        let w = (text.uppercased() as NSString).size(withAttributes: [.font: font]).width
-        return w + (selected ? 44 : 22) / m            // text + the pill / breathing room
+        let size = (text.uppercased() as NSString).size(withAttributes: [.font: font])
+        let breathing = (selected ? 44 : 22) / m       // pill / breathing room
+        return (size.width + breathing, size.height + breathing)
     }
 
-    /// The bezier with a `gap` removed at the curve point NEAREST the label, so the
+    /// The bezier with a gap removed at the curve point NEAREST the label, so the
     /// break sits under the label wherever it's been dragged (Figma — line
-    /// interrupts under the label).
+    /// interrupts under the label). The gap length = the label box's extent along
+    /// the LOCAL line direction, so it's tight for any connector orientation.
     private func gappedLinePath(p0: CGPoint, p1: CGPoint, p2: CGPoint, p3: CGPoint,
-                                labelCenter: CGPoint, gap: CGFloat) -> CGPath {
+                                labelCenter: CGPoint, labelW: CGFloat, labelH: CGFloat) -> CGPath {
         func at(_ t: CGFloat) -> CGPoint {
             let u = 1 - t, a = (1-t)*(1-t)*(1-t), b = 3*u*u*t, c = 3*u*t*t, d = t*t*t
             return CGPoint(x: a*p0.x + b*p1.x + c*p2.x + d*p3.x,
@@ -488,6 +493,11 @@ final class ConnectorOverlayController {
         let vx = 3*u*u*(p1.x-p0.x) + 6*u*tStar*(p2.x-p1.x) + 3*tStar*tStar*(p3.x-p2.x)
         let vy = 3*u*u*(p1.y-p0.y) + 6*u*tStar*(p2.y-p1.y) + 3*tStar*tStar*(p3.y-p2.y)
         let speed = max(hypot(vx, vy), 1)
+        // Gap length = the label box's extent along the LOCAL line direction
+        // (support width of an axis-aligned box): |dirx|·W + |diry|·H. A horizontal
+        // line removes the label WIDTH; a vertical line only the HEIGHT.
+        let dirx = abs(vx) / speed, diry = abs(vy) / speed
+        let gap = dirx * labelW + diry * labelH
         let tHalf = (gap / 2) / speed
         let ta = max(0, tStar - tHalf), tb = min(1, tStar + tHalf)
         let path = CGMutablePath()
