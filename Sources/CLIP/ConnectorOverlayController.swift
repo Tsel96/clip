@@ -148,6 +148,10 @@ final class ConnectorOverlayController {
         lastFrames = nodeFrames
         lastSelected = selected
         lastMag = max(magnification, 0.0001)
+        // The committed model now carries the dragged label's offset, so drop any
+        // live drag offset (clearing it on mouse-up instead would briefly snap the
+        // label back to the midpoint before this update lands).
+        liveLabelDrag = nil
         redraw()
     }
 

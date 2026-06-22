@@ -304,6 +304,16 @@ final class CanvasInputView: NSView {
             mode = .idle
             return
         }
+        // Single click ON a connector LABEL → drag-reposition it (works in SELECT
+        // mode, not only the connector tool — the line re-breaks under it live).
+        if event.clickCount == 1, p.useNativeConnectors,
+           let cid = coordinator?.connectorController?.labelHitTest(pt) {
+            mode = .moveLabel
+            labelDragID = cid
+            labelDragStart = pt
+            labelDragStartOffset = coordinator?.connectorController?.storedLabelOffset(cid) ?? .zero
+            return
+        }
         // Corner / edge resize on the single selected resizable node.
         if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
            isResizable(sel), let g = grip(at: pt, of: sel, p) {
@@ -496,8 +506,14 @@ final class CanvasInputView: NSView {
                 let off = CGPoint(x: labelDragStartOffset.x + (pt.x - labelDragStart.x),
                                   y: labelDragStartOffset.y + (pt.y - labelDragStart.y))
                 let moved = abs(off.x - labelDragStartOffset.x) > 1 || abs(off.y - labelDragStartOffset.y) > 1
-                if moved { p.onMoveConnectorLabel(id, off) } else { p.onSelectConnector(id) }
-                coordinator?.connectorController?.clearLiveLabelOffset()
+                if moved {
+                    // Keep the live offset showing; the model-driven `update` clears
+                    // it (no snap-back). Commit persists it.
+                    p.onMoveConnectorLabel(id, off)
+                } else {
+                    p.onSelectConnector(id)
+                    coordinator?.connectorController?.clearLiveLabelOffset()
+                }
             }
         case .pendingConnect, .marquee, .idle, .pan:
             coordinator?.connectorController?.clearPreview()
