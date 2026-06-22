@@ -31,7 +31,7 @@ extension CanvasState {
 
     @discardableResult
     func addText(at worldPoint: CGPoint? = nil) -> UUID {
-        let fontSize: CGFloat = 16
+        let fontSize: CGFloat = 64   // 4× the old default (Figma 96-720 reads large)
         let size = Self.textPillSize(content: "", fontSize: fontSize)
         let centre = worldPoint ?? screenToWorld(point: viewportCentre)
         let position = CGPoint(x: centre.x - size.width / 2, y: centre.y - size.height / 2)

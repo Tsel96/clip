@@ -1337,7 +1337,7 @@ struct _PaletteRepresentable: NSViewRepresentable {
         // The contextual action bar shows for folders AND stickies (same bar).
         self.folderSelected = !ids.isEmpty && ids.allSatisfy { id in
             guard let n = state.nodes.first(where: { $0.id == id }) else { return false }
-            return n.isFolder || n.isStickyNote
+            return n.isFolder || n.isStickyNote || n.isText
         }
     }
 
@@ -1359,6 +1359,12 @@ struct _PaletteRepresentable: NSViewRepresentable {
 
     private func wireCallbacks(_ v: CanvasToolPaletteView, state: CanvasState) {
         v.onToolTap = { mode in
+            // Text tool drops a text node at viewport centre, focused for input
+            // (Spatial-style, like the sticker/folder), then returns to select.
+            if mode == .text {
+                state.addText()
+                return
+            }
             // The Marker prop = Draw → a Freeform-style yellow highlighter:
             // wide, translucent yellow stroke.
             if mode == .draw {
