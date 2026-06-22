@@ -617,10 +617,9 @@ private final class StickerProp: NSView {
         let pC = lifted ? paperCHover : paperCRest
         let fC = lifted ? foldCHover  : foldCRest
         let pT = lifted ? CATransform3DIdentity
-                        : CATransform3DMakeRotation(paperRestRot, 0, 0, 1)
-        var fT = lifted ? CATransform3DIdentity
-                        : CATransform3DMakeRotation(foldRestRot, 0, 0, 1)
-        if !lifted { fT = CATransform3DScale(fT, foldRestScale, foldRestScale, 1) }
+                        : CATransform3DMakeRotation(paperRestRot, 0, 0, 1)   // paper rests rotated, hover flat
+        let fT = lifted ? CATransform3DMakeRotation(foldHoverRot, 0, 0, 1)   // fold rests flat, hover rotated
+                        : CATransform3DIdentity
 
         CATransaction.begin()
         CATransaction.setDisableActions(!animated)
