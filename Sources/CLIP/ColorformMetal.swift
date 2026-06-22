@@ -186,33 +186,28 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
         // pixel → world: inverse of screen = world*zoom + camOffset (points).
         float2 screenPt = in.pos.xy / max(u.pixelScale, 0.001);
         float2 world = (screenPt - float2(u.camX, u.camY)) / u.zoom;
+        float3 cream = float3(u.creamR, u.creamG, u.creamB);
         if (u.bulbCount == 0) return float4(0.0);
 
         float sig = max(u.sigma, 1.0);
-        // INVERSE-DISTANCE blend → every pixel takes the (smoothly blended) nearest
-        // bulb colour, so the field has FULL coverage like the old Voronoi; the
-        // softening term keeps centres pure and boundaries smooth.
-        float soft = sig * sig * 0.06;
+        // Soft GAUSSIAN colour clouds, blended LIGHTLY over cream — the original
+        // look was pastel tints on a cream field, not saturated orbs on black.
         float wsum = 0.0;
         float3 csum = float3(0.0);
-        float minD2 = 1e20;
         for (int i = 0; i < u.bulbCount; i++) {
             float2 d = world - float2(bulbs[i].px, bulbs[i].py);
-            float dd = dot(d, d);
-            float w = 1.0 / (dd + soft);
-            if (i == u.hoverIndex) { w *= 2.0; }      // hover-effect hook
+            float w = exp(-dot(d, d) / (sig * sig));
+            if (i == u.hoverIndex) { w *= 1.6; }      // hover-effect hook
             wsum += w;
             csum += w * float3(bulbs[i].r, bulbs[i].g, bulbs[i].b);
-            minD2 = min(minD2, dd);
         }
-        float3 field = csum / max(wsum, 1e-6);
-        float minD = sqrt(minD2);
-        field += clamp(1.0 - minD / (sig * 0.55), 0.0, 1.0) * 0.14;  // soft seed glow
-        field = clamp(field, 0.0, 1.0);
-        // Blob mask: solid within ~one spacing of any bulb, fading to cream beyond
-        // (replaces the SwiftUI organic blob + bounding box).
-        float a = 1.0 - smoothstep(sig * 0.85, sig * 1.55, minD);
-        return float4(field * a, a);                  // premultiplied
+        float3 cloud = csum / max(wsum, 1e-5);
+        float cover = smoothstep(0.03, 0.5, wsum);    // 0 in gaps, 1 in dense centres
+        float3 col = mix(cream, cloud, cover * 0.85); // soft tint over cream
+        col += cover * 0.05;                          // faint lift near centres
+        col = clamp(col, 0.0, 1.0);
+        float a = smoothstep(0.012, 0.16, wsum);      // organic edge fade to cream
+        return float4(col * a, a);                    // premultiplied
     }
     """
 }
