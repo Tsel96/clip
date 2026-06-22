@@ -920,6 +920,10 @@ final class CardItemView: NSView {
     /// Inner hairline (0.5px, 15% black, drawn INSIDE the card edge) on media
     /// cards — defines the card against the light canvas. Always on.
     private let innerHairlineLayer = CAShapeLayer()
+    /// Rotate handle — a small dot on a short stem above the top-middle edge,
+    /// shown on SELECT. Rotates + scales WITH the card (it's in the lift/rotate
+    /// transform group), so it always sits at the card's rotated "top".
+    private let rotateHandleLayer = CAShapeLayer()
     /// BAKED drop shadow: a dedicated rasterized layer BEHIND the content so the
     /// soft blur is computed once and cheaply *resampled* when zooming (NSScrollView
     /// magnification is an ancestor transform) instead of re-blurred every frame —
@@ -985,6 +989,21 @@ final class CardItemView: NSView {
         innerHairlineLayer.zPosition = 98
         innerHairlineLayer.isHidden = true
         layer?.addSublayer(innerHairlineLayer)
+
+        // Rotate handle (dot + stem) — green on white, shown on select.
+        rotateHandleLayer.fillColor = NSColor.white.cgColor
+        rotateHandleLayer.strokeColor = NSColor.fromHex(0x3DA726).cgColor
+        rotateHandleLayer.lineWidth = 1.5
+        rotateHandleLayer.zPosition = 101
+        rotateHandleLayer.opacity = 0
+        layer?.addSublayer(rotateHandleLayer)
+    }
+
+    /// Screen-constant geometry of the rotate handle (stem length + dot radius,
+    /// ÷mag) — shared by the renderer and the input hit-test. The dot centre is at
+    /// `(midX, -gap - stem)` in the item's (unrotated) coordinate space.
+    static func rotateHandleGeometry(mag: CGFloat) -> (gap: CGFloat, stem: CGFloat, dot: CGFloat) {
+        (gap: 7 / mag, stem: 22 / mag, dot: 5.5 / mag)
     }
 
     /// Draw the section outline, selection ring + 8 resize handles. Geometry is
@@ -1073,21 +1092,41 @@ final class CardItemView: NSView {
         } else {
             innerHairlineLayer.isHidden = true
         }
+
+        // Rotate handle (dot on a stem) above the top-middle edge — flipped view,
+        // so "above" is negative y. Drawn unrotated here; the lift/rotate transform
+        // (applyLiftScale) carries it to the card's rotated top.
+        if valid, folderView == nil, !(node?.isSection ?? false) {
+            let geo = Self.rotateHandleGeometry(mag: mag)
+            let midX = bounds.midX
+            let topY = -geo.gap
+            let dotC = CGPoint(x: midX, y: topY - geo.stem)
+            let p = CGMutablePath()
+            p.move(to: CGPoint(x: midX, y: topY))
+            p.addLine(to: CGPoint(x: dotC.x, y: dotC.y + geo.dot))
+            p.addEllipse(in: CGRect(x: dotC.x - geo.dot, y: dotC.y - geo.dot,
+                                    width: geo.dot * 2, height: geo.dot * 2))
+            rotateHandleLayer.path = p
+            rotateHandleLayer.lineWidth = 1.5 / mag
+        }
         CATransaction.commit()
 
         // Animated visibility (fade) — OUTSIDE the no-animation transaction.
         // Outline shows on SELECT only (hover never shows it, per Figma 88:330).
-        fade(outlineLayer, to: (selected && folderView == nil) ? 1 : 0)
+        let showOutline = selected && folderView == nil
+        fade(outlineLayer, to: showOutline ? 1 : 0)
+        fade(rotateHandleLayer, to: (showOutline && !(node?.isSection ?? false)) ? 1 : 0)
         // Lift scale (hover OR select): folders scale + show their curved outline
         // internally; every other card scales its content here.
         if let folderView {
             folderView.setState(lifted: lifted, selected: selected, mag: mag)
         } else {
-            applyLiftScale(lifted, kind: node?.kind)
+            applyLiftScale(lifted, kind: node?.kind, angle: node?.rotation ?? 0)
         }
     }
 
     private var lastLiftFactor: CGFloat = 1.0
+    private var lastAngle: CGFloat = 0
     /// Hover/selected "pop" for every card except marker drawings. Scales the
     /// content subviews (they fill the card) around the card centre — NOT the
     /// item's own layer, which carries the live-drag transform, so the two
@@ -1097,25 +1136,35 @@ final class CardItemView: NSView {
     /// 8px from the *visible* (scaled) card edge at any zoom, instead of the card
     /// poking through it. Re-applied every call so it survives a `reloadData`; it
     /// only ANIMATES when the factor changes.
-    private func applyLiftScale(_ lifted: Bool, kind: CanvasNode.Kind?) {
+    private func applyLiftScale(_ lifted: Bool, kind: CanvasNode.Kind?, angle: CGFloat) {
         guard bounds.width > 1, bounds.height > 1 else { return }
         var isDrawing = false
         if case .drawing = kind { isDrawing = true }
         let factor: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
         let cx = bounds.width / 2, cy = bounds.height / 2
-        let t = CATransform3DConcat(
-            CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
-                                CATransform3DMakeScale(factor, factor, 1)),
-            CATransform3DMakeTranslation(cx, cy, 0))
-        let animate = factor != lastLiftFactor
+        // T = translate(c) · scale(factor) · rotate(angle) · translate(-c)
+        var t = CATransform3DMakeTranslation(-cx, -cy, 0)
+        if angle != 0 { t = CATransform3DConcat(t, CATransform3DMakeRotation(angle, 0, 0, 1)) }
+        t = CATransform3DConcat(t, CATransform3DMakeScale(factor, factor, 1))
+        t = CATransform3DConcat(t, CATransform3DMakeTranslation(cx, cy, 0))
+        // Spring ONLY the lift pop; rotation must track the drag live (no implicit
+        // animation), so a rotation change sets the transform inside a disabled
+        // transaction instead.
+        let animateLift = factor != lastLiftFactor && angle == lastAngle
         lastLiftFactor = factor
+        lastAngle = angle
         let contentLayers = subviews.compactMap { $0.layer }
-        for layer in contentLayers + [outlineLayer, innerHairlineLayer, sectionLayer] {
-            if animate {
+        let all = contentLayers + [outlineLayer, innerHairlineLayer, sectionLayer, rotateHandleLayer]
+        for layer in all {
+            if animateLift {
                 layer.add(Self.liftSpring(from: layer.presentation()?.transform ?? layer.transform,
                                           to: t), forKey: "liftScale")
+                layer.transform = t
+            } else {
+                CATransaction.begin(); CATransaction.setDisableActions(true)
+                layer.transform = t
+                CATransaction.commit()
             }
-            layer.transform = t
         }
     }
 

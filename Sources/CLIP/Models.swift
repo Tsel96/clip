@@ -52,6 +52,11 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     /// and `decodeIfPresent` migrates older snapshots to `nil`.
     var attributedContent: Data? = nil
 
+    /// Rotation in RADIANS around the node's centre (0 = upright). Applied as a
+    /// layer transform on the canvas; `decodeIfPresent` migrates older snapshots
+    /// to 0. Drag the top-middle rotate handle to set it (snaps to 0 / 90°).
+    var rotation: CGFloat = 0
+
     /// Where this node came from. `.phone` marks cards ingested from the
     /// iPhone share pipe (the iCloud Drive inbox) so the UI can badge
     /// them. `decodeIfPresent` defaults older snapshots to `.local`.
@@ -122,7 +127,8 @@ struct CanvasNode: Identifiable, Equatable, Codable {
          trimStart: Double? = nil,
          trimEnd: Double? = nil,
          folderColor: String? = nil,
-         attributedContent: Data? = nil) {
+         attributedContent: Data? = nil,
+         rotation: CGFloat = 0) {
         self.id = id
         self.position = position
         self.width = width
@@ -141,6 +147,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.trimEnd = trimEnd
         self.folderColor = folderColor
         self.attributedContent = attributedContent
+        self.rotation = rotation
     }
 
     // MARK: - Codable (manual to migrate older snapshots)
@@ -148,7 +155,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, position, width, height, kind, addedAt, groupID, folderID, origin
         case name, note, linkURL, tags, imagePrompt
-        case trimStart, trimEnd, folderColor, attributedContent
+        case trimStart, trimEnd, folderColor, attributedContent, rotation
     }
 
     init(from decoder: Decoder) throws {
@@ -175,6 +182,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.trimEnd   = try c.decodeIfPresent(Double.self, forKey: .trimEnd)
         self.folderColor = try c.decodeIfPresent(String.self, forKey: .folderColor)
         self.attributedContent = try c.decodeIfPresent(Data.self, forKey: .attributedContent)
+        self.rotation = try c.decodeIfPresent(CGFloat.self, forKey: .rotation) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
@@ -197,6 +205,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         try c.encodeIfPresent(trimEnd, forKey: .trimEnd)
         try c.encodeIfPresent(folderColor, forKey: .folderColor)
         try c.encodeIfPresent(attributedContent, forKey: .attributedContent)
+        if rotation != 0 { try c.encode(rotation, forKey: .rotation) }
     }
 
     static func tweet(url: String, position: CGPoint, width: CGFloat = 360) -> CanvasNode {
