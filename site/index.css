@@ -269,7 +269,19 @@ html, body {
   flex: 1;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: calc(98 / 2340 * 100vw) calc(99 / 2340 * 100vw) 0;
+  padding: calc(98 / 2340 * 100vw) calc(99 / 2340 * 100vw) clamp(24px, calc(48 / 2340 * 100vw), 60px);
+}
+
+.modal-footer {
+  flex-shrink: 0;
+  padding: clamp(12px, calc(20 / 2340 * 100vw), 28px) calc(99 / 2340 * 100vw);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.ui-pill-icon svg {
+  width: var(--pill-glyph);
+  height: var(--pill-glyph);
+  display: block;
 }
 
 .modal-close {
@@ -281,14 +293,18 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
+  border: 1px solid var(--green);
   border-radius: 50%;
-  background: transparent;
-  color: rgba(0, 0, 0, 0.45);
+  background: #fff;
+  color: var(--ink);
   cursor: pointer;
-  /* hover rotate / press are driven by Motion */
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    0 1px 1px rgba(80,74,0,.10),
+    0 0 0 0 transparent;
+  transition: box-shadow .13s ease;
 }
-.modal-close:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.modal-close:focus-visible { outline: none; }
 
 .modal-qr {
   width: 100%;
@@ -415,22 +431,6 @@ html, body {
   text-transform: uppercase;
   color: var(--ink);
   line-height: 1.45;
-}
-
-.modal-link {
-  display: block;
-  width: max-content;
-  margin-top: clamp(20px, calc(48 / 2340 * 100vw), 56px);
-  margin-bottom: clamp(24px, calc(60 / 2340 * 100vw), 60px);
-  font-size: var(--fs);
-  font-weight: 400;
-  letter-spacing: var(--ls);
-  text-transform: uppercase;
-  color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: rgba(0, 0, 0, 0.20);
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 0.15em;
 }
 
 @media (prefers-reduced-motion: reduce) {

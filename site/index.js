@@ -80,16 +80,34 @@ function gestures() {
     return () => animate(pill, { scale: 1 }, SPRING_BACK);
   });
 
-  // Close button — rotates in on hover
+  // Close button — yellow fill on hover (matches pill identity), no rotation
   const closeBtn = document.getElementById('modalClose');
   hover(closeBtn, () => {
-    animate(closeBtn, { rotate: 90, backgroundColor: 'rgba(0,0,0,0.06)', color: '#000' }, SPRING_HOVER);
-    return () => animate(closeBtn, { rotate: 0, backgroundColor: 'rgba(0,0,0,0)', color: 'rgba(0,0,0,0.45)' }, SPRING_HOVER);
+    animate(closeBtn, { backgroundColor: '#f0ec00' }, SPRING_HOVER);
+    return () => animate(closeBtn, { backgroundColor: '#ffffff' }, SPRING_HOVER);
   });
   press(closeBtn, () => {
     animate(closeBtn, { scale: 0.9 }, SPRING_PRESS);
     return () => animate(closeBtn, { scale: 1 }, SPRING_BACK);
   });
+
+  // Modal download pill — same lift + icon feel as the main pill
+  const modalPill = document.getElementById('modalDownloadBtn');
+  if (modalPill) {
+    const modalIcon = modalPill.querySelector('.ui-pill-icon svg');
+    hover(modalPill, () => {
+      animate(modalPill, { y: -2 }, SPRING_HOVER);
+      if (modalIcon) animate(modalIcon, { scale: 1.08 }, SPRING_HOVER);
+      return () => {
+        animate(modalPill, { y: 0 }, SPRING_HOVER);
+        if (modalIcon) animate(modalIcon, { scale: 1 }, SPRING_HOVER);
+      };
+    });
+    press(modalPill, () => {
+      animate(modalPill, { scale: 0.97 }, SPRING_PRESS);
+      return () => animate(modalPill, { scale: 1 }, SPRING_BACK);
+    });
+  }
 
   // Brand — draw-in underline (animates a CSS variable the ::after reads)
   const brand = document.querySelector('.ui-brand');
@@ -99,7 +117,7 @@ function gestures() {
   });
 
   // Underlined links — offset + color deepen on hover
-  document.querySelectorAll('.ui-git, .install-url, .modal-link').forEach((link) => {
+  document.querySelectorAll('.ui-git, .install-url').forEach((link) => {
     hover(link, () => {
       animate(link, { textUnderlineOffset: '0.28em', textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
       return () => animate(link, { textUnderlineOffset: '0.15em', textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
