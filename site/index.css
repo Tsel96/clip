@@ -255,16 +255,21 @@ html, body {
   background: #fff;
   border-radius: var(--modal-radius);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.18), 0 4px 20px rgba(0, 0, 0, 0.08);
-  /* top padding + horizontal QR margins (99px at 2340) */
-  padding: calc(98 / 2340 * 100vw) calc(99 / 2340 * 100vw) 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  overflow: hidden;
   /* origin-aware: grows from the top-right trigger (Emil tip #5) */
   transform-origin: 100% 0;
   will-change: transform, opacity;
   /* transform / opacity are driven by Motion (spring slide-in) */
+}
+
+.modal-scroll {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: calc(98 / 2340 * 100vw) calc(99 / 2340 * 100vw) 0;
 }
 
 .modal-close {
@@ -410,6 +415,22 @@ html, body {
   text-transform: uppercase;
   color: var(--ink);
   line-height: 1.45;
+}
+
+.modal-link {
+  display: block;
+  width: max-content;
+  margin-top: clamp(20px, calc(48 / 2340 * 100vw), 56px);
+  margin-bottom: clamp(24px, calc(60 / 2340 * 100vw), 60px);
+  font-size: var(--fs);
+  font-weight: 400;
+  letter-spacing: var(--ls);
+  text-transform: uppercase;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 0, 0, 0.20);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.15em;
 }
 
 @media (prefers-reduced-motion: reduce) {

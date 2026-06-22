@@ -99,7 +99,7 @@ function gestures() {
   });
 
   // Underlined links — offset + color deepen on hover
-  document.querySelectorAll('.ui-git, .install-url').forEach((link) => {
+  document.querySelectorAll('.ui-git, .install-url, .modal-link').forEach((link) => {
     hover(link, () => {
       animate(link, { textUnderlineOffset: '0.28em', textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
       return () => animate(link, { textUnderlineOffset: '0.15em', textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
