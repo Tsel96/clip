@@ -210,16 +210,12 @@ function wireModal() {
   backdrop.addEventListener('click', close);
 }
 
-/* ── MAT background toggle ── */
+/* ── Canvas mat background toggle ── */
 function wireBgToggle() {
   const btn = document.getElementById('bgToggle');
-  const bgMedia = document.querySelector('.bg-media');
-  if (!btn || !bgMedia) return;
-  let matActive = false;
+  if (!btn) return;
   btn.addEventListener('click', () => {
-    matActive = !matActive;
-    document.body.style.backgroundColor = matActive ? '#EDF0F1' : '';
-    bgMedia.style.opacity = matActive ? '0' : '';
+    document.body.classList.toggle('mat-active');
   });
 }
 
