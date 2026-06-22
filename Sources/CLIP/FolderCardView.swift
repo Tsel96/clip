@@ -22,14 +22,12 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private let titleField = NSTextField(labelWithString: "Untitled")
     private let iconChip = NSView()
     private let iconView = NSImageView()
-    /// White stroke tracing the folder silhouette (Figma node 58:232), overlaid
-    /// on the fill so the folder has a crisp outline (always on).
-    private let outlineView = NSImageView()
-    /// The hover/selected SELECTION outline — the same silhouette stroke, drawn
-    /// in a slightly larger frame so it sits as a curved outline OUTSIDE the
-    /// folder (the folder's analogue of the cards' offset rect outline). Faded
-    /// in on SELECT only.
-    private let selectionOutlineView = NSImageView()
+    /// SELECT-only white halo: a solid-white silhouette DERIVED from the folder art
+    /// (so it matches the shape exactly — tab + corners, every colour), placed
+    /// BEHIND the folder in a slightly larger frame so a clean white edge peeks
+    /// out. Replaces the standalone Folder_Outline asset, which drifted off-shape
+    /// and caused the white-outline artifacts in all states.
+    private let haloView = NSImageView()
     private var isLifted = false
     private var showsSelectionOutline = false
     private var currentCount = 0
@@ -52,7 +50,6 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private static let oneItemImage   = loadSVG("Folder_1-item")
     private static let twoItemsImage  = loadSVG("Folder_2-items")
     private static let threeItemsImage = loadSVG("Folder_3-items")
-    private static let outlineImage   = loadSVG("Folder_Outline")
     /// Folder art for an item count — the card-peek is baked into each SVG.
     private static func art(forCount count: Int) -> NSImage? {
         switch count {
@@ -61,6 +58,33 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         case 2:  return twoItemsImage
         default: return threeItemsImage
         }
+    }
+
+    /// White silhouette of each art (cached) — the selection halo, derived from
+    /// the art so it traces the folder EXACTLY at any colour.
+    private static let restSilhouette  = whiteSilhouette(of: restImage)
+    private static let oneSilhouette   = whiteSilhouette(of: oneItemImage)
+    private static let twoSilhouette   = whiteSilhouette(of: twoItemsImage)
+    private static let threeSilhouette = whiteSilhouette(of: threeItemsImage)
+    private static func silhouette(forCount count: Int) -> NSImage? {
+        switch count {
+        case 0:  return restSilhouette
+        case 1:  return oneSilhouette
+        case 2:  return twoSilhouette
+        default: return threeSilhouette
+        }
+    }
+
+    /// A solid-WHITE copy of `image` clipped to its alpha (folder silhouette, tab +
+    /// corners exact). Derived from the art so the halo ALWAYS matches the folder.
+    private static func whiteSilhouette(of image: NSImage?) -> NSImage? {
+        guard let image, let tiff = image.tiffRepresentation, let base = CIImage(data: tiff) else { return nil }
+        let white = CIImage(color: CIColor(red: 1, green: 1, blue: 1))
+            .cropped(to: base.extent)
+            .applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: base])
+        let result = NSImage(size: image.size)
+        result.addRepresentation(NSCIImageRep(ciImage: white))
+        return result
     }
 
     /// Parse `#RRGGBB` (sRGB).
@@ -108,27 +132,18 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         shadowView.layer?.shadowOffset = .zero    // set in updateShadow()
         addSubview(shadowView)
 
+        // Selection halo BEHIND the folder so only its white edge peeks out; sized
+        // larger than the folder in `layout`, faded in on SELECT only.
+        haloView.imageScaling = .scaleAxesIndependently
+        haloView.wantsLayer = true
+        haloView.layer?.opacity = 0
+        addSubview(haloView)
+
         shapeView.image = Self.restImage
         shapeView.imageScaling = .scaleAxesIndependently
         shapeView.wantsLayer = true
         shapeView.layer?.masksToBounds = false
         addSubview(shapeView)
-        outlineView.image = Self.outlineImage
-        outlineView.imageScaling = .scaleAxesIndependently
-        // Crisp white edge tracing the folder silhouette (Figma outline.svg, 994×854,
-        // tab included). Its ~1.16 aspect matches the folder, so stretched to the node
-        // bounds it follows the folder shape.
-        outlineView.isHidden = false
-        addSubview(outlineView)
-
-        // Offset selection outline: same silhouette stroke, hidden until lifted,
-        // sized larger than the folder in `layout` so it reads as a curved
-        // outline sitting just outside the folder edge.
-        selectionOutlineView.image = Self.outlineImage
-        selectionOutlineView.imageScaling = .scaleAxesIndependently
-        selectionOutlineView.wantsLayer = true
-        selectionOutlineView.layer?.opacity = 0
-        addSubview(selectionOutlineView)
 
         countField.textColor = NSColor(white: 0, alpha: 0.4)
         addSubview(countField)
@@ -188,6 +203,8 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         // Shadow caster traces the SAME (clean, untinted) silhouette so the drop
         // shadow is identical whether or not the folder is recoloured.
         shadowView.image = shapeView.image
+        // Selection halo = the clean white silhouette (stays white at any folder colour).
+        haloView.image = Self.silhouette(forCount: currentCount)
         currentArtHeight = 1044
     }
 
@@ -217,13 +234,12 @@ final class FolderCardView: NSView, NativeCardUpdatable {
             showsSelectionOutline = selected
             let target: Float = selected ? 1 : 0
             let anim = CABasicAnimation(keyPath: "opacity")
-            anim.fromValue = selectionOutlineView.layer?.presentation()?.opacity
-                ?? selectionOutlineView.layer?.opacity
+            anim.fromValue = haloView.layer?.presentation()?.opacity ?? haloView.layer?.opacity
             anim.toValue = target
             anim.duration = 0.14
             anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            selectionOutlineView.layer?.opacity = target
-            selectionOutlineView.layer?.add(anim, forKey: "fade")
+            haloView.layer?.opacity = target
+            haloView.layer?.add(anim, forKey: "fade")
         }
         updateShadow(animated: liftChanged)
     }
@@ -267,15 +283,12 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         // object shadow (updateShadow), independent of the folder's own size.
         shadowView.frame = shapeView.frame
         updateShadow(animated: false)
-        // Outline art (994×854) is tight to its canvas, same ~1.16 ratio as the
-        // folder, so it traces the silhouette when filling the node bounds.
-        outlineView.frame = bounds
-        // Selection outline: the same silhouette grown by a UNIFORM fraction so it
-        // scales isotropically and stays PARALLEL to the folder edge (an equal
-        // dx/dy inset warps a non-square silhouette off-parallel — that was the
-        // "weird offset"). Small fraction so the outline hugs the folder.
+        // Selection halo: the folder-shaped white silhouette (in the SAME art frame
+        // as `shapeView`) grown UNIFORMLY about its centre, so a constant-width white
+        // edge peeks out behind the folder — exactly parallel to the folder shape.
         let g: CGFloat = 0.016
-        selectionOutlineView.frame = bounds.insetBy(dx: -w * g, dy: -h * g)
+        let f = shapeView.frame
+        haloView.frame = f.insetBy(dx: -f.width * g, dy: -f.height * g)
 
         // Live text, lower-left (the baked text sat at ≈12% in, 69%/77% down).
         let pad = w * 0.118
