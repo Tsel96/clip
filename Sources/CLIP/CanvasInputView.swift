@@ -419,7 +419,18 @@ final class CanvasInputView: NSView {
             let target = (hovered != nil && hovered!.id != srcID && !hovered!.isSection) ? hovered : nil
             let srcRect = contentFrame(src, p)
             let tgtRect = target.map { contentFrame($0, p) } ?? CGRect(x: pt.x, y: pt.y, width: 0, height: 0)
-            coordinator?.connectorController?.setPreview(sourceRect: srcRect, targetRect: tgtRect, magnification: mag)
+            // Live target side = the hovered card's side nearest the cursor, so you
+            // CHOOSE the side by moving over the card — the port + preview follow.
+            let tside = target.map { nearestSide(of: tgtRect, to: pt) }
+            coordinator?.connectorController?.setPreview(sourceRect: srcRect, targetRect: tgtRect,
+                                                         sourceSide: connectSourceSide, targetSide: tside,
+                                                         magnification: mag)
+            if let tside {
+                coordinator?.connectorController?.showHoverDot(
+                    at: ConnectorPathMath.sideCenter(of: tgtRect, tside), mag: mag)
+            } else {
+                coordinator?.connectorController?.hideHoverDot()
+            }
         case .moveLabel:
             guard let id = labelDragID else { break }
             let off = CGPoint(x: labelDragStartOffset.x + (pt.x - labelDragStart.x),

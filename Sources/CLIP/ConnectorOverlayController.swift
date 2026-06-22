@@ -227,7 +227,9 @@ final class ConnectorOverlayController {
 
     /// Draw the in-flight drag-to-connect bezier (dashed green) from `sourceRect`
     /// to `targetRect` (a 0-size rect at the cursor when not hovering a node).
-    func setPreview(sourceRect: CGRect, targetRect: CGRect, magnification: CGFloat) {
+    func setPreview(sourceRect: CGRect, targetRect: CGRect,
+                    sourceSide: ConnSide? = nil, targetSide: ConnSide? = nil,
+                    magnification: CGFloat) {
         let mag = max(magnification, 0.0001)
         if previewLine == nil {
             let line = CAShapeLayer()
@@ -242,7 +244,8 @@ final class ConnectorOverlayController {
             root.addSublayer(line); root.addSublayer(arrow)
             previewLine = line; previewArrow = arrow
         }
-        let route = ConnectorPathMath.route(source: sourceRect, target: targetRect)
+        let route = ConnectorPathMath.route(source: sourceRect, target: targetRect,
+                                            sourceSide: sourceSide, targetSide: targetSide)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         previewLine?.path = route.path
         previewLine?.lineWidth = Self.screenLineWidth / mag
