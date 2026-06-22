@@ -608,9 +608,12 @@ export function revealImage(img, opts = {}) {
       const canvas = document.createElement('canvas');
       canvas.className = 'reveal-gl';
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      // Measure the host (not the img) so we capture the final laid-out size.
-      // Do NOT set canvas.style.width/height — let CSS inset:0 stretch the
-      // canvas to always fill the parent exactly, so it never snaps on removal.
+      // Canvas is a replaced element — inset:0 alone won't stretch it.
+      // 100%/100% fills the parent at all times (even mid spring-animation),
+      // so the canvas always covers the img exactly and never snaps on removal.
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      // Use the host rect only for the WebGL raster resolution.
       const rect = host.getBoundingClientRect();
       const cssW = Math.max(1, Math.round(rect.width));
       const cssH = Math.max(1, Math.round(rect.height));
