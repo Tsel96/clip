@@ -42,18 +42,21 @@ private struct FPSProbe: NSViewRepresentable {
 
     final class ProbeView: NSView {
         let monitor: FPSMonitor
-        private var link: CADisplayLink?
+        private var link: AnyObject?      // CADisplayLink (macOS 14+) stored type-erased
         init(monitor: FPSMonitor) { self.monitor = monitor; super.init(frame: .zero) }
         @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            link?.invalidate(); link = nil
+            if #available(macOS 14.0, *), let l = link as? CADisplayLink { l.invalidate() }
+            link = nil
             guard window != nil else { return }
-            let l = displayLink(target: self, selector: #selector(step(_:)))
-            l.add(to: .main, forMode: .common)
-            link = l
+            if #available(macOS 14.0, *) {
+                let l = displayLink(target: self, selector: #selector(step))
+                l.add(to: .main, forMode: .common)
+                link = l
+            }
         }
-        @objc private func step(_ l: CADisplayLink) { monitor.tick(now: CACurrentMediaTime()) }
+        @objc private func step() { monitor.tick(now: CACurrentMediaTime()) }
     }
 }
 
