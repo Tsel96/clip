@@ -97,6 +97,10 @@ struct StickyRichTextEditor: NSViewRepresentable {
                 tv.window?.makeFirstResponder(tv)
                 tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
             }
+        } else if !isEditing, tv.window?.firstResponder === tv {
+            // Editing was ended programmatically (not by a canvas click) while the
+            // text view still held focus → resign so the edit commits.
+            tv.window?.makeFirstResponder(nil)
         }
     }
 
