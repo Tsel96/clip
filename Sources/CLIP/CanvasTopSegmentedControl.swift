@@ -63,6 +63,12 @@ final class CanvasTopSegmentedControlView: NSView {
     /// Floating candy-yellow indicator pill (slides between segments).
     private let indicator = SegmentIndicatorView()
 
+    /// 10%-white hover wash shown behind an INACTIVE segment's label on hover
+    /// (Figma 93:654 "Hovered state"). One reusable view that moves to the hovered
+    /// segment; hidden when none is hovered or the hovered one is selected.
+    private let hoverWash = NSView()
+    private var hoveredIndex: Int?
+
     /// Three transparent click zones (always full segment size).
     private var hitZones: [SegmentHitZone] = []
     /// Three text labels (index-matched to CanvasMode order).
@@ -106,6 +112,13 @@ final class CanvasTopSegmentedControlView: NSView {
         // --- indicator (floating candy pill) — behind the labels ---
         addSubview(indicator)
 
+        // --- hover wash (above trough, below labels) ---
+        hoverWash.wantsLayer = true
+        hoverWash.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        hoverWash.layer?.cornerCurve = .continuous
+        hoverWash.layer?.opacity = 0
+        addSubview(hoverWash)
+
         // --- labels + hit zones ---
         for (i, title) in Self.titles.enumerated() {
             let label = Self.makeLabel(title)
@@ -114,6 +127,7 @@ final class CanvasTopSegmentedControlView: NSView {
 
             let zone = SegmentHitZone()
             zone.onTap = { [weak self] in self?.handleTap(i) }
+            zone.onHover = { [weak self] entered in self?.handleHover(i, entered) }
             addSubview(zone)
             hitZones.append(zone)
         }
@@ -163,6 +177,39 @@ final class CanvasTopSegmentedControlView: NSView {
         selectedIndex = index
         moveIndicator(to: index, animated: animated)
         applySelectionStyling(animated: animated)
+        updateHoverWash(animated: animated)   // hide the wash if it's now the active tab
+    }
+
+    // MARK: - Hover wash (Figma 93:654)
+
+    private func handleHover(_ index: Int, _ entered: Bool) {
+        if entered { hoveredIndex = index }
+        else if hoveredIndex == index { hoveredIndex = nil }
+        updateHoverWash(animated: true)
+    }
+
+    /// Show the 10%-white wash behind the hovered INACTIVE segment (h=42 centred,
+    /// 2 pt inset each side, fully rounded — Figma 93:654). Fades in/out.
+    private func updateHoverWash(animated: Bool) {
+        let show = hoveredIndex.map { $0 != selectedIndex } ?? false
+        if show, let i = hoveredIndex {
+            let f = Self.segmentFrames[i].insetBy(dx: 2, dy: 2)   // 46→42 tall, w−4
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            hoverWash.frame = f
+            hoverWash.layer?.cornerRadius = f.height / 2
+            CATransaction.commit()
+        }
+        let target: Float = show ? 1 : 0
+        guard (hoverWash.layer?.opacity ?? 0) != target else { return }
+        if animated {
+            let a = CABasicAnimation(keyPath: "opacity")
+            a.fromValue = hoverWash.layer?.presentation()?.opacity ?? hoverWash.layer?.opacity
+            a.toValue = target
+            a.duration = 0.15
+            a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            hoverWash.layer?.add(a, forKey: "fade")
+        }
+        hoverWash.layer?.opacity = target
     }
 
     private func handleTap(_ index: Int) {
@@ -285,24 +332,22 @@ final class CanvasTopSegmentedControlView: NSView {
     private static func layoutTroughInnerShadows(_ layers: [CALayer],
                                                  bounds: CGRect,
                                                  radius: CGFloat) {
-        // Outer rect generously larger than the trough so the caster's body
-        // fully covers it; the hole is the trough pill (offset per level so the
-        // shadow biases downward, matching Figma's positive-Y offsets → which,
-        // in this flipped view, is +Y = down).
         let pad: CGFloat = 40
-        let outer = bounds.insetBy(dx: -pad, dy: -pad)
         for (i, layer) in layers.enumerated() {
             guard let shape = layer as? CAShapeLayer else { continue }
             shape.frame = bounds
             let level = troughShadowLevels[i]
-            let hole = CGRect(x: 0, y: level.y,
-                              width: bounds.width, height: bounds.height)
+            // Even-odd ring = (outer rect) − (FULL trough pill). The filled body
+            // lands entirely OUTSIDE the trough, so `troughLayer.masksToBounds`
+            // clips it away and only the ring's INNER shadow shows — biased
+            // downward by the shadow OFFSET. (Offsetting the HOLE instead exposed
+            // the caster's black body as a band across the trough top — the bug.)
             let path = CGMutablePath()
-            // Outer (relative to shape.frame == bounds, so origin shifts by pad)
             path.addRect(CGRect(x: -pad, y: -pad,
-                                width: outer.width, height: outer.height))
-            path.addRoundedRect(in: hole, cornerWidth: radius, cornerHeight: radius)
+                                width: bounds.width + pad * 2, height: bounds.height + pad * 2))
+            path.addRoundedRect(in: bounds, cornerWidth: radius, cornerHeight: radius)
             shape.path = path
+            shape.shadowOffset = CGSize(width: 0, height: level.y)   // +Y = down (flipped)
         }
     }
 }
@@ -410,13 +455,26 @@ private final class SegmentIndicatorView: NSView {
 /// the indicator/labels never swallow it; fires `onTap` on mouse-up-in-bounds.
 private final class SegmentHitZone: NSView {
     var onTap: (() -> Void)?
+    var onHover: ((Bool) -> Void)?
+    private var tracking: NSTrackingArea?
 
     override init(frame frameRect: NSRect) { super.init(frame: frameRect) }
     required init?(coder: NSCoder) { super.init(coder: coder) }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds,
+                               options: [.mouseEnteredAndExited, .activeInActiveApp],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
     }
+    override func mouseEntered(with event: NSEvent) { onHover?(true) }
+    override func mouseExited(with event: NSEvent) { onHover?(false) }
     override func mouseDown(with event: NSEvent) { /* accept; fire on mouse-up */ }
     override func mouseUp(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
