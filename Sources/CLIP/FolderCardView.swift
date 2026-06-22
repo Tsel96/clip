@@ -60,30 +60,38 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         }
     }
 
-    /// White silhouette of each art (cached) — the selection halo, derived from
-    /// the art so it traces the folder EXACTLY at any colour.
-    private static let restSilhouette  = whiteSilhouette(of: restImage)
-    private static let oneSilhouette   = whiteSilhouette(of: oneItemImage)
-    private static let twoSilhouette   = whiteSilhouette(of: twoItemsImage)
-    private static let threeSilhouette = whiteSilhouette(of: threeItemsImage)
-    private static func silhouette(forCount count: Int) -> NSImage? {
+    /// White OFFSET-outline ring of each art (cached) — the selection outline: a
+    /// thin white ring sitting a GAP outside the folder edge, derived from the art
+    /// so it traces the folder EXACTLY (tab + corners) at any colour.
+    private static let restRing  = whiteRing(of: restImage)
+    private static let oneRing   = whiteRing(of: oneItemImage)
+    private static let twoRing   = whiteRing(of: twoItemsImage)
+    private static let threeRing = whiteRing(of: threeItemsImage)
+    private static func ring(forCount count: Int) -> NSImage? {
         switch count {
-        case 0:  return restSilhouette
-        case 1:  return oneSilhouette
-        case 2:  return twoSilhouette
-        default: return threeSilhouette
+        case 0:  return restRing
+        case 1:  return oneRing
+        case 2:  return twoRing
+        default: return threeRing
         }
     }
 
-    /// A solid-WHITE copy of `image` clipped to its alpha (folder silhouette, tab +
-    /// corners exact). Derived from the art so the halo ALWAYS matches the folder.
-    private static func whiteSilhouette(of image: NSImage?) -> NSImage? {
+    /// A thin WHITE ring offset a gap OUTSIDE `image`'s silhouette: dilate the folder
+    /// alpha to (gap) and to (gap+line) and keep the difference, so the outline sits
+    /// a clear gap off the folder edge (an offset outline, not a hugging border).
+    private static func whiteRing(of image: NSImage?) -> NSImage? {
         guard let image, let tiff = image.tiffRepresentation, let base = CIImage(data: tiff) else { return nil }
-        let white = CIImage(color: CIColor(red: 1, green: 1, blue: 1))
-            .cropped(to: base.extent)
+        let ext = base.extent
+        let unit = ext.width / 1163.0      // px per art-unit (handles 1× vs 2× raster)
+        let solid = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to: ext)
             .applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: base])
+        // Disc dilation (rounded) grows the silhouette outward; the band between the
+        // two grown copies is the offset ring. ~10 art-units gap, ~5 thick.
+        let inner = solid.applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 10 * unit]).cropped(to: ext)
+        let outer = solid.applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 15 * unit]).cropped(to: ext)
+        let ring = outer.applyingFilter("CISourceOutCompositing", parameters: [kCIInputBackgroundImageKey: inner]).cropped(to: ext)
         let result = NSImage(size: image.size)
-        result.addRepresentation(NSCIImageRep(ciImage: white))
+        result.addRepresentation(NSCIImageRep(ciImage: ring))
         return result
     }
 
@@ -203,8 +211,8 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         // Shadow caster traces the SAME (clean, untinted) silhouette so the drop
         // shadow is identical whether or not the folder is recoloured.
         shadowView.image = shapeView.image
-        // Selection halo = the clean white silhouette (stays white at any folder colour).
-        haloView.image = Self.silhouette(forCount: currentCount)
+        // Selection outline = the clean white ring (stays white at any folder colour).
+        haloView.image = Self.ring(forCount: currentCount)
         currentArtHeight = 1044
     }
 
@@ -283,12 +291,9 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         // object shadow (updateShadow), independent of the folder's own size.
         shadowView.frame = shapeView.frame
         updateShadow(animated: false)
-        // Selection halo: the folder-shaped white silhouette (in the SAME art frame
-        // as `shapeView`) grown UNIFORMLY about its centre, so a constant-width white
-        // edge peeks out behind the folder — exactly parallel to the folder shape.
-        let g: CGFloat = 0.016
-        let f = shapeView.frame
-        haloView.frame = f.insetBy(dx: -f.width * g, dy: -f.height * g)
+        // Selection outline: the ring image already bakes in the gap + thickness
+        // (dilated in art space), so it shares the folder art frame exactly.
+        haloView.frame = shapeView.frame
 
         // Live text, lower-left (the baked text sat at ≈12% in, 69%/77% down).
         let pad = w * 0.118

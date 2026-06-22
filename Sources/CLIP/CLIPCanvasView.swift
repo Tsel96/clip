@@ -145,9 +145,10 @@ final class CLIPCanvasView: NSView {
         }
         // Live magnify ticks update connector stroke widths (constant on screen)
         // + the inline label editor — the bounds notification lagged the pinch.
+        ZoomProfiler.shared.attach(to: scroll)
         scroll.onZoomChange = { [weak coordinator] in
             coordinator?.pushCameraFromScroll()
-            coordinator?.refreshChrome()
+            coordinator?.refreshChromeProfiled()
         }
 
         // Escape deselects (keyboard path, always available — no race).

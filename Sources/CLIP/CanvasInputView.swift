@@ -421,7 +421,7 @@ final class CanvasInputView: NSView {
             let tgtRect = target.map { contentFrame($0, p) } ?? CGRect(x: pt.x, y: pt.y, width: 0, height: 0)
             // Live target side = the hovered card's side nearest the cursor, so you
             // CHOOSE the side by moving over the card — the port + preview follow.
-            let tside = target.map { nearestSide(of: tgtRect, to: pt) }
+            let tside = target.map { _ in nearestSide(of: tgtRect, to: pt) }
             coordinator?.connectorController?.setPreview(sourceRect: srcRect, targetRect: tgtRect,
                                                          sourceSide: connectSourceSide, targetSide: tside,
                                                          magnification: mag)
