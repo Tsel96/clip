@@ -292,6 +292,12 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         return false
     }
 
+    /// True if this node is a text pill (Figma 96-720 — rounded chrome).
+    var isText: Bool {
+        if case .text = kind { return true }
+        return false
+    }
+
     /// World rectangle covering this node (position + size at current
     /// width/height). Sections use this for containment hit-testing.
     var worldRect: CGRect {

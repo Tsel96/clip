@@ -1009,9 +1009,9 @@ final class CardItemView: NSView {
     /// them as an ugly grey box — they get none.
     private func castsShadow(_ kind: CanvasNode.Kind) -> Bool {
         switch kind {
-        case .image, .video, .tweet, .instagram, .youtube, .webclip, .stickyNote:
+        case .image, .video, .tweet, .instagram, .youtube, .webclip, .stickyNote, .text:
             return true
-        case .text, .drawing, .section, .folder:
+        case .drawing, .section, .folder:
             return false
         }
     }

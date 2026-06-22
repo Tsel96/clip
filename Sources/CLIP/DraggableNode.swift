@@ -666,7 +666,7 @@ struct DraggableNode: View {
     /// inside the card edge at the corners.
     private var chromeCornerRadius: CGFloat {
         switch node.kind {
-        case .text:       return 1
+        case .text:       return (node.height ?? 40) / 2     // pill (Figma 96-720)
         case .stickyNote: return StickyNodeView.cornerRadius
         case .section:    return SectionNodeView.cornerRadius
         case .tweet, .instagram, .youtube, .webclip, .image, .video, .drawing, .folder:

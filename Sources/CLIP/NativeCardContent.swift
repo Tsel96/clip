@@ -32,13 +32,10 @@ func makeNativeCardContent(for node: CanvasNode) -> NSView? {
         return nil
     case .folder:
         let v = FolderCardView(); v.update(for: node); return v
-    case .text(let content, let fontSize):
-        // Native at-rest render. `HostingCollectionItem.setContent(isEditing:)`
-        // swaps to the SwiftUI inline editor while this node is being edited.
-        // Gated so the whole text card can fall back to SwiftUI in one flip.
-        return FeatureFlags.useNativeText
-            ? CardTextContentView(content: content, fontSize: fontSize)
-            : nil
+    case .text:
+        // Text renders via the SwiftUI TextNodeView (Figma 96-720 white pill,
+        // IBM Plex Sans, live-resize editing). Returning nil hosts that fallback.
+        return nil
     default:
         // tweet / instagram / youtube / webclip — still SwiftUI (web cards keep
         // their semantic-zoom live↔poster lifecycle). See task #17.

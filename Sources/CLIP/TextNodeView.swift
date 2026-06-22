@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Bare canvas text — no background / no border / no padding.
-/// Display & edit both auto-size to the rendered glyphs so the surrounding
-/// selection rectangle in `DraggableNode` hugs the text (Figma-style).
+/// Canvas text restyled as a white **pill** (Figma 96-720): IBM Plex Sans
+/// SemiBold green text on a fully-rounded white card. The node is sized to the
+/// glyphs + pill padding (`CanvasState.textPillSize`), so this view just fills
+/// the item and centres the text; selection ring + float shadow are owned by the
+/// native chrome (pill-shaped to match).
 struct TextNodeView: View {
     @EnvironmentObject var state: CanvasState
     let nodeID: UUID
@@ -12,103 +14,66 @@ struct TextNodeView: View {
 
     @State private var isEditing: Bool = false
     @State private var editingText: String = ""
-    @State private var editorSize: CGSize = .zero
     @FocusState private var focused: Bool
 
-    /// Floor so the empty-state TextField is wide enough to comfortably
-    /// receive the first few keystrokes.
-    private let minWidth: CGFloat = 40
-    /// Extra room for the caret beyond the rightmost glyph.
-    private let trailingCaretPadding: CGFloat = 4
+    private var hPad: CGFloat { CanvasState.textPillPadding(fontSize).h }
+    private var vPad: CGFloat { CanvasState.textPillPadding(fontSize).v }
+    private var textFont: Font { .custom("IBMPlexSans-SemiBold", size: fontSize) }
+    /// #3DA726
+    private let green = Color(.sRGB, red: 0.239, green: 0.655, blue: 0.149, opacity: 1)
 
     var body: some View {
-        Group {
-            if isEditing {
-                editor
-            } else {
-                display
+        Capsule(style: .continuous)
+            .fill(Color.white)
+            .overlay {
+                Group {
+                    if isEditing { editor } else { display }
+                }
+                .padding(.horizontal, hPad)
+                .padding(.vertical, vPad)
             }
-        }
-        .font(.system(size: fontSize))
-        // NO `.contentShape(Rectangle())` here and no tap gesture: on the canvas
-        // those capture the click and stop the node from being SELECTED. The
-        // node's own hit region (DraggableNode) handles select + double-click,
-        // which routes back here via `pendingFocusNodeID` to enter edit mode.
-        .onAppear {
-            editingText = content
-            if state.pendingFocusNodeID == nodeID {
-                DispatchQueue.main.async { startEditing() }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear {
+                editingText = content
+                if state.pendingFocusNodeID == nodeID {
+                    DispatchQueue.main.async { startEditing() }
+                }
             }
-        }
-        .onChange(of: state.pendingFocusNodeID) { newID in
-            if newID == nodeID && !isEditing {
-                startEditing()
-                // Reset so a later double-click can re-trigger the change.
-                DispatchQueue.main.async { state.pendingFocusNodeID = nil }
+            .onChange(of: state.pendingFocusNodeID) { newID in
+                if newID == nodeID && !isEditing {
+                    startEditing()
+                    DispatchQueue.main.async { state.pendingFocusNodeID = nil }
+                }
             }
-        }
-        // Click-out / Esc / clicking another node all deselect this node.
-        // When we leave the selection while editing, commit & exit edit mode
-        // so the TextField is removed and the caret stops blinking.
-        .onChange(of: state.selectedNodeIDs) { selected in
-            if isEditing && !selected.contains(nodeID) { commit() }
-        }
+            .onChange(of: state.selectedNodeIDs) { selected in
+                if isEditing && !selected.contains(nodeID) { commit() }
+            }
     }
 
-    // MARK: - Editor (auto-sizing TextField)
+    // MARK: - Display / Editor
+
+    private var display: some View {
+        Text(content.isEmpty ? "Text" : content)
+            .font(textFont)
+            .foregroundStyle(content.isEmpty ? green.opacity(0.4) : green)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 
     private var editor: some View {
-        // ZStack with a hidden `Text` that mirrors the editing content.
-        // The Text drives sizing via a PreferenceKey, and we apply that size
-        // to the TextField — which on its own has a fixed intrinsic width
-        // and would otherwise clip everything except the last character.
-        ZStack(alignment: .topLeading) {
-            Text(editingText.isEmpty ? " " : editingText)
-                .font(.system(size: fontSize))
-                .fixedSize(horizontal: true, vertical: true)
-                .opacity(0)
-                .allowsHitTesting(false)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: TextSizePrefKey.self,
-                                                value: geo.size)
-                    }
-                )
-
-            TextField("", text: $editingText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: fontSize))
-                .lineLimit(1...50)
-                .focused($focused)
-                .onAppear { focused = true }
-                .onExitCommand { commit() }                // Esc
-                .onChange(of: focused) { isFocused in
-                    if !isFocused { commit() }             // click-away
-                }
-        }
-        .frame(
-            width:  max(minWidth, editorSize.width + trailingCaretPadding),
-            height: max(fontSize * 1.4, editorSize.height),
-            alignment: .topLeading
-        )
-        .onPreferenceChange(TextSizePrefKey.self) { editorSize = $0 }
-    }
-
-    // MARK: - Display
-
-    @ViewBuilder
-    private var display: some View {
-        Group {
-            if content.isEmpty {
-                Text("Text").foregroundStyle(.tertiary)
-            } else {
-                // NOT `.textSelection(.enabled)` — on the canvas that intercepts
-                // the click for character-highlighting, so the node never gets
-                // selected. Double-click still enters edit mode.
-                Text(content)
+        TextField("", text: $editingText, axis: .vertical)
+            .textFieldStyle(.plain)
+            .font(textFont)
+            .foregroundStyle(green)
+            .tint(green)
+            .multilineTextAlignment(.center)
+            .focused($focused)
+            .onAppear { focused = true }
+            .onExitCommand { commit() }                      // Esc
+            .onChange(of: focused) { if !$0 { commit() } }   // click-away
+            .onChange(of: editingText) { newValue in
+                state.liveResizeText(id: nodeID, content: newValue)  // grow the pill live
             }
-        }
-        .fixedSize(horizontal: true, vertical: true)
     }
 
     // MARK: - Helpers
@@ -117,16 +82,11 @@ struct TextNodeView: View {
         editingText = content
         isEditing = true
         focused = true
-        // Let the canvas input layer step aside so the TextField receives keys.
         state.editingTextNodeID = nodeID
     }
 
     private func commit() {
-        // Idempotent: protects against the focused-onChange firing again
-        // *after* we already exited edit mode (because the TextField was
-        // removed from the view tree).
         guard isEditing else { return }
-
         let trimmed = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             state.delete(id: nodeID)
@@ -136,18 +96,6 @@ struct TextNodeView: View {
         if state.pendingFocusNodeID == nodeID { state.pendingFocusNodeID = nil }
         if state.editingTextNodeID == nodeID { state.editingTextNodeID = nil }
         isEditing = false
-        // Drop just this node from the selection; multi-select stays intact.
         state.selectedNodeIDs.remove(nodeID)
-    }
-}
-
-// MARK: - Size measurement
-
-private struct TextSizePrefKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        let n = nextValue()
-        value = CGSize(width:  max(value.width,  n.width),
-                       height: max(value.height, n.height))
     }
 }
