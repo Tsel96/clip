@@ -14,10 +14,9 @@ struct TextNodeView: View {
 
     @State private var isEditing: Bool = false
     @State private var editingText: String = ""
+    @State private var editorSize: CGSize = .zero
     @FocusState private var focused: Bool
 
-    private var hPad: CGFloat { CanvasState.textPillPadding(fontSize).h }
-    private var vPad: CGFloat { CanvasState.textPillPadding(fontSize).v }
     private var textFont: Font { .custom("IBMPlexSans-SemiBold", size: fontSize) }
     /// #3DA726
     private let green = Color(.sRGB, red: 0.239, green: 0.655, blue: 0.149, opacity: 1)
@@ -25,13 +24,9 @@ struct TextNodeView: View {
     var body: some View {
         Capsule(style: .continuous)
             .fill(Color.white)
-            .overlay {
-                Group {
-                    if isEditing { editor } else { display }
-                }
-                .padding(.horizontal, hPad)
-                .padding(.vertical, vPad)
-            }
+            // The node is already sized to glyphs + pill padding, so the content
+            // is centred (the padding falls out of the centring).
+            .overlay { isEditing ? AnyView(editor) : AnyView(display) }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 editingText = content
