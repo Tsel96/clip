@@ -359,8 +359,10 @@ struct CollectionCanvas: NSViewRepresentable {
                         deleted.insert(rid)
                     }
                 }
-                if !deleted.isEmpty { spawnExitSnapshots(deleted) }
-                for (fid, cards) in filed { spawnFolderDropSnapshots(cards, into: fid) }
+                // Filed-into-folder cards get the SAME scale-down + fade as a delete
+                // (preferred over a fly-into-folder jump).
+                let exiting = deleted.union(filed.values.reduce(into: Set<UUID>()) { $0.formUnion($1) })
+                if !exiting.isEmpty { spawnExitSnapshots(exiting) }
                 removedIntoFolder = !filed.isEmpty
             }
             // World-extent geometry — doesn't affect the data-source count, so it's
