@@ -808,6 +808,11 @@ struct CollectionCanvas: NSViewRepresentable {
             guard let scroll else { return }
             let p = config
             guard !p.nodes.isEmpty else { return }
+            // Honor a persisted camera (per-page zoom memory): only auto-fit a page
+            // that has never been framed — i.e. its camera is still the default
+            // `Camera()`. A restored zoom/pan (non-default) is left exactly as saved.
+            let cam = p.camera
+            if cam.zoom != 1 || cam.x != 0 || cam.y != 0 { return }
             var minX = CGFloat.greatestFiniteMagnitude, minY = CGFloat.greatestFiniteMagnitude
             var maxX = -CGFloat.greatestFiniteMagnitude, maxY = -CGFloat.greatestFiniteMagnitude
             for n in p.nodes {
