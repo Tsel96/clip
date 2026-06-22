@@ -117,8 +117,20 @@ function gestures() {
     return () => animate(brand, { '--bul': 0 }, { duration: 0.2, ease: EASE_OUT });
   });
 
-  // Underlined links — offset + color deepen on hover
-  document.querySelectorAll('.ui-git, .install-url').forEach((link) => {
+  // Underlined links — underline opacity on hover; .ui-git is mat-aware (dark green bg = white text)
+  document.querySelectorAll('.ui-git').forEach((link) => {
+    hover(link, () => {
+      const mat = document.body.classList.contains('mat-active');
+      animate(link, { textDecorationColor: mat ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
+      return () => animate(link, { textDecorationColor: mat ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
+    });
+    press(link, () => {
+      animate(link, { scale: 0.98 }, SPRING_PRESS);
+      return () => animate(link, { scale: 1 }, SPRING_BACK);
+    });
+  });
+  // Modal install links — always on white panel, always black
+  document.querySelectorAll('.install-url').forEach((link) => {
     hover(link, () => {
       animate(link, { textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
       return () => animate(link, { textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
