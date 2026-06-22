@@ -560,15 +560,15 @@ private final class StickerProp: NSView {
     // Rest = 90-557, hover = 90-537.
     private let paperCRest  = CGPoint(x: 50.19, y: 20.62)
     private let paperCHover = CGPoint(x: 48.19, y: 21.61)
-    private let foldCRest   = CGPoint(x: 55.08, y: 32.20)
-    private let foldCHover  = CGPoint(x: 60.08, y: 34.00)
+    // Fold img centre (incl. the −5.88%/−9.74% inset): rest 94-696, hover 90-537.
+    private let foldCRest   = CGPoint(x: 53.68, y: 22.73)   // y-up (76 − 53.27)
+    private let foldCHover  = CGPoint(x: 58.45, y: 30.73)   // y-up (76 − 45.27)
 
-    // Front sheet is smaller at rest (Figma fold box 65.6→78 ⇒ ×0.841).
-    private let foldRestScale: CGFloat = 0.841
-    // Rest rotates the sheets back from the baked (hover) pose (y-up: +CCW):
-    // paper -16.3°→-10.93° = +5.37° CW = −rad ; fold +4.72°→0° = −4.72° CW = +rad.
+    // The fold SVG is baked at the REST pose (upright), so it stays put at rest and
+    // rotates to +4.72° on hover. The paper SVG is baked at the HOVER pose (−16.3°),
+    // so it rotates back +5.37° CW at rest. (y-up: CW = −rad.)
     private let paperRestRot: CGFloat = -5.37 * .pi / 180
-    private let foldRestRot:  CGFloat =  4.72 * .pi / 180
+    private let foldHoverRot: CGFloat = -4.72 * .pi / 180
 
     init() {
         super.init(frame: .zero)
