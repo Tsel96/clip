@@ -95,8 +95,8 @@ function gestures() {
   const modalDownload = document.getElementById('modalDownloadBtn');
   if (modalDownload) {
     hover(modalDownload, () => {
-      animate(modalDownload, { textUnderlineOffset: '0.28em', textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
-      return () => animate(modalDownload, { textUnderlineOffset: '0.15em', textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
+      animate(modalDownload, { textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
+      return () => animate(modalDownload, { textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
     });
     press(modalDownload, () => {
       animate(modalDownload, { scale: 0.98 }, SPRING_PRESS);
@@ -114,8 +114,8 @@ function gestures() {
   // Underlined links — offset + color deepen on hover
   document.querySelectorAll('.ui-git, .install-url').forEach((link) => {
     hover(link, () => {
-      animate(link, { textUnderlineOffset: '0.28em', textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
-      return () => animate(link, { textUnderlineOffset: '0.15em', textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
+      animate(link, { textDecorationColor: 'rgba(0,0,0,1)' }, { duration: 0.2, ease: EASE_OUT });
+      return () => animate(link, { textDecorationColor: 'rgba(0,0,0,0.2)' }, { duration: 0.2, ease: EASE_OUT });
     });
     press(link, () => {
       animate(link, { scale: 0.98 }, SPRING_PRESS);
