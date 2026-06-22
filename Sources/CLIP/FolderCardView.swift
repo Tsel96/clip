@@ -50,8 +50,12 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private static let oneItemImage   = loadSVG("Folder_1-item")
     private static let twoItemsImage  = loadSVG("Folder_2-items")
     private static let threeItemsImage = loadSVG("Folder_3-items")
-    /// Open-lid art shown while a card is held over the folder (drop-hover).
-    private static let hoveredImage   = loadSVG("Folder_Hovered")
+    /// Open-lid art shown while a card is held over the folder (drop-hover): empty
+    /// vs WITH a card peeking inside (Figma 104:679 / 104:670). Both are 1163×1099
+    /// (taller than the 1044 rest art — the open lid extends upward).
+    private static let hoveredImage       = loadSVG("Folder_Hovered")
+    private static let hoveredObjectImage = loadSVG("Folder_HoveredObject")
+    private static let hoveredArtHeight: CGFloat = 1099
     /// Current folder tint (so the open-lid art is recoloured to match).
     private var nodeColorHex: String?
     private var isDropHovered = false
@@ -271,31 +275,31 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     func setDropHover(_ hovering: Bool) {
         guard hovering != isDropHovered else { return }
         isDropHovered = hovering
-        let base: NSImage? = hovering ? Self.hoveredImage : Self.art(forCount: currentCount)
-        let art: NSImage?
-        if let hex = nodeColorHex, let color = Self.color(fromHex: hex), let b = base {
-            art = Self.tinted(b, with: color)
+        if hovering {
+            // Open lid: with-object art if the folder already has items, else empty.
+            let base = currentCount >= 1 ? Self.hoveredObjectImage : Self.hoveredImage
+            shapeView.image = tintedIfNeeded(base)
+            shadowView.image = base
+            currentArtHeight = Self.hoveredArtHeight        // taller art → lid lifts up
         } else {
-            art = base
+            refreshArt()                                    // back to per-count art (1044)
         }
-        // Lid open/close = a soft crossfade between the rest + open-lid art.
+        // Lid open/close = a soft crossfade of the folder art (the open-lid shape).
         let fade = CATransition()
         fade.type = .fade
-        fade.duration = 0.18
+        fade.duration = 0.20
         fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         shapeView.layer?.add(fade, forKey: "lid")
-        shapeView.image = art
-        shadowView.image = base                       // shadow follows the shape
+        if let copy = fade.copy() as? CATransition { shadowView.layer?.add(copy, forKey: "lid") }
+        needsLayout = true                                  // remap the (taller) art frame
+    }
 
-        // Selection-style outline while hovering (kept on if genuinely selected).
-        let op: Float = hovering ? 1 : (showsSelectionOutline ? 1 : 0)
-        let o = CABasicAnimation(keyPath: "opacity")
-        o.fromValue = haloView.layer?.presentation()?.opacity ?? haloView.layer?.opacity
-        o.toValue = op
-        o.duration = 0.16
-        o.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        haloView.layer?.opacity = op
-        haloView.layer?.add(o, forKey: "fade")
+    /// Apply the folder tint to an art image if one is set.
+    private func tintedIfNeeded(_ base: NSImage?) -> NSImage? {
+        if let hex = nodeColorHex, let color = Self.color(fromHex: hex), let b = base {
+            return Self.tinted(b, with: color)
+        }
+        return base
     }
 
     /// Global object drop shadow (mirrors CardItemView.updateShadow): rest vs
