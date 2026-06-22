@@ -41,6 +41,8 @@ final class ConnectorOverlayController {
     private static let arrowHalf: CGFloat = 4.5
     private static let labelFontSize: CGFloat = 17   // CONTENT units (Figma: SF Mono Semibold 17) → scales with zoom
     private static let dotDiameter: CGFloat = 9      // yellow source dot (Figma 88-441), screen-constant
+    private static let hoverDotDiameter: CGFloat = 16  // connect-hover port (Figma 100-297)
+    private static let hoverDotRing: CGFloat = 3
     /// Canvas backdrop colour (light theme #EDF0F1) — masks the line behind the label.
     private static let labelBackground = NSColor(srgbRed: 0.929, green: 0.941, blue: 0.945, alpha: 1)
     /// Label text #16181A (Figma).
@@ -56,6 +58,37 @@ final class ConnectorOverlayController {
         container.wantsLayer = true
         root.zPosition = 50   // above cards, below the selection chrome
         container.layer?.addSublayer(root)
+    }
+
+    // MARK: - Connect-hover port (Figma 100-297)
+
+    /// Green-ring / yellow-centre dot shown on a card's side-centre while the
+    /// connector tool hovers it — signals "drag a connector from here".
+    private lazy var hoverDot: CAShapeLayer = {
+        let l = CAShapeLayer()
+        l.fillColor = Self.dotYellow.cgColor
+        l.strokeColor = Self.green.cgColor
+        l.zPosition = 70                       // above the connector lines
+        l.isHidden = true
+        root.addSublayer(l)
+        return l
+    }()
+
+    func showHoverDot(at point: CGPoint, mag: CGFloat) {
+        let d = Self.hoverDotDiameter / mag
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        hoverDot.lineWidth = Self.hoverDotRing / mag
+        hoverDot.path = CGPath(ellipseIn: CGRect(x: point.x - d / 2, y: point.y - d / 2,
+                                                 width: d, height: d), transform: nil)
+        hoverDot.isHidden = false
+        CATransaction.commit()
+    }
+
+    func hideHoverDot() {
+        guard !hoverDot.isHidden else { return }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        hoverDot.isHidden = true
+        CATransaction.commit()
     }
 
     func removeFromSuperlayer() { root.removeFromSuperlayer() }

@@ -128,14 +128,42 @@ final class CanvasInputView: NSView {
     /// Resolve the topmost hoverable node under the cursor → coordinator. Only in
     /// select mode and when idle (a drag/resize/marquee owns the gesture instead).
     private func updateHover(_ event: NSEvent) {
-        guard let p = config, mode == .idle else { setHovered(nil); return }
+        guard let p = config, mode == .idle else { setHovered(nil); hideConnectDot(); return }
         // Hand tool: no card hover (cursorUpdate shows the grab cursor).
-        if p.isHandMode() { setHovered(nil); return }
-        guard p.isSelectMode() else { setHovered(nil); return }
+        if p.isHandMode() { setHovered(nil); hideConnectDot(); return }
         let pt = convert(event.locationInWindow, from: nil)
+        // Connector tool: show the green/yellow connect-port dot on the side of the
+        // hovered card nearest the cursor (Figma 100-297) — "drag a connector here".
+        if p.isConnectMode() {
+            if let n = hitNode(at: pt, p), !n.isSection {
+                let rect = contentFrame(n, p)
+                let side = nearestSide(of: rect, to: pt)
+                let c = ConnectorPathMath.sideCenter(of: rect, side)
+                coordinator?.connectorController?.showHoverDot(at: c, mag: mag)
+            } else {
+                hideConnectDot()
+            }
+            setHovered(nil)
+            return
+        }
+        hideConnectDot()
+        guard p.isSelectMode() else { setHovered(nil); return }
         let n = hitNode(at: pt, p)
         // Sections aren't hoverable (they're background frames, like for selection).
         setHovered((n != nil && !n!.isSection) ? n!.id : nil)
+    }
+
+    private func hideConnectDot() { coordinator?.connectorController?.hideHoverDot() }
+
+    /// The side of `r` whose edge is closest to `pt` (for the connect-hover port).
+    private func nearestSide(of r: CGRect, to pt: CGPoint) -> ConnSide {
+        let dl = abs(pt.x - r.minX), dr = abs(r.maxX - pt.x)
+        let dt = abs(pt.y - r.minY), db = abs(r.maxY - pt.y)
+        let m = min(dl, dr, dt, db)
+        if m == dl { return .left }
+        if m == dr { return .right }
+        if m == dt { return .top }
+        return .bottom
     }
 
     private func setHovered(_ id: UUID?) {
