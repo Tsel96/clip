@@ -16,3 +16,4 @@ CLIP.app/
 # Installed Claude skills (local tooling, not app code)
 .agents/
 skills-lock.json
+.vercel
