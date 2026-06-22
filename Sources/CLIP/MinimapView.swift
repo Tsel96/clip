@@ -337,7 +337,7 @@ struct MinimapView: View {
 
         // Lens mode frames the content tightly so cards read large;
         // viewport mode pads more so the dashed box keeps clear air.
-        let pad: CGFloat = showsViewport ? 0.18 : 0.06
+        let pad: CGFloat = showsViewport ? 0.18 : 0.02
         let pX = (maxX - minX) * pad
         let pY = (maxY - minY) * pad
         return CGRect(x: minX - pX, y: minY - pY,

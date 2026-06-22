@@ -314,7 +314,8 @@ final class FolderCardView: NSView, NativeCardUpdatable {
             CATransform3DConcat(CATransform3DMakeTranslation(-cx, -cy, 0),
                                 CATransform3DMakeScale(0.94, 0.94, 1)),
             CATransform3DMakeTranslation(cx, cy + cy * 0.10, 0))    // sunk into the front
-        let to = hovering ? CATransform3DIdentity : closed
+        // Open lid rests 5pt HIGHER than its slot (the user's nudge).
+        let to = hovering ? CATransform3DMakeTranslation(0, -5, 0) : closed
         let s = CASpringAnimation(keyPath: "transform")
         s.fromValue = lidView.layer?.presentation()?.transform ?? lidView.layer?.transform ?? to
         s.toValue = to
@@ -340,6 +341,15 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         ho.timingFunction = CAMediaTimingFunction(name: .easeOut)
         haloView.layer?.opacity = op
         haloView.layer?.add(ho, forKey: "fade")
+
+        // Up-arrow drop affordance fades in/out with the hover.
+        let ao = CABasicAnimation(keyPath: "opacity")
+        ao.fromValue = dropArrow.layer?.presentation()?.opacity ?? dropArrow.layer?.opacity
+        ao.toValue = hovering ? 1 : 0
+        ao.duration = 0.16
+        ao.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        dropArrow.layer?.opacity = hovering ? 1 : 0
+        dropArrow.layer?.add(ao, forKey: "arrowFade")
     }
 
     /// Apply the folder tint to an art image if one is set.
@@ -418,5 +428,14 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         iconChip.frame = CGRect(x: w - pad - chip, y: h * 0.70, width: chip, height: chip)
         iconChip.layer?.cornerRadius = chip * 0.28
         iconView.frame = iconChip.bounds.insetBy(dx: chip * 0.26, dy: chip * 0.26)
+
+        // Up-arrow drop affordance — its Figma sub-rect, a perfect circle.
+        dropArrow.frame = CGRect(x: (Self.arrowRect.minX - Self.folderRect.minX) * sx,
+                                 y: (Self.arrowRect.minY - Self.folderRect.minY) * sy,
+                                 width: Self.arrowRect.width * sx,
+                                 height: Self.arrowRect.height * sy)
+        dropArrow.layer?.cornerRadius = dropArrow.frame.width / 2
+        dropArrowGlyph.frame = dropArrow.bounds.insetBy(dx: dropArrow.frame.width * 0.30,
+                                                        dy: dropArrow.frame.height * 0.30)
     }
 }

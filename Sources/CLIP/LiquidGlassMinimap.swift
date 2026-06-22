@@ -53,15 +53,16 @@ struct LiquidGlassMinimap: View {
     /// Geometry keeps the block inside both the circle and the on-screen
     /// region (worst corner ≈ 0.474·D from center, radius 0.5·D).
     private var minimapContent: some View {
-        MinimapView(inset: 8, showsViewport: false)
-            .frame(width: diameter * 0.52, height: diameter * 0.44)
+        MinimapView(inset: 6, showsViewport: false)
+            .frame(width: diameter * 0.62, height: diameter * 0.54)
             // The map breathes with the canvas: zooming in scales the
             // cards up (bounded, so they stay under the glass — the
-            // circle clip catches any overflow).
-            .scaleEffect(0.8 + 0.6 * zoomT, anchor: .center)
+            // circle clip catches any overflow). Bigger base so the content
+            // reads large in the dome (was 0.52×0.44 @ 0.8).
+            .scaleEffect(1.0 + 0.5 * zoomT, anchor: .center)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.leading, diameter * 0.15)
-            .padding(.top, diameter * 0.18)
+            .padding(.leading, diameter * 0.12)
+            .padding(.top, diameter * 0.15)
     }
 
     /// One uniform screen-space dot grid across the whole disc — the
