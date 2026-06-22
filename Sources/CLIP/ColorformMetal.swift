@@ -186,28 +186,30 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
         // pixel → world: inverse of screen = world*zoom + camOffset (points).
         float2 screenPt = in.pos.xy / max(u.pixelScale, 0.001);
         float2 world = (screenPt - float2(u.camX, u.camY)) / u.zoom;
-        float3 cream = float3(u.creamR, u.creamG, u.creamB);
         if (u.bulbCount == 0) return float4(0.0);
 
         float sig = max(u.sigma, 1.0);
-        // Soft GAUSSIAN colour clouds, blended LIGHTLY over cream — the original
-        // look was pastel tints on a cream field, not saturated orbs on black.
+        // Inverse-distance weighted blend → a smooth, FULL-BLEED colour field: every
+        // pixel is the softly-blended nearest bulb colours (no gaps, no cream, no
+        // hard cell edges) — the vibrant "nebula" look. `soft` sets how molten the
+        // transitions are; larger = smoother.
+        float soft = sig * sig * 0.30;
         float wsum = 0.0;
         float3 csum = float3(0.0);
         for (int i = 0; i < u.bulbCount; i++) {
             float2 d = world - float2(bulbs[i].px, bulbs[i].py);
-            float w = exp(-dot(d, d) / (sig * sig));
-            if (i == u.hoverIndex) { w *= 1.6; }      // hover-effect hook
+            float w = 1.0 / (dot(d, d) + soft);
+            if (i == u.hoverIndex) { w *= 2.2; }       // hover-effect hook
             wsum += w;
             csum += w * float3(bulbs[i].r, bulbs[i].g, bulbs[i].b);
         }
-        float3 cloud = csum / max(wsum, 1e-5);
-        float cover = smoothstep(0.03, 0.5, wsum);    // 0 in gaps, 1 in dense centres
-        float3 col = mix(cream, cloud, cover * 0.85); // soft tint over cream
-        col += cover * 0.05;                          // faint lift near centres
-        col = clamp(col, 0.0, 1.0);
-        float a = smoothstep(0.012, 0.16, wsum);      // organic edge fade to cream
-        return float4(col * a, a);                    // premultiplied
+        float3 col = csum / max(wsum, 1e-6);
+        // Push saturation + a little luminance so the (often muted) extracted card
+        // colours read as the vibrant rainbow of the reference.
+        float lum = dot(col, float3(0.299, 0.587, 0.114));
+        col = mix(float3(lum), col, 1.7);              // saturation ×1.7
+        col = clamp(col * 1.06 + 0.02, 0.0, 1.0);      // slight lift
+        return float4(col, 1.0);                       // opaque, full-bleed
     }
     """
 }
