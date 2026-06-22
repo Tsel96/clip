@@ -38,7 +38,7 @@ private struct SVGIcon: View {
 // MARK: - Shared Figma pill chrome
 
 /// White-60% rounded-999 pill with 4pt padding + the Figma layered drop shadow.
-private struct FigmaPill<Content: View>: View {
+struct FigmaPill<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         HStack(spacing: 4) { content }
@@ -129,5 +129,75 @@ struct SidebarToggleButton: View {
         .onHover { hover = $0 }
         .help(state.showSidebar ? "Hide sidebar" : "Show sidebar")
         .accessibilityIdentifier("canvas.sidebarToggle")
+    }
+}
+
+// MARK: - Zoom pill (same Figma pill chrome — Figma 74:13425 style)
+
+/// The −/NN %/+ zoom control, restyled into the shared white-60% pill so it
+/// matches the controls bar (was a `.regularMaterial` capsule).
+struct CanvasZoomPill: View {
+    @EnvironmentObject var state: CanvasState
+    @EnvironmentObject var cameraStore: CameraStore
+    @State private var customZoom = ""
+
+    var body: some View {
+        FigmaPill {
+            ZoomStepButton(symbol: "minus", action: state.zoomOut, help: "Zoom out  (⌘−)")
+            percentMenu
+            ZoomStepButton(symbol: "plus", action: state.zoomIn, help: "Zoom in  (⌘+)")
+        }
+        .accessibilityIdentifier("canvas.zoomPill")
+    }
+
+    private var percentMenu: some View {
+        Menu {
+            TextField("Custom %", text: $customZoom)
+                .onSubmit {
+                    if let pct = Int(customZoom.trimmingCharacters(in: .whitespaces)), pct > 0 {
+                        state.setZoom(CGFloat(pct) / 100)
+                    }
+                    customZoom = ""
+                }
+            Divider()
+            Button("Zoom to 100%  ⌘0") { state.resetView() }
+            Button("Zoom to fit  ⌘1") { state.zoomToFit() }
+            Button("Zoom to selection  ⇧1") { state.zoomToSelection() }
+            Divider()
+            ForEach([25, 50, 100, 200, 400], id: \.self) { pct in
+                Button("\(pct)%") { state.setZoom(CGFloat(pct) / 100) }
+            }
+        } label: {
+            Text("\(Int((cameraStore.camera.zoom * 100).rounded())) %")
+                .font(.clip(13).monospacedDigit())
+                .foregroundStyle(.black.opacity(0.78))
+                .frame(minWidth: 52, minHeight: 28)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Change zoom level")
+    }
+}
+
+private struct ZoomStepButton: View {
+    let symbol: String
+    let action: () -> Void
+    var help: String = ""
+    @State private var hover = false
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.black.opacity(0.75))
+                .frame(width: 28, height: 28)
+                .background(hover ? Color.black.opacity(0.06) : .clear,
+                            in: Capsule(style: .continuous))
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .help(help)
     }
 }

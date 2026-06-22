@@ -646,7 +646,7 @@ struct CanvasView: View {
         // Bottom-RIGHT: zoom −/NN%/+ pill (Figma 51:12692).
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive {
-                NativeZoomControlsPill()
+                CanvasZoomPill()
                     .fixedSize()
                     .padding(.trailing, 18)
                     .padding(.bottom, 18)
