@@ -57,6 +57,8 @@ final class CanvasToolPaletteView: NSView {
     var onToolTap: ((ToolMode) -> Void)?
     var onAddTap: (() -> Void)?
     var onFolderTap: (() -> Void)?
+    /// Sticker prop tapped → drop a sticky at viewport centre (Spatial-style).
+    var onStickerTap: (() -> Void)?
     // Folder-bar actions (only live while morphed in).
     var onDownloadTap: (() -> Void)?
     var onEjectTap: (() -> Void)?

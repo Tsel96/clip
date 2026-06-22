@@ -155,11 +155,6 @@ struct CanvasConfig {
     /// True in hand (pan) mode — the above-island passes clicks through so
     /// `CanvasInputView` grabs-and-pans the scroll view (Figma hand tool).
     let isHandMode: () -> Bool
-    /// True in sticky-note placement mode — a single canvas click drops a sticky
-    /// at the click point (Spatial: pick the tool, click the canvas).
-    let isStickyMode: () -> Bool
-    /// Drop a sticky note centred on the given WORLD point.
-    let onPlaceSticky: (CGPoint) -> Void
     /// Create a connector between two nodes (drag-to-connect commit).
     let onAddConnector: (UUID, UUID) -> Void
     /// Live marker colour + width for the native draw preview.

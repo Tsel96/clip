@@ -286,6 +286,12 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         return false
     }
 
+    /// True if this node is a sticky note. Shows the same action bar as folders.
+    var isStickyNote: Bool {
+        if case .stickyNote = kind { return true }
+        return false
+    }
+
     /// World rectangle covering this node (position + size at current
     /// width/height). Sections use this for containment hit-testing.
     var worldRect: CGRect {

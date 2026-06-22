@@ -348,8 +348,6 @@ struct CanvasView: View {
                             isDrawMode: { state.toolMode == .draw },
                             isConnectMode: { state.toolMode == .connect },
                             isHandMode: { state.toolMode == .hand },
-                            isStickyMode: { state.toolMode == .stickyNote },
-                            onPlaceSticky: { state.addStickyNote(at: $0) },
                             onAddConnector: { src, dst in state.addConnector(from: src, to: dst) },
                             drawColor: {
                                 let c = state.drawColor
