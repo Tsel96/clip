@@ -222,10 +222,18 @@ final class CanvasInputView: NSView {
         if let p = config, let editID = p.editingTextNodeID,
            let n = p.nodes.first(where: { $0.id == editID }) {
             let local = convert(point, from: superview)
-            if contentFrame(n, p).contains(local) { return nil }
+            let cf = contentFrame(n, p)
+            let hit = cf.contains(local)
+            if hit {
+                FolderCardView.diag("HT pt=\(fmt(point)) local=\(fmt(local)) cf=\(fmt(cf.origin))±\(Int(cf.width))x\(Int(cf.height)) super=\(type(of: superview)) → passthrough")
+                return nil
+            } else {
+                FolderCardView.diag("HT MISS pt=\(fmt(point)) local=\(fmt(local)) cf=\(fmt(cf.origin))±\(Int(cf.width))x\(Int(cf.height)) super=\(type(of: superview))")
+            }
         }
         return super.hitTest(point)
     }
+    private func fmt(_ p: CGPoint) -> String { "(\(Int(p.x)),\(Int(p.y)))" }
 
     override func mouseDown(with event: NSEvent) {
         guard let p = config else { return }
