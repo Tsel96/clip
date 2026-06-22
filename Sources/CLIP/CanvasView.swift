@@ -230,7 +230,20 @@ struct CanvasView: View {
     // Grows-only canvas extent (see CanvasState.stableWorldBounds) — a
     // content-following box shifted with a select-all drag, making the move
     // invisible; this stays put so the cards actually move on screen.
-    private var worldBounds: CGRect { state.stableWorldBounds() }
+    private var worldBounds: CGRect {
+        let base = state.stableWorldBounds()
+        // In Colorform the cards spread into colour clusters far from their
+        // canvas positions (centred near the origin), so the grows-only canvas
+        // box may not cover them — union in the bulb layout so you can scroll to
+        // every cluster.
+        guard state.canvasMode == .colorform, !state.colorBulbs.isEmpty else { return base }
+        var ext = base
+        for b in state.colorBulbs {
+            let r = b.radius + 1500
+            ext = ext.union(CGRect(x: b.center.x - r, y: b.center.y - r, width: 2 * r, height: 2 * r))
+        }
+        return ext
+    }
 
     /// Content-coordinate camera for the native canvas's world-space overlay
     /// (connectors): maps world → (world − worldBounds.origin) so the overlay
