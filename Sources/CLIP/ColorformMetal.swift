@@ -18,8 +18,8 @@ struct ColorformMetalView: NSViewRepresentable {
     func makeNSView(context: Context) -> MTKView {
         let v = MTKView(frame: .zero, device: context.coordinator.device)
         v.delegate = context.coordinator
-        v.isPaused = true                 // draw on demand (camera / bulbs changes)
-        v.enableSetNeedsDisplay = true
+        v.isPaused = false                // continuous: draw() pulls the live camera
+        v.enableSetNeedsDisplay = false
         v.framebufferOnly = true
         v.colorPixelFormat = .bgra8Unorm
         v.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
@@ -78,12 +78,10 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
         super.init()
         buildPipeline()
         rebuildBulbs(state.colorBulbs)
-        // Redraw on every camera tick (pan/zoom) + whenever the bulbs change.
-        cameraStore.$camera
-            .sink { [weak self] _ in self?.refresh() }
-            .store(in: &cancellables)
+        // The camera is pulled live in draw(in:) (continuous render); only the bulb
+        // BUFFER needs rebuilding when the clusters change.
         state.$colorBulbs
-            .sink { [weak self] bulbs in self?.rebuildBulbs(bulbs); self?.refresh() }
+            .sink { [weak self] bulbs in self?.rebuildBulbs(bulbs) }
             .store(in: &cancellables)
     }
 
@@ -142,6 +140,13 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+        // Pull the LIVE camera every frame so pan/zoom tracks without any SwiftUI
+        // round-trip (this is the cheap GPU path the rewrite is all about).
+        let cam = cameraStore.camera
+        uniforms.zoom = Float(max(cam.zoom, 0.0001))
+        uniforms.camX = Float(cam.x)
+        uniforms.camY = Float(cam.y)
+        uniforms.pixelScale = Float(view.window?.backingScaleFactor ?? 2)
         guard let pipeline,
               let drawable = view.currentDrawable,
               let rpd = view.currentRenderPassDescriptor,
