@@ -454,11 +454,13 @@ private final class PropButton: NSView {
     override var isFlipped: Bool { true }
     override func layout() {
         super.layout()
-        // Keep the lift through a relayout (flipped view → negative y is up).
-        let off: CGFloat = markerLifted ? -markerLift : 0
+        // The hovered art is baked at the LIFTED position, so rest sits `markerLift`
+        // lower; hover/selected lift it back up to the baked spot (flipped view → +y is down).
+        let off: CGFloat = markerLifted ? 0 : markerLift
         imageView.frame = CGRect(x: 0, y: off, width: bounds.width, height: bounds.height)
         hoverImageView.frame = bounds
-        selectedImageView.frame = CGRect(x: 0, y: off, width: bounds.width, height: bounds.height)
+        // Selected art has the green pill baked at a fixed spot — never slide it.
+        selectedImageView.frame = bounds
     }
 
     // MARK: Hover tracking
@@ -514,11 +516,11 @@ private final class PropButton: NSView {
             ctx.duration = 0.18
             ctx.timingFunction = CLIPSpring.easeOutSoft
             ctx.allowsImplicitAnimation = true
-            let o = CGPoint(x: 0, y: markerLifted ? -markerLift : 0)
-            imageView.animator().setFrameOrigin(o)
-            selectedImageView.animator().setFrameOrigin(o)          // same lift → no jump
-            // Selected shows ONLY the selected art; hide the base so the two
-            // don't render as two overlapping markers.
+            // Rest sits `markerLift` lower; hover/selected lift to the baked position.
+            imageView.animator().setFrameOrigin(CGPoint(x: 0, y: markerLifted ? 0 : markerLift))
+            // Selected art has the green pill baked in at a fixed spot — never slide it.
+            selectedImageView.animator().setFrameOrigin(.zero)
+            // Selected shows ONLY the selected art (marker + pill); hide the base.
             imageView.animator().alphaValue = isActive ? 0 : 1
             selectedImageView.animator().alphaValue = isActive ? 1 : 0
         }

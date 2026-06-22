@@ -1,0 +1,35 @@
+<svg width="91" height="89" viewBox="0 0 91 89" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g filter="url(#filter0_dddd_93_571)">
+<rect x="4.15674" y="14.8975" width="73.8254" height="67.3114" rx="1.08567" transform="rotate(-10.9299 4.15674 14.8975)" fill="url(#paint0_linear_93_571)"/>
+</g>
+<defs>
+<filter id="filter0_dddd_93_571" x="0.000100136" y="-0.000219107" width="90.3053" height="88.4017" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset/>
+<feGaussianBlur stdDeviation="0.542834"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_93_571"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dx="-1.08567" dy="1.08567"/>
+<feGaussianBlur stdDeviation="0.542834"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.04 0"/>
+<feBlend mode="normal" in2="effect1_dropShadow_93_571" result="effect2_dropShadow_93_571"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dx="-1.08567" dy="3.257"/>
+<feGaussianBlur stdDeviation="1.08567"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.03 0"/>
+<feBlend mode="normal" in2="effect2_dropShadow_93_571" result="effect3_dropShadow_93_571"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dx="-2.17134" dy="5.42834"/>
+<feGaussianBlur stdDeviation="1.08567"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.01 0"/>
+<feBlend mode="normal" in2="effect3_dropShadow_93_571" result="effect4_dropShadow_93_571"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect4_dropShadow_93_571" result="shape"/>
+</filter>
+<linearGradient id="paint0_linear_93_571" x1="41.0695" y1="14.8975" x2="41.0695" y2="82.2089" gradientUnits="userSpaceOnUse">
+<stop stop-color="#A3D4F8" style="stop-color:#A3D4F8;stop-color:color(display-p3 0.6392 0.8314 0.9725);stop-opacity:1;"/>
+<stop offset="0.471454" stop-color="#9BCBEC" style="stop-color:#9BCBEC;stop-color:color(display-p3 0.6078 0.7961 0.9255);stop-opacity:1;"/>
+</linearGradient>
+</defs>
+</svg>
