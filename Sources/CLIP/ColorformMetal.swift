@@ -10,9 +10,10 @@ import Combine
 struct ColorformMetalView: NSViewRepresentable {
     let state: CanvasState
     let cameraStore: CameraStore
+    let pointer: CanvasPointerStore
 
     func makeCoordinator() -> ColorformRenderer {
-        ColorformRenderer(state: state, cameraStore: cameraStore)
+        ColorformRenderer(state: state, cameraStore: cameraStore, pointer: pointer)
     }
 
     func makeNSView(context: Context) -> MTKView {
@@ -46,6 +47,14 @@ private struct CFUniforms {
     var sigma: Float = 300
     var bulbCount: Int32 = 0
     var hoverIndex: Int32 = -1
+    // Hover (liquid swirl & lens). cursor is screen-space points (same space as
+    // camX/camY); the rest are world-space / eased scalars set per frame.
+    var cursorX: Float = 0
+    var cursorY: Float = 0
+    var hoverStrength: Float = 0      // 0…1, eased in/out
+    var hoverRadius: Float = 300      // world-space falloff radius
+    var swirlAmt: Float = 0           // radians at the cursor
+    var pushAmt: Float = 0            // world-space outward push at the cursor
 }
 private struct CFBulb {
     var px: Float; var py: Float
@@ -68,11 +77,13 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
 
     private let state: CanvasState
     private let cameraStore: CameraStore
+    private let pointer: CanvasPointerStore
     private var cancellables = Set<AnyCancellable>()
 
-    init(state: CanvasState, cameraStore: CameraStore) {
+    init(state: CanvasState, cameraStore: CameraStore, pointer: CanvasPointerStore) {
         self.state = state
         self.cameraStore = cameraStore
+        self.pointer = pointer
         self.device = MTLCreateSystemDefaultDevice()!
         self.queue = device.makeCommandQueue()!
         super.init()
@@ -147,6 +158,21 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
         uniforms.camX = Float(cam.x)
         uniforms.camY = Float(cam.y)
         uniforms.pixelScale = Float(view.window?.backingScaleFactor ?? 2)
+
+        // Hover: read the live cursor (same store as the dot-grid spotlight; pointer
+        // moves never re-render SwiftUI) and ease the effect strength in/out so it
+        // never pops. The disturbance size/strength scale with the constellation
+        // spacing (σ), so it feels consistent at any zoom.
+        let hoverTarget: Float = pointer.location != nil ? 1 : 0
+        uniforms.hoverStrength += (hoverTarget - uniforms.hoverStrength) * 0.18   // ~150 ms @60fps
+        if let p = pointer.location {
+            uniforms.cursorX = Float(p.x)
+            uniforms.cursorY = Float(p.y)
+        }
+        uniforms.hoverRadius = max(uniforms.sigma * 1.1, 1)
+        uniforms.swirlAmt = 1.2
+        uniforms.pushAmt = uniforms.sigma * 0.35
+
         guard let pipeline,
               let drawable = view.currentDrawable,
               let rpd = view.currentRenderPassDescriptor,
@@ -171,7 +197,9 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
 
     struct Uniforms { float zoom; float camX; float camY; float pixelScale;
                       float creamR; float creamG; float creamB; float sigma;
-                      int bulbCount; int hoverIndex; };
+                      int bulbCount; int hoverIndex;
+                      float cursorX; float cursorY; float hoverStrength;
+                      float hoverRadius; float swirlAmt; float pushAmt; };
     struct Bulb { float px; float py; float r; float g; float b; float radius; };
     struct VOut { float4 pos [[position]]; };
 
@@ -188,6 +216,26 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
         float2 world = (screenPt - float2(u.camX, u.camY)) / u.zoom;
         if (u.bulbCount == 0) return float4(0.0);
 
+        // --- Hover: liquid swirl & lens domain-warp around the cursor ---
+        // Sample the colour field from a DISPLACED point so the colours swirl and
+        // part away from the cursor (a vortex + radial push). `s` (0 far → strong
+        // at the cursor) also drives the bloom below.
+        float2 sampleW = world;
+        float s = 0.0;
+        if (u.hoverStrength > 0.001) {
+            float2 cur = (float2(u.cursorX, u.cursorY) - float2(u.camX, u.camY)) / u.zoom; // world
+            float2 d = world - cur;
+            float dist = length(d);
+            float R = max(u.hoverRadius, 1.0);
+            float fall = exp(-(dist * dist) / (R * R));     // 1 at cursor → 0 far
+            s = u.hoverStrength * fall;
+            float ang = u.swirlAmt * s;                     // vortex near cursor
+            float ca = cos(ang), sa = sin(ang);
+            float2 rot = float2(d.x * ca - d.y * sa, d.x * sa + d.y * ca);
+            float2 dir = dist > 1e-4 ? d / dist : float2(0.0);
+            sampleW = cur + rot + dir * (u.pushAmt * s);    // part outward + swirl
+        }
+
         float sig = max(u.sigma, 1.0);
         // Inverse-distance weighted blend → a smooth, FULL-BLEED colour field: every
         // pixel is the softly-blended nearest bulb colours (no gaps, no cream, no
@@ -197,9 +245,8 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
         float wsum = 0.0;
         float3 csum = float3(0.0);
         for (int i = 0; i < u.bulbCount; i++) {
-            float2 d = world - float2(bulbs[i].px, bulbs[i].py);
+            float2 d = sampleW - float2(bulbs[i].px, bulbs[i].py);
             float w = 1.0 / (dot(d, d) + soft);
-            if (i == u.hoverIndex) { w *= 2.2; }       // hover-effect hook
             wsum += w;
             csum += w * float3(bulbs[i].r, bulbs[i].g, bulbs[i].b);
         }
@@ -215,6 +262,8 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
         float3 base  = mix(float3(0.86), vivid, smoothstep(0.015, 0.07, mx));
         float lum = dot(base, float3(0.299, 0.587, 0.114));
         col = clamp(mix(float3(lum), base, 1.4), 0.0, 1.0);        // saturation boost
+        // Bloom follows the cursor — brighten + lift where the warp is strongest.
+        col = mix(col, clamp(col * 1.25 + 0.06, 0.0, 1.0), 0.55 * s);
         return float4(col, 1.0);                                   // opaque, full-bleed
     }
     """

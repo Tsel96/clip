@@ -197,7 +197,10 @@ struct CanvasView: View {
     private var bulbsOpacity: Double {
         guard state.canvasMode == .colorform else { return 0 }
         let z = cameraStore.camera.zoom
-        let t = max(0, min(1, (0.55 - z) / 0.25))
+        // Field full when zoomed out (≤ ~7%), crossfades to the cards by ~15%
+        // zoom — so the colour map is the zoomed-out overview and the actual
+        // cards reveal as you zoom in past 15%.
+        let t = max(0, min(1, (0.15 - z) / 0.08))
         return Double(3 * t * t - 2 * t * t * t)   // smoothstep
     }
     private var cardsOpacity: Double {
@@ -280,7 +283,7 @@ struct CanvasView: View {
                 // Colorform mode. Painted BELOW the cards so the cards
                 // sit on top until the zoom-driven crossfade fades them.
                 if state.canvasMode == .colorform {
-                    ColorformLayer()
+                    ColorformLayer(pointer: pointerStore)
                         .opacity(bulbsOpacity)
                 }
 
@@ -481,13 +484,10 @@ struct CanvasView: View {
                         .allowsHitTesting(true)
                 }
 
-                // Colorform navigation: drives the shared camera directly (drag =
-                // pan, pinch = zoom) so the GPU field + labels move. The native
-                // scroll view doesn't drive the camera under the read-only
-                // Colorform overlay, so we own pan/zoom here instead.
-                if state.canvasMode == .colorform {
-                    ColorformPanZoom()
-                }
+                // (Colorform pan/zoom is driven by the native scroll view —
+                // `.allowsHitTesting(true)` above lets scroll/magnify reach it,
+                // and `pushCameraFromScroll` feeds the shared camera the GPU
+                // field + labels read live. No separate gesture overlay needed.)
 
                 // (Smart Selection chrome is hosted in CLIPCanvasView's
                 // above-island, not as a ZStack sibling.)

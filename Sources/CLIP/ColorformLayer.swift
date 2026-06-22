@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 /// Colorform's background visualisation. The soft color field is now rendered on
 /// the GPU (`ColorformMetalView` — a gaussian-weighted blend of the bulb colours,
@@ -9,12 +8,16 @@ import AppKit
 struct ColorformLayer: View {
     @EnvironmentObject var state: CanvasState
     @EnvironmentObject var cameraStore: CameraStore
+    /// Live cursor (screen-space, top-left) for the field's hover interaction —
+    /// the same store that feeds the dot-grid spotlight. Read live by the GPU
+    /// renderer; pointer moves never re-render this view.
+    let pointer: CanvasPointerStore
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             // GPU color field — fills the layer; transparent at the edges so the
             // cream canvas + dot grid show through (the old organic blob mask).
-            ColorformMetalView(state: state, cameraStore: cameraStore)
+            ColorformMetalView(state: state, cameraStore: cameraStore, pointer: pointer)
 
             // Labels — SCREEN coordinates so they stay a constant 22pt on-screen,
             // painted on top of the field and never blurred.
@@ -33,48 +36,4 @@ struct ColorformLayer: View {
         }
         .allowsHitTesting(false)
     }
-}
-
-// MARK: - Colorform pan / zoom
-
-/// Native scroll/magnify capture for Colorform — drives the shared `CameraStore`
-/// so the GPU field + labels move. (The native scroll view doesn't drive the
-/// camera in this read-only view mode, so we own navigation here.) Two-finger
-/// scroll = pan, pinch = zoom about the cursor — matching `screen = world·zoom + camOffset`.
-private final class ColorformPanZoomView: NSView {
-    var onScroll: (@MainActor (CGFloat, CGFloat) -> Void)?
-    var onMagnify: (@MainActor (CGFloat, CGPoint) -> Void)?
-    override var isFlipped: Bool { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { self }   // capture nav events
-    override func scrollWheel(with event: NSEvent) {
-        let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-        MainActor.assumeIsolated { onScroll?(dx, dy) }
-    }
-    override func magnify(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil), m = event.magnification
-        MainActor.assumeIsolated { onMagnify?(1 + m, p) }
-    }
-}
-
-struct ColorformPanZoom: NSViewRepresentable {
-    @EnvironmentObject var cameraStore: CameraStore
-
-    func makeNSView(context: Context) -> NSView {
-        let v = ColorformPanZoomView()
-        let cam = cameraStore
-        v.onScroll = { dx, dy in
-            let c = cam.camera
-            cam.camera = Camera(x: c.x + dx, y: c.y + dy, zoom: c.zoom)
-        }
-        v.onMagnify = { f, anchor in
-            let base = cam.camera
-            let nz = min(max(base.zoom * f, 0.05), 8)
-            let r = nz / max(base.zoom, 0.0001)
-            cam.camera = Camera(x: anchor.x * (1 - r) + base.x * r,
-                                y: anchor.y * (1 - r) + base.y * r,
-                                zoom: nz)
-        }
-        return v
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }
