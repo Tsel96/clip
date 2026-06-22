@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Inline "Insert link here" field that drops in above the toolbar "+"
 /// (Figma node 72:36784). A green capsule wraps a white pill input; submitting
@@ -30,6 +31,27 @@ struct LinkInputBar: View {
     private static let inputFont = Font.system(size: 17, weight: .semibold, design: .monospaced)
 
     var body: some View {
+        // The "+" popover row (Figma 89-690): link input + OS-file-browser + Folder.
+        HStack(spacing: 12) {
+            linkInput
+            iconButton("os-file-browser", help: "Import a file from your computer",
+                       action: openFileBrowser)
+            iconButton("popover-folder", help: "New folder") { state.addFolder(); dismiss() }
+        }
+        .onExitCommand(perform: dismiss)            // Escape
+        // Panel is always mounted (so it can scale OUT of the "+"); focus the
+        // field only when it actually opens, and clear it each time.
+        .onChange(of: state.isLinkInputPresented) { shown in
+            if shown {
+                text = ""
+                DispatchQueue.main.async { focused = true }
+            } else {
+                focused = false
+            }
+        }
+    }
+
+    private var linkInput: some View {
         HStack(spacing: 10) {
             // The field + an explicit placeholder overlay. SwiftUI's `prompt:` did
             // not render here, so the placeholder is drawn manually and shown
@@ -82,18 +104,57 @@ struct LinkInputBar: View {
         .background(whiteField)
         .padding(4)
         .background(greenWrapper)
-        .onExitCommand(perform: dismiss)            // Escape
-        // Panel is always mounted (so it can scale OUT of the "+"); focus the
-        // field only when it actually opens, and clear it each time.
-        .onChange(of: state.isLinkInputPresented) { shown in
-            if shown {
-                text = ""
-                // Defer one runloop so the field is in the responder chain before
-                // we focus it — makes it immediately ready for ⌘V / typing.
-                DispatchQueue.main.async { focused = true }
-            } else {
-                focused = false
+    }
+
+    // MARK: Popover buttons (Figma 89-690)
+
+    private static func bundleIcon(_ name: String, size: CGFloat = 24) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.size = NSSize(width: size, height: size)
+        return img
+    }
+
+    /// 36×36 white-60% pill with a 24px icon (Figma 89-676 / 89-683).
+    private func iconButton(_ name: String, help: String,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if let icon = Self.bundleIcon(name) {
+                    Image(nsImage: icon).resizable().renderingMode(.original)
+                } else {
+                    Image(systemName: "questionmark").font(.system(size: 14))
+                }
             }
+            .frame(width: 24, height: 24)
+            .frame(width: 36, height: 36)
+            .background(
+                Circle().fill(.white.opacity(0.6))
+                    .shadow(color: .black.opacity(0.03), radius: 1, y: 1)
+                    .shadow(color: .black.opacity(0.02), radius: 4, y: 4))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func openFileBrowser() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image, .movie]
+        dismiss()
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls { importFile(url) }
+    }
+
+    private func importFile(_ url: URL) {
+        let isMovie = UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) ?? false
+        if isMovie {
+            state.addVideo(fileURL: url)
+        } else if let data = try? Data(contentsOf: url) {
+            state.addImage(data: data, filename: url.lastPathComponent)
         }
     }
 

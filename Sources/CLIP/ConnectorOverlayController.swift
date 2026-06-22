@@ -14,8 +14,9 @@ final class ConnectorOverlayController {
     private struct Bundle {
         let line: CAShapeLayer
         let arrow: CAShapeLayer
-        let dot: CAShapeLayer       // yellow source dot
-        let labelBG: CALayer
+        let dot: CAShapeLayer       // green-ring / yellow source port
+        let labelBG: CALayer        // canvas mask (rest) OR green pill (selected)
+        let labelWhite: CALayer     // white inner pill (selected only)
         let labelText: CATextLayer
     }
     private var bundles: [UUID: Bundle] = [:]

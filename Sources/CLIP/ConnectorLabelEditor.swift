@@ -67,10 +67,12 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         inner.addSubview(field)
 
         let enter = NSImageView()
-        enter.image = NSImage(systemSymbolName: "return.left", accessibilityDescription: "Enter")
-        enter.symbolConfiguration = .init(pointSize: Self.enterSize * 0.85, weight: .semibold)
-        enter.contentTintColor = Self.labelTextColor   // #16181A (Figma)
-        enter.imageScaling = .scaleProportionallyDown
+        if let url = Bundle.module.url(forResource: "Enter", withExtension: "svg"),
+           let img = NSImage(contentsOf: url) {
+            img.size = NSSize(width: Self.enterSize, height: Self.enterSize)
+            enter.image = img                          // SAME Enter.svg as the link input (Figma 88-464)
+        }
+        enter.imageScaling = .scaleProportionallyUpOrDown
         inner.addSubview(enter)
 
         host.addSubview(pill)
