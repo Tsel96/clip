@@ -43,12 +43,24 @@ struct LinkInputBar: View {
         // field only when it actually opens, and clear it each time.
         .onChange(of: state.isLinkInputPresented) { shown in
             if shown {
-                text = ""
+                // Pre-fill from the clipboard if it holds a link — one Enter to add.
+                text = Self.clipboardLink() ?? ""
                 DispatchQueue.main.async { focused = true }
             } else {
                 focused = false
             }
         }
+    }
+
+    /// The clipboard's contents IF they look like a single URL (http(s) or a bare
+    /// dotted domain, no spaces) — so opening the add field offers a paste-ready link.
+    private static func clipboardLink() -> String? {
+        guard let s = NSPasteboard.general.string(forType: .string)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !s.isEmpty, !s.contains(" "), s.count < 2048 else { return nil }
+        if s.hasPrefix("http://") || s.hasPrefix("https://") { return s }
+        if s.contains("."), let url = URL(string: s), url.host != nil { return s }
+        return nil
     }
 
     private var linkInput: some View {
