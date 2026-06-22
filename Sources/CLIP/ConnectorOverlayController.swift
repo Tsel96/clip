@@ -155,7 +155,8 @@ final class ConnectorOverlayController {
         for (id, b) in bundles where !seen.contains(id) {
             b.line.removeFromSuperlayer(); b.arrow.removeFromSuperlayer()
             b.dot.removeFromSuperlayer()
-            b.labelBG.removeFromSuperlayer(); b.labelText.removeFromSuperlayer()
+            b.labelBG.removeFromSuperlayer(); b.labelWhite.removeFromSuperlayer()
+            b.labelText.removeFromSuperlayer()
             bundles[id] = nil
         }
         midpoints = mids
@@ -226,9 +227,13 @@ final class ConnectorOverlayController {
         dot.strokeColor = Self.green.cgColor         // green ring (matches the hover port)
 
         let labelBG = CALayer()
-        labelBG.backgroundColor = Self.labelBackground.cgColor
         labelBG.cornerCurve = .continuous
         labelBG.isHidden = true
+
+        let labelWhite = CALayer()
+        labelWhite.backgroundColor = NSColor.white.cgColor
+        labelWhite.cornerCurve = .continuous
+        labelWhite.isHidden = true
 
         let labelText = CATextLayer()
         labelText.alignmentMode = .center
@@ -240,8 +245,10 @@ final class ConnectorOverlayController {
         root.addSublayer(arrow)
         root.addSublayer(dot)
         root.addSublayer(labelBG)
+        root.addSublayer(labelWhite)
         root.addSublayer(labelText)
-        let b = Bundle(line: line, arrow: arrow, dot: dot, labelBG: labelBG, labelText: labelText)
+        let b = Bundle(line: line, arrow: arrow, dot: dot,
+                       labelBG: labelBG, labelWhite: labelWhite, labelText: labelText)
         bundles[id] = b
         return b
     }
@@ -269,7 +276,7 @@ final class ConnectorOverlayController {
     /// reliably (a bare `CATextLayer.font = NSFont` often draws nothing).
     private func layoutLabel(_ b: Bundle, text: String, center: CGPoint, mag: CGFloat, selected: Bool) {
         guard !text.isEmpty else {
-            b.labelBG.isHidden = true; b.labelText.isHidden = true
+            b.labelBG.isHidden = true; b.labelWhite.isHidden = true; b.labelText.isHidden = true
             return
         }
         b.labelBG.isHidden = false; b.labelText.isHidden = false
@@ -279,18 +286,30 @@ final class ConnectorOverlayController {
         let fs = Self.labelFontSize / mag
         let font = NSFont.monospacedSystemFont(ofSize: fs, weight: .semibold)   // SF Mono Semibold (Figma)
         let measured = (shown as NSString).size(withAttributes: [.font: font])
-        let padH: CGFloat = 10 / mag, padV: CGFloat = 5 / mag
-        let w = measured.width + padH * 2
-        let h = measured.height + padV * 2
+        func centred(_ w: CGFloat, _ h: CGFloat) -> CGRect {
+            CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
+        }
 
-        b.labelBG.frame = CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
-        b.labelBG.cornerRadius = 6 / mag
-        b.labelBG.borderWidth = (selected ? 2 : 0) / mag
-        b.labelBG.borderColor = Self.greenSelected.cgColor
+        if selected {
+            // Green pill + white inner pill (Figma 100-319).
+            let whitePadH = 14 / mag, whitePadV = 8 / mag, greenPad = 4 / mag
+            let whiteW = measured.width + whitePadH * 2, whiteH = measured.height + whitePadV * 2
+            b.labelBG.frame = centred(whiteW + greenPad * 2, whiteH + greenPad * 2)
+            b.labelBG.cornerRadius = (whiteH + greenPad * 2) / 2
+            b.labelBG.backgroundColor = Self.green.cgColor
+            b.labelWhite.isHidden = false
+            b.labelWhite.frame = centred(whiteW, whiteH)
+            b.labelWhite.cornerRadius = whiteH / 2
+        } else {
+            // Plain label — a canvas-coloured chip masks the line (Figma 88-482).
+            let padH: CGFloat = 10 / mag, padV: CGFloat = 5 / mag
+            b.labelBG.frame = centred(measured.width + padH * 2, measured.height + padV * 2)
+            b.labelBG.cornerRadius = 6 / mag
+            b.labelBG.backgroundColor = Self.labelBackground.cgColor
+            b.labelWhite.isHidden = true
+        }
 
-        b.labelText.frame = CGRect(x: center.x - measured.width / 2,
-                                   y: center.y - measured.height / 2,
-                                   width: measured.width, height: measured.height)
+        b.labelText.frame = centred(measured.width, measured.height)
         b.labelText.string = NSAttributedString(string: shown, attributes: [
             .font: font,
             .foregroundColor: Self.labelTextColor      // Figma #16181A
