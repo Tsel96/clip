@@ -28,6 +28,8 @@ struct PagesSidebar: View {
     @State private var renameText: String = ""
     @FocusState private var renameFocused: Bool
     @State private var hoveredID: UUID? = nil
+    /// Row currently hovered during a page drag — shows the green insertion line.
+    @State private var dropTargetID: UUID? = nil
     /// Sidebar width (live), so the rename-dismiss monitor knows where the canvas
     /// begins (a click past this width = outside → commit).
     @State private var sidebarWidth: CGFloat = 200
@@ -69,7 +71,7 @@ struct PagesSidebar: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: rowGap) {
                         ForEach(state.pages) { page in
-                            row(for: page)
+                            reorderable(row(for: page), page: page)
                         }
                     }
                     .padding(.bottom, 12)
@@ -262,6 +264,34 @@ struct PagesSidebar: View {
                 }
             }
         }
+    }
+
+    /// Drag-reorder wrapper applied to each row at the ForEach site (kept separate
+    /// so the row's own long modifier chain stays type-checkable).
+    @ViewBuilder
+    private func reorderable(_ content: some View, page: Page) -> some View {
+        content
+            .overlay(alignment: .top) {
+                if dropTargetID == page.id {
+                    Rectangle().fill(accentGreen).frame(height: 2)
+                        .offset(y: -(rowGap / 2 + 1))
+                }
+            }
+            .draggable(page.id.uuidString) {
+                Text(page.name)
+                    .clipLabel(11, tracking: 0)
+                    .foregroundStyle(labelColor)
+                    .padding(.horizontal, 8)
+                    .frame(height: rowHeight)
+            }
+            .dropDestination(for: String.self) { items, _ in
+                guard let s = items.first, let dragged = UUID(uuidString: s) else { return false }
+                state.movePage(dragged, before: page.id)
+                dropTargetID = nil
+                return true
+            } isTargeted: { over in
+                dropTargetID = over ? page.id : (dropTargetID == page.id ? nil : dropTargetID)
+            }
     }
 
     // MARK: - Bottom info button

@@ -911,6 +911,18 @@ final class CanvasState: ObservableObject {
         sortPagesByPinned()
     }
 
+    /// Drag-reorder: move `dragged` to just before `target` in the page list,
+    /// then keep pinned pages grouped on top (stable sort preserves the new order
+    /// within each group).
+    func movePage(_ dragged: UUID, before target: UUID) {
+        guard dragged != target,
+              let from = pages.firstIndex(where: { $0.id == dragged }) else { return }
+        let page = pages.remove(at: from)
+        let idx = pages.firstIndex(where: { $0.id == target }) ?? pages.count
+        pages.insert(page, at: idx)
+        sortPagesByPinned()
+    }
+
     /// Simple 3-column grid so a burst of shares doesn't pile on one spot.
     private static func inboxTilePosition(slot: Int, cardWidth: CGFloat) -> CGPoint {
         let columns = 3
