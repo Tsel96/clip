@@ -156,7 +156,7 @@ struct CanvasConfig {
     /// `CanvasInputView` grabs-and-pans the scroll view (Figma hand tool).
     let isHandMode: () -> Bool
     /// Create a connector between two nodes (drag-to-connect commit).
-    let onAddConnector: (UUID, UUID) -> Void
+    let onAddConnector: (UUID, UUID, ConnSide?) -> Void
     /// Live marker colour + width for the native draw preview.
     let drawColor: () -> NSColor
     let drawWidth: () -> CGFloat

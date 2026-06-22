@@ -451,7 +451,9 @@ final class CanvasInputView: NSView {
             let pt = convert(event.locationInWindow, from: nil)
             if let srcID = connectSourceID, let hovered = hitNode(at: pt, p),
                hovered.id != srcID, !hovered.isSection {
-                p.onAddConnector(srcID, hovered.id)
+                // Attach to the side of the target the user dragged onto.
+                let side = nearestSide(of: contentFrame(hovered, p), to: pt)
+                p.onAddConnector(srcID, hovered.id, side)
             }
             coordinator?.connectorController?.clearPreview()
         case .pendingConnect, .marquee, .idle, .pan:

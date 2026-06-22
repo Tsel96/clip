@@ -161,7 +161,7 @@ final class ConnectorOverlayController {
             if let o = liveOffsets[c.targetID] { t.origin.x += o.x; t.origin.y += o.y }
             seen.insert(c.id)
             let isSel = lastSelected.contains(c.id)
-            let route = ConnectorPathMath.route(source: s, target: t)
+            let route = ConnectorPathMath.route(source: s, target: t, targetSide: c.targetSide)
             mids[c.id] = route.midpoint
 
             let b = bundles[c.id] ?? makeBundle(for: c.id)

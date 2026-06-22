@@ -348,7 +348,7 @@ struct CanvasView: View {
                             isDrawMode: { state.toolMode == .draw },
                             isConnectMode: { state.toolMode == .connect },
                             isHandMode: { state.toolMode == .hand },
-                            onAddConnector: { src, dst in state.addConnector(from: src, to: dst) },
+                            onAddConnector: { src, dst, side in state.addConnector(from: src, to: dst, targetSide: side) },
                             drawColor: {
                                 let c = state.drawColor
                                 return NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green),

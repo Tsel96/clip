@@ -282,7 +282,7 @@ extension CanvasState {
 
     /// Append a directed arrow from `source` to `target`, deduping if it
     /// already exists in either direction.
-    func addConnector(from source: UUID, to target: UUID) {
+    func addConnector(from source: UUID, to target: UUID, targetSide: ConnSide? = nil) {
         guard source != target else { return }
         let exists = connectors.contains {
             ($0.sourceID == source && $0.targetID == target) ||
@@ -290,7 +290,7 @@ extension CanvasState {
         }
         guard !exists else { return }
         withUndoable {
-            connectors.append(Connector(sourceID: source, targetID: target))
+            connectors.append(Connector(sourceID: source, targetID: target, targetSide: targetSide))
         }
         // Threshold haptic — the connector "landed" on a target node.
         Haptics.threshold()

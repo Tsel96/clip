@@ -7,7 +7,7 @@ import Foundation
 /// (see the `obsidian-canvas-connectors` memory). All inputs/outputs are in the
 /// canvas content-coordinate space (the flipped collection-view document space),
 /// so widths/standoff scale naturally with magnification.
-enum ConnSide: Int, CaseIterable {
+enum ConnSide: Int, CaseIterable, Codable {
     case top, right, bottom, left
 }
 

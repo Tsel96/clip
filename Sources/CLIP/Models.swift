@@ -517,23 +517,28 @@ struct Connector: Identifiable, Equatable, Codable {
     /// Optional text shown in a pill at the connector's midpoint (Obsidian-style
     /// edge label). Empty = no label.
     var label: String
+    /// The target side the user dragged the connector onto (nil = auto-pick).
+    var targetSide: ConnSide?
 
-    init(id: UUID = UUID(), sourceID: UUID, targetID: UUID, label: String = "") {
+    init(id: UUID = UUID(), sourceID: UUID, targetID: UUID, label: String = "",
+         targetSide: ConnSide? = nil) {
         self.id = id
         self.sourceID = sourceID
         self.targetID = targetID
         self.label = label
+        self.targetSide = targetSide
     }
 
-    enum CodingKeys: String, CodingKey { case id, sourceID, targetID, label }
+    enum CodingKeys: String, CodingKey { case id, sourceID, targetID, label, targetSide }
 
-    // Backward-compat: older documents have no `label` key — default to "".
+    // Backward-compat: older documents have no `label` / `targetSide` key.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         sourceID = try c.decode(UUID.self, forKey: .sourceID)
         targetID = try c.decode(UUID.self, forKey: .targetID)
         label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        targetSide = try c.decodeIfPresent(ConnSide.self, forKey: .targetSide)
     }
 }
 
