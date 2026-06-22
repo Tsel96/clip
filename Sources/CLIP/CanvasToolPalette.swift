@@ -535,6 +535,129 @@ private final class PropButton: NSView {
     }
 }
 
+// MARK: - StickerProp
+
+/// The sticky-note prop: three independently-animated sheets — a back **paper**,
+/// a front **corner-fold** sheet, and a green **select-bg**. On hover the two
+/// sheets fan apart and the front sheet lifts (grows); when the Sticky tool is
+/// active a green backdrop fades in behind them. Built from per-element SVGs
+/// (Figma 90-557 rest / 90-537 hover / 90-549 selected) so paper & fold carry
+/// independent position + rotation + scale; the paper's baked directional shadow
+/// rotates with the paper (that's the shadow change between states).
+private final class StickerProp: NSView {
+    var onTap: (() -> Void)?
+
+    private let greenBg = NSImageView()   // Select_bg — green selection backdrop
+    private let paper   = NSImageView()   // back sheet (carries the baked shadow)
+    private let fold    = NSImageView()   // front sheet with the folded corner
+
+    private var isActive  = false
+    private var isHovered = false
+    private var isPressed = false
+
+    override var isFlipped: Bool { true }
+
+    // Natural element SVG sizes (viewBox).
+    private let paperSize = CGSize(width: 91, height: 89)
+    private let foldSize   = CGSize(width: 80, height: 75)
+    private let bgFrame    = CGRect(x: 0, y: 21, width: 111, height: 55)
+
+    // Element centres per state (126×76 frame, top-left origin → flipped).
+    private let paperCRest  = CGPoint(x: 50.19, y: 55.38)
+    private let paperCHover = CGPoint(x: 48.19, y: 54.39)
+    private let foldCRest   = CGPoint(x: 55.08, y: 43.80)
+    private let foldCHover   = CGPoint(x: 60.08, y: 42.00)
+
+    // Front sheet grows as it lifts (Figma fold box 65.6→78 tall ≈ ×1.19).
+    private let foldHoverScale: CGFloat = 1.19
+
+    // Rotation vs the SVGs' baked (HOVER) rotation, degrees. Rest rotates the
+    // sheets back toward flat: paper -16.3°→-10.93° (+5.37), fold +4.72°→0° (-4.72).
+    private let paperRestRot: CGFloat =  5.37
+    private let foldRestRot:  CGFloat = -4.72
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = true          // clip the sheets to the frame, like Figma
+        for iv in [greenBg, paper, fold] {
+            iv.imageScaling = .scaleAxesIndependently
+            iv.wantsLayer = true
+            addSubview(iv)
+        }
+        greenBg.alphaValue = 0
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func setElements(paper p: NSImage?, fold f: NSImage?, greenBg g: NSImage?) {
+        paper.image = p; fold.image = f; greenBg.image = g
+        needsLayout = true
+    }
+
+    func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        apply(animated: true)
+    }
+
+    private var lifted: Bool { isHovered || isActive }
+
+    override func layout() {
+        super.layout()
+        greenBg.frame = bgFrame
+        apply(animated: false)
+    }
+
+    private func apply(animated: Bool) {
+        let pC = lifted ? paperCHover : paperCRest
+        let fC = lifted ? foldCHover  : foldCRest
+        let pRot: CGFloat = lifted ? 0 : paperRestRot
+        let fRot: CGFloat = lifted ? 0 : foldRestRot
+        let fSize = CGSize(width:  foldSize.width  * (lifted ? foldHoverScale : 1),
+                           height: foldSize.height * (lifted ? foldHoverScale : 1))
+        let pOrigin = CGPoint(x: pC.x - paperSize.width / 2, y: pC.y - paperSize.height / 2)
+        let fOrigin = CGPoint(x: fC.x - fSize.width / 2,     y: fC.y - fSize.height / 2)
+
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.24
+                ctx.timingFunction = CLIPSpring.easeOutSoft
+                ctx.allowsImplicitAnimation = true
+                paper.setFrameSize(paperSize)
+                paper.animator().setFrameOrigin(pOrigin)
+                paper.animator().frameCenterRotation = pRot
+                fold.animator().setFrameSize(fSize)
+                fold.animator().setFrameOrigin(fOrigin)
+                fold.animator().frameCenterRotation = fRot
+                greenBg.animator().alphaValue = isActive ? 1 : 0
+            }
+        } else {
+            paper.setFrameSize(paperSize); paper.setFrameOrigin(pOrigin); paper.frameCenterRotation = pRot
+            fold.setFrameSize(fSize); fold.setFrameOrigin(fOrigin); fold.frameCenterRotation = fRot
+            greenBg.alphaValue = isActive ? 1 : 0
+        }
+    }
+
+    // MARK: hover + click
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self))
+    }
+    override func mouseEntered(with event: NSEvent) { isHovered = true; apply(animated: true) }
+    override func mouseExited(with event: NSEvent)  { isHovered = false; isPressed = false; apply(animated: true) }
+    override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) != nil ? self : nil }
+    override func mouseDown(with event: NSEvent) { isPressed = true }
+    override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        if inside { onTap?() }
+    }
+}
+
 // MARK: - MainPillView
 
 /// The 470 × (62 + propOverflow) view.  The bottom 62 pt is the candy pill;
@@ -574,8 +697,8 @@ private final class MainPillView: NSView {
     // green ring), and the cap pokes 28pt above (needs propOverflow ≥ ~30).
     private static let markerX: CGFloat   = 112
     private static let markerY: CGFloat   = -16   // rest: chisel base flush with pill bottom; hover slides it up 10pt
-    private static let stickersX: CGFloat = 176
-    private static let stickersY: CGFloat = -6
+    private static let stickersX: CGFloat = 165   // 126-wide frame; sheets centred where the old 89-wide art sat
+    private static let stickersY: CGFloat = -18   // frame bottom (green bg) flush with capsule bottom (58)
 
     // MARK: Layers
 
@@ -588,7 +711,7 @@ private final class MainPillView: NSView {
 
     // Decorative prop views — clickable (Marker = Draw, Stickers = Sticky).
     private let markerView   = PropButton(image: nil)
-    private let stickersView = PropButton(image: nil)
+    private let stickersView = StickerProp()
 
     // MARK: - Init
 
@@ -655,10 +778,12 @@ private final class MainPillView: NSView {
         addSubview(markerView)
 
         // Sticky button crossfades between two artworks on hover (Figma
-        // sticky-btn-rest / -hover); no active state (per spec).
-        stickersView.setStateImages(
-            rest:  loadBundleImage(named: "sticky-btn-rest"),
-            hover: loadBundleImage(named: "sticky-btn-hover"))
+        // Layered sticky-note prop (paper + corner-fold + green select-bg) that
+        // fans apart / lifts on hover and gains the green backdrop when active.
+        stickersView.setElements(
+            paper:   loadBundleImage(named: "sticky-paper"),
+            fold:    loadBundleImage(named: "sticky-corner-fold"),
+            greenBg: loadBundleImage(named: "Select_bg"))
         stickersView.onTap = { [weak self] in self?.onToolTap?(.stickyNote) }
         addSubview(stickersView)
     }
@@ -736,8 +861,8 @@ private final class MainPillView: NSView {
 
         // Stickers: 89 × 64, at (195, -6) from inner capsule top
         // The Figma clip is bottom-aligned (bottom: 0)
-        let stickersW: CGFloat = 89
-        let stickersH: CGFloat = 64
+        let stickersW: CGFloat = 126
+        let stickersH: CGFloat = 76
         stickersView.frame = NSRect(
             x: innerOriginX + Self.stickersX,
             y: innerOriginY + Self.stickersY,
