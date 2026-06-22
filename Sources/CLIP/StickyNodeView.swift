@@ -47,8 +47,6 @@ struct StickyNodeView: View {
                         if state.editingTextNodeID == node.id { state.editingTextNodeID = nil }
                         if state.pendingFocusNodeID == node.id { state.pendingFocusNodeID = nil }
                     })
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
                 .allowsHitTesting(isEditing)
             }
     }

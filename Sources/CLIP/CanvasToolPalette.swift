@@ -769,7 +769,7 @@ private final class MainPillView: NSView {
         for (i, icon) in Self.buttonIcons.enumerated() {
             let btn = ToolPaletteButton(iconName: icon)
             btn.iconRestOpacity = Self.buttonOpacities[i]
-            btn.toolTip = Self.buttonTooltips[i]
+            btn.tipText = Self.buttonTooltips[i]
             let mode = Self.buttonModes[i]
             btn.onTap = { [weak self] in
                 if let mode { self?.onToolTap?(mode) }   // enter a tool mode
@@ -1133,9 +1133,22 @@ private final class AddPillView: NSView {
 ///   • `.selected` — green (#3DA726) circle, icon brand-yellow (#FEF33C) + glow.
 /// Hover/press/selection are all driven by the unified `CLIPSpring` motion
 /// system (CASpringAnimation, `.control` preset) — no ad-hoc curves.
-final class ToolPaletteButton: NSView {
+final class ToolPaletteButton: NSView, NSViewToolTipOwner {
 
     var onTap: (() -> Void)?
+
+    /// Native tooltip text. Registered via the explicit owner-based `addToolTip`
+    /// API (the `.toolTip` property proved unreliable for these custom NSViews
+    /// embedded in the SwiftUI-hosted palette), refreshed on layout.
+    var tipText: String? { didSet { refreshToolTip() } }
+    private func refreshToolTip() {
+        removeAllToolTips()
+        if tipText != nil, bounds.width > 1 { addToolTip(bounds, owner: self, userData: nil) }
+    }
+    func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag,
+              point: NSPoint, userData: UnsafeMutableRawPointer?) -> String {
+        tipText ?? ""
+    }
 
     /// Designed rest opacity for the icon when this tool is NOT selected (Figma:
     /// leading tools 1.0, trailing tools 0.70). It applies to the icon ONLY —
@@ -1220,6 +1233,7 @@ final class ToolPaletteButton: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         bgLayer.frame        = sz
+        refreshToolTip()     // re-register the tooltip rect at the real bounds
         // "rounded-[60px]" in Figma means a corner radius of 60pt —
         // capped to half the button side so it never exceeds a full circle.
         bgLayer.cornerRadius = min(60, sz.height / 2)
@@ -1607,15 +1621,15 @@ private final class FolderActionBarView: NSView {
         strikeBtn.onTap    = { StickyTextFormatting.toggleStrikethrough() }
         eraserBtn.onTap    = { StickyTextFormatting.clearFormatting() }
         // Native tooltips.
-        download.toolTip = "Download"
-        colorBtn.toolTip = "Colour"
-        eject.toolTip = "Open folder"
-        stickyFolder.toolTip = "Add to a new folder"
-        boldBtn.toolTip = "Bold"
-        italicBtn.toolTip = "Italic"
-        underlineBtn.toolTip = "Underline"
-        strikeBtn.toolTip = "Strikethrough"
-        eraserBtn.toolTip = "Clear formatting"
+        download.tipText = "Download"
+        colorBtn.tipText = "Colour"
+        eject.tipText = "Open folder"
+        stickyFolder.tipText = "Add to a new folder"
+        boldBtn.tipText = "Bold"
+        italicBtn.tipText = "Italic"
+        underlineBtn.tipText = "Underline"
+        strikeBtn.tipText = "Strikethrough"
+        eraserBtn.tipText = "Clear formatting"
         allButtons.forEach(addSubview)
         applyMode()
     }
