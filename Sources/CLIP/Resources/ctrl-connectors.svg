@@ -1,0 +1,7 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Frame" opacity="0.7">
+<path id="Vector" d="M5 18.75C6.51878 18.75 7.75 17.5188 7.75 16C7.75 14.4812 6.51878 13.25 5 13.25C3.48122 13.25 2.25 14.4812 2.25 16C2.25 17.5188 3.48122 18.75 5 18.75Z" stroke="var(--stroke-0, black)" style="stroke:black;stroke-opacity:1;" stroke-width="1.5"/>
+<path id="Vector_2" d="M19 18.75C20.5188 18.75 21.75 17.5188 21.75 16C21.75 14.4812 20.5188 13.25 19 13.25C17.4812 13.25 16.25 14.4812 16.25 16C16.25 17.5188 17.4812 18.75 19 18.75Z" stroke="var(--stroke-0, black)" style="stroke:black;stroke-opacity:1;" stroke-width="1.5"/>
+<path id="Vector_3" d="M5 13V12.25C5 8.38401 8.13401 5.25 12 5.25C15.866 5.25 19 8.38401 19 12.25V13" stroke="var(--stroke-0, black)" style="stroke:black;stroke-opacity:1;" stroke-width="1.5"/>
+</g>
+</svg>
