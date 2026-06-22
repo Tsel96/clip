@@ -14,6 +14,7 @@ enum ConnSide: Int, CaseIterable, Codable {
 /// One resolved connector route.
 struct BezierRoute {
     let path: CGPath          // so → to cubic bezier (the visible stroke)
+    let sourceCenter: CGPoint // source side-center, ON the card edge (the port sits here)
     let sourceAnchor: CGPoint // source standoff (start of the visible line — dot anchor)
     let control1: CGPoint     // bezier control points (for splitting a label gap)
     let control2: CGPoint
@@ -99,7 +100,7 @@ enum ConnectorPathMath {
             y: 0.125 * so.y + 0.375 * cp1.y + 0.375 * cp2.y + 0.125 * to.y
         )
         // Arrowhead sits at the target side-center, pointing in from the standoff.
-        return BezierRoute(path: path, sourceAnchor: so, control1: cp1, control2: cp2,
+        return BezierRoute(path: path, sourceCenter: s, sourceAnchor: so, control1: cp1, control2: cp2,
                            arrowTip: t, arrowFrom: to, midpoint: mid,
                            sourceSide: ss, targetSide: ts)
     }

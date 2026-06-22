@@ -21,7 +21,7 @@ final class CanvasInputView: NSView {
     override var acceptsFirstResponder: Bool { true }
     weak var coordinator: CollectionCanvas.Coordinator?
 
-    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw, pendingConnect, connect, pan }
+    private enum Mode { case idle, pendingMove, move, resize, pendingMarquee, marquee, draw, pendingConnect, connect, moveLabel, pan }
     /// Which edges a resize drag moves. A corner moves two (one H + one V); an
     /// edge moves one — matching Spatial's corner + edge resize handles.
     private struct Grip {
@@ -52,6 +52,10 @@ final class CanvasInputView: NSView {
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
     private var connectSourceID: UUID?              // drag-to-connect origin node
+    private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
+    private var labelDragID: UUID?                  // connector whose label is being dragged
+    private var labelDragStart: NSPoint = .zero     // content-space grab point
+    private var labelDragStartOffset: CGPoint = .zero
     private var didBegin = false
     private var clickedSelectedNoShift: UUID?       // collapse-to-one on a no-drag click
     private var panStartContent: NSPoint = .zero    // hand-tool grab anchor (content coords)
@@ -261,9 +265,22 @@ final class CanvasInputView: NSView {
                 mode = .idle
                 return
             }
+            // Single click ON a label → grab it to reposition (takes priority over
+            // starting a connection, so a label sitting over a card is draggable).
+            if p.useNativeConnectors,
+               let cid = coordinator?.connectorController?.labelHitTest(pt) {
+                mode = .moveLabel
+                labelDragID = cid
+                labelDragStart = pt
+                labelDragStartOffset = coordinator?.connectorController?.storedLabelOffset(cid) ?? .zero
+                return
+            }
             if let n = hitNode(at: pt, p), !n.isSection {
                 mode = .pendingConnect
                 connectSourceID = n.id
+                // Pin the source to the side nearest the grab so the origin doesn't
+                // drift to an auto-picked side later.
+                connectSourceSide = nearestSide(of: contentFrame(n, p), to: pt)
             } else if p.useNativeConnectors,
                       let cid = coordinator?.connectorController?.hitTest(pt, tolerance: 16 / mag) {
                 // Click a connector line (not a card) → select it (so it's deletable).
@@ -403,6 +420,11 @@ final class CanvasInputView: NSView {
             let srcRect = contentFrame(src, p)
             let tgtRect = target.map { contentFrame($0, p) } ?? CGRect(x: pt.x, y: pt.y, width: 0, height: 0)
             coordinator?.connectorController?.setPreview(sourceRect: srcRect, targetRect: tgtRect, magnification: mag)
+        case .moveLabel:
+            guard let id = labelDragID else { break }
+            let off = CGPoint(x: labelDragStartOffset.x + (pt.x - labelDragStart.x),
+                              y: labelDragStartOffset.y + (pt.y - labelDragStart.y))
+            coordinator?.connectorController?.setLiveLabelOffset(id: id, offset: off)
         case .pan:
             // Grab-pan (Figma hand tool): scroll the clip view by the slip of the
             // grabbed content point so it stays glued under the cursor 1:1.
@@ -451,15 +473,27 @@ final class CanvasInputView: NSView {
             let pt = convert(event.locationInWindow, from: nil)
             if let srcID = connectSourceID, let hovered = hitNode(at: pt, p),
                hovered.id != srcID, !hovered.isSection {
-                // Attach to the side of the target the user dragged onto.
+                // Attach to the side of the target the user dragged onto; keep the
+                // source pinned to where the drag began.
                 let side = nearestSide(of: contentFrame(hovered, p), to: pt)
-                p.onAddConnector(srcID, hovered.id, side)
+                p.onAddConnector(srcID, hovered.id, connectSourceSide, side)
             }
             coordinator?.connectorController?.clearPreview()
+        case .moveLabel:
+            let pt = convert(event.locationInWindow, from: nil)
+            if let id = labelDragID {
+                let off = CGPoint(x: labelDragStartOffset.x + (pt.x - labelDragStart.x),
+                                  y: labelDragStartOffset.y + (pt.y - labelDragStart.y))
+                let moved = abs(off.x - labelDragStartOffset.x) > 1 || abs(off.y - labelDragStartOffset.y) > 1
+                if moved { p.onMoveConnectorLabel(id, off) } else { p.onSelectConnector(id) }
+                coordinator?.connectorController?.clearLiveLabelOffset()
+            }
         case .pendingConnect, .marquee, .idle, .pan:
             coordinator?.connectorController?.clearPreview()
         }
         connectSourceID = nil
+        connectSourceSide = nil
+        labelDragID = nil
         coordinator?.refreshChrome()
         reset()
         // Re-resolve hover from the drop point (no mouseMoved fires during a drag).

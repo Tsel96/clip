@@ -1282,8 +1282,8 @@ final class ToolPaletteButton: NSView {
             iconView.alphaValue = 1.0
             l.shadowColor = NSColor.white.cgColor
             l.shadowOffset = .zero
-            l.shadowRadius = 5
-            l.shadowOpacity = 0.7
+            l.shadowRadius = 3          // softer, tighter glow (was 5 / 0.7)
+            l.shadowOpacity = 0.4
         } else if isHovered {
             iconView.alphaValue = 1.0
             l.shadowColor = NSColor.black.cgColor

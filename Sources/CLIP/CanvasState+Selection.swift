@@ -97,6 +97,12 @@ extension CanvasState {
         withUndoable { connectors[idx].label = trimmed }
     }
 
+    /// Persist a dragged label's offset from the bezier midpoint (content units).
+    func setConnectorLabelOffset(_ id: UUID, _ offset: CGPoint) {
+        guard let idx = connectors.firstIndex(where: { $0.id == id }) else { return }
+        withUndoable { connectors[idx].labelOffset = offset }
+    }
+
     func toggleConnectorSelection(_ id: UUID) {
         if selectedConnectorIDs.contains(id) {
             selectedConnectorIDs.remove(id)
@@ -282,7 +288,8 @@ extension CanvasState {
 
     /// Append a directed arrow from `source` to `target`, deduping if it
     /// already exists in either direction.
-    func addConnector(from source: UUID, to target: UUID, targetSide: ConnSide? = nil) {
+    func addConnector(from source: UUID, to target: UUID,
+                      sourceSide: ConnSide? = nil, targetSide: ConnSide? = nil) {
         guard source != target else { return }
         let exists = connectors.contains {
             ($0.sourceID == source && $0.targetID == target) ||
@@ -290,7 +297,8 @@ extension CanvasState {
         }
         guard !exists else { return }
         withUndoable {
-            connectors.append(Connector(sourceID: source, targetID: target, targetSide: targetSide))
+            connectors.append(Connector(sourceID: source, targetID: target,
+                                        sourceSide: sourceSide, targetSide: targetSide))
         }
         // Threshold haptic — the connector "landed" on a target node.
         Haptics.threshold()

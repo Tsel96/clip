@@ -155,8 +155,9 @@ struct CanvasConfig {
     /// True in hand (pan) mode — the above-island passes clicks through so
     /// `CanvasInputView` grabs-and-pans the scroll view (Figma hand tool).
     let isHandMode: () -> Bool
-    /// Create a connector between two nodes (drag-to-connect commit).
-    let onAddConnector: (UUID, UUID, ConnSide?) -> Void
+    /// Create a connector between two nodes (drag-to-connect commit): src, dst,
+    /// the source side it was drawn from, the target side it was dropped onto.
+    let onAddConnector: (UUID, UUID, ConnSide?, ConnSide?) -> Void
     /// Live marker colour + width for the native draw preview.
     let drawColor: () -> NSColor
     let drawWidth: () -> CGFloat
@@ -171,6 +172,8 @@ struct CanvasConfig {
     let onSelectConnector: (UUID?) -> Void
     /// Set a connector's midpoint label (double-click to edit).
     let onSetConnectorLabel: (UUID, String) -> Void
+    /// Persist a dragged connector label's offset from the bezier midpoint.
+    let onMoveConnectorLabel: (UUID, CGPoint) -> Void
     /// Selected connector ids — drives the native connector highlight colour.
     let selectedConnectorIDs: Set<UUID>
     /// Empty-canvas click → deselect (cards handle their own selection taps).

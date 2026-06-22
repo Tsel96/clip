@@ -348,7 +348,9 @@ struct CanvasView: View {
                             isDrawMode: { state.toolMode == .draw },
                             isConnectMode: { state.toolMode == .connect },
                             isHandMode: { state.toolMode == .hand },
-                            onAddConnector: { src, dst, side in state.addConnector(from: src, to: dst, targetSide: side) },
+                            onAddConnector: { src, dst, srcSide, side in
+                                state.addConnector(from: src, to: dst, sourceSide: srcSide, targetSide: side)
+                            },
                             drawColor: {
                                 let c = state.drawColor
                                 return NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green),
@@ -360,6 +362,7 @@ struct CanvasView: View {
                             useNativeConnectors: useNativeConnectors,
                             onSelectConnector: { state.selectConnector($0) },
                             onSetConnectorLabel: { id, text in state.setConnectorLabel(id, text) },
+                            onMoveConnectorLabel: { id, off in state.setConnectorLabelOffset(id, off) },
                             selectedConnectorIDs: state.selectedConnectorIDs,
                             onBackgroundClick: {
                                 if state.toolMode == .select { state.deselectAll() }

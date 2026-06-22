@@ -37,11 +37,14 @@ final class ConnectorOverlayController {
     /// Per-node visual offsets while a card is being dragged (content units).
     /// Applied on EVERY redraw so a stray refresh can't reset the lines mid-drag.
     private var liveOffsets: [UUID: CGPoint] = [:]
+    /// While the user drags a connector's LABEL, its absolute offset from the
+    /// bezier midpoint (content units). Visual only; persisted to the model on drop.
+    private var liveLabelDrag: (id: UUID, offset: CGPoint)?
 
     // Base on-screen sizes (divided by magnification each refresh).
     private static let screenLineWidth: CGFloat = 1      // 1px thinner
     private static let selectedLineWidth: CGFloat = 2.5
-    private static let arrowLen: CGFloat = 12   // on-screen apex→base length (Polygon-6 arrowhead)
+    private static let arrowLen: CGFloat = 7.8  // on-screen apex→base length (Polygon-6 arrowhead, −35%)
     private static let labelFontSize: CGFloat = 18   // SCREEN-constant (÷mag)
     private static let dotDiameter: CGFloat = 11     // source port (≈20% smaller) — green ring + yellow centre
     private static let dotRing: CGFloat = 2.5
@@ -169,15 +172,22 @@ final class ConnectorOverlayController {
             if let o = liveOffsets[c.targetID] { t.origin.x += o.x; t.origin.y += o.y }
             seen.insert(c.id)
             let isSel = lastSelected.contains(c.id)
-            let route = ConnectorPathMath.route(source: s, target: t, targetSide: c.targetSide)
+            let route = ConnectorPathMath.route(source: s, target: t,
+                                                sourceSide: c.sourceSide, targetSide: c.targetSide)
             mids[c.id] = route.midpoint
 
             let b = bundles[c.id] ?? makeBundle(for: c.id)
             let color = (isSel ? Self.greenSelected : Self.green).cgColor
 
-            // Break the line under the label so it doesn't cross the text (Figma).
+            // Label centre = midpoint + the user's (live-dragged or stored) offset.
+            let off = (liveLabelDrag?.id == c.id ? liveLabelDrag!.offset : (c.labelOffset ?? .zero))
+            let labelCenter = CGPoint(x: route.midpoint.x + off.x, y: route.midpoint.y + off.y)
+
+            // Break the line under the label (at the curve point nearest the label,
+            // so the break follows it as it's dragged).
             b.line.path = c.label.isEmpty ? route.path
-                : gappedLinePath(route, gap: labelGapWidth(c.label, mag: mag, selected: isSel))
+                : gappedLinePath(route, labelCenter: labelCenter,
+                                 gap: labelGapWidth(c.label, mag: mag, selected: isSel))
             b.line.lineWidth = (isSel ? Self.selectedLineWidth : Self.screenLineWidth) / mag
             b.line.strokeColor = color
 
@@ -185,15 +195,15 @@ final class ConnectorOverlayController {
             b.arrow.fillColor = color
 
             // Source port (Figma 88-480): green ring + yellow centre, DAMPENED zoom
-            // (√mag) like the labels — shrinks gently — with a screen-size floor so
-            // it stays visible/grabbable when zoomed far out.
+            // (√mag) with a screen-size floor. Drawn at the side-CENTER (on the card
+            // edge), NOT the standoff — else it floats off the card when zoomed in.
             let d = Self.portDiameter(base: Self.dotDiameter, mag: mag)
             b.dot.lineWidth = d * (Self.dotRing / Self.dotDiameter)
-            b.dot.path = CGPath(ellipseIn: CGRect(x: route.sourceAnchor.x - d / 2,
-                                                  y: route.sourceAnchor.y - d / 2,
+            b.dot.path = CGPath(ellipseIn: CGRect(x: route.sourceCenter.x - d / 2,
+                                                  y: route.sourceCenter.y - d / 2,
                                                   width: d, height: d), transform: nil)
 
-            if let r = layoutLabel(b, text: c.label, center: route.midpoint, mag: mag, selected: isSel) {
+            if let r = layoutLabel(b, text: c.label, center: labelCenter, mag: mag, selected: isSel) {
                 lblRects[c.id] = r
             }
         }
@@ -245,6 +255,22 @@ final class ConnectorOverlayController {
         previewLine?.removeFromSuperlayer(); previewLine = nil
         previewArrow?.removeFromSuperlayer(); previewArrow = nil
     }
+
+    /// The connector whose LABEL contains `point` (content space) — for click-to-
+    /// select and drag-to-reposition the label.
+    func labelHitTest(_ point: CGPoint) -> UUID? {
+        for (id, rect) in labelHitRects where rect.contains(point) { return id }
+        return nil
+    }
+
+    /// Stored label offset for `id` (the drag-start reference).
+    func storedLabelOffset(_ id: UUID) -> CGPoint {
+        lastConnectors.first(where: { $0.id == id })?.labelOffset ?? .zero
+    }
+
+    /// Live label drag — visual only, redraws immediately; cleared on drop.
+    func setLiveLabelOffset(id: UUID, offset: CGPoint) { liveLabelDrag = (id, offset); redraw() }
+    func clearLiveLabelOffset() { liveLabelDrag = nil; redraw() }
 
     /// The connector whose line passes within `tolerance` (content units) of
     /// `point` — used by CanvasInputView to select / edit / delete a connector.
@@ -406,22 +432,40 @@ final class ConnectorOverlayController {
         return w + (selected ? 44 : 22) / m            // text + the pill / breathing room
     }
 
-    /// The bezier with a centred `gap` removed (two sub-curves) so the label sits
-    /// in a clean break in the line (Figma — line interrupts under the label).
-    private func gappedLinePath(_ r: BezierRoute, gap: CGFloat) -> CGPath {
+    /// The bezier with a `gap` removed at the curve point NEAREST the label, so the
+    /// break sits under the label wherever it's been dragged (Figma — line
+    /// interrupts under the label).
+    private func gappedLinePath(_ r: BezierRoute, labelCenter: CGPoint, gap: CGFloat) -> CGPath {
         let p0 = r.sourceAnchor, p1 = r.control1, p2 = r.control2, p3 = r.arrowFrom
-        // Convert the fixed-width gap to a t-range using the LOCAL speed |B'(0.5)|
-        // (the curve is parameterised by t, not arc length) so it tracks the text
-        // width even for long labels.
-        let vx = 0.75 * (p1.x - p0.x) + 1.5 * (p2.x - p1.x) + 0.75 * (p3.x - p2.x)
-        let vy = 0.75 * (p1.y - p0.y) + 1.5 * (p2.y - p1.y) + 0.75 * (p3.y - p2.y)
+        func at(_ t: CGFloat) -> CGPoint {
+            let u = 1 - t, a = (1-t)*(1-t)*(1-t), b = 3*u*u*t, c = 3*u*t*t, d = t*t*t
+            return CGPoint(x: a*p0.x + b*p1.x + c*p2.x + d*p3.x,
+                           y: a*p0.y + b*p1.y + c*p2.y + d*p3.y)
+        }
+        // t* minimising |B(t) − labelCenter| (the label's projection onto the curve).
+        var tStar: CGFloat = 0.5, best = CGFloat.greatestFiniteMagnitude
+        var t: CGFloat = 0
+        while t <= 1.0001 {
+            let pt = at(t), dd = hypot(pt.x - labelCenter.x, pt.y - labelCenter.y)
+            if dd < best { best = dd; tStar = t }
+            t += 0.02
+        }
+        // Convert the fixed-width gap to a t-range using the LOCAL speed |B'(t*)|.
+        let u = 1 - tStar
+        let vx = 3*u*u*(p1.x-p0.x) + 6*u*tStar*(p2.x-p1.x) + 3*tStar*tStar*(p3.x-p2.x)
+        let vy = 3*u*u*(p1.y-p0.y) + 6*u*tStar*(p2.y-p1.y) + 3*tStar*tStar*(p3.y-p2.y)
         let speed = max(hypot(vx, vy), 1)
-        let tHalf = min(0.47, (gap / 2) / speed)
+        let tHalf = (gap / 2) / speed
+        let ta = max(0, tStar - tHalf), tb = min(1, tStar + tHalf)
         let path = CGMutablePath()
-        let s1 = Self.subCurve(p0, p1, p2, p3, 0, 0.5 - tHalf)
-        path.move(to: s1.0); path.addCurve(to: s1.3, control1: s1.1, control2: s1.2)
-        let s2 = Self.subCurve(p0, p1, p2, p3, 0.5 + tHalf, 1)
-        path.move(to: s2.0); path.addCurve(to: s2.3, control1: s2.1, control2: s2.2)
+        if ta > 0.001 {
+            let s1 = Self.subCurve(p0, p1, p2, p3, 0, ta)
+            path.move(to: s1.0); path.addCurve(to: s1.3, control1: s1.1, control2: s1.2)
+        }
+        if tb < 0.999 {
+            let s2 = Self.subCurve(p0, p1, p2, p3, tb, 1)
+            path.move(to: s2.0); path.addCurve(to: s2.3, control1: s2.1, control2: s2.2)
+        }
         return path
     }
 

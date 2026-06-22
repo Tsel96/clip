@@ -517,28 +517,54 @@ struct Connector: Identifiable, Equatable, Codable {
     /// Optional text shown in a pill at the connector's midpoint (Obsidian-style
     /// edge label). Empty = no label.
     var label: String
-    /// The target side the user dragged the connector onto (nil = auto-pick).
+    /// The sides the user drew the connector from / onto (nil = auto-pick). Pinned
+    /// so the endpoints don't drift ("change the original position") as cards move.
+    var sourceSide: ConnSide?
     var targetSide: ConnSide?
+    /// User offset of the label from the bezier midpoint, content units (nil = on
+    /// the midpoint). Lets the label be dragged; the line break follows it.
+    var labelOffset: CGPoint?
 
     init(id: UUID = UUID(), sourceID: UUID, targetID: UUID, label: String = "",
-         targetSide: ConnSide? = nil) {
+         sourceSide: ConnSide? = nil, targetSide: ConnSide? = nil, labelOffset: CGPoint? = nil) {
         self.id = id
         self.sourceID = sourceID
         self.targetID = targetID
         self.label = label
+        self.sourceSide = sourceSide
         self.targetSide = targetSide
+        self.labelOffset = labelOffset
     }
 
-    enum CodingKeys: String, CodingKey { case id, sourceID, targetID, label, targetSide }
+    enum CodingKeys: String, CodingKey {
+        case id, sourceID, targetID, label, sourceSide, targetSide, labelOffsetX, labelOffsetY
+    }
 
-    // Backward-compat: older documents have no `label` / `targetSide` key.
+    // Backward-compat: older documents have no `label` / sides / `labelOffset` keys.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         sourceID = try c.decode(UUID.self, forKey: .sourceID)
         targetID = try c.decode(UUID.self, forKey: .targetID)
         label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        sourceSide = try c.decodeIfPresent(ConnSide.self, forKey: .sourceSide)
         targetSide = try c.decodeIfPresent(ConnSide.self, forKey: .targetSide)
+        if let ox = try c.decodeIfPresent(CGFloat.self, forKey: .labelOffsetX),
+           let oy = try c.decodeIfPresent(CGFloat.self, forKey: .labelOffsetY) {
+            labelOffset = CGPoint(x: ox, y: oy)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(sourceID, forKey: .sourceID)
+        try c.encode(targetID, forKey: .targetID)
+        try c.encode(label, forKey: .label)
+        try c.encodeIfPresent(sourceSide, forKey: .sourceSide)
+        try c.encodeIfPresent(targetSide, forKey: .targetSide)
+        try c.encodeIfPresent(labelOffset?.x, forKey: .labelOffsetX)
+        try c.encodeIfPresent(labelOffset?.y, forKey: .labelOffsetY)
     }
 }
 
