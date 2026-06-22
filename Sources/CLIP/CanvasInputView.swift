@@ -299,7 +299,10 @@ final class CanvasInputView: NSView {
             if case .folder = n.kind {
                 let fh = n.height ?? (n.width / 1.165)
                 let lx = pt.x - n.position.x, ly = pt.y - n.position.y
-                if lx > n.width * 0.05, lx < n.width * 0.65, ly > fh * 0.62, ly < fh * 0.93 {
+                let inLabel = lx > n.width * 0.05 && lx < n.width * 0.65
+                    && ly > fh * 0.62 && ly < fh * 0.93
+                FolderCardView.diag("dblclick folder lx=\(Int(lx))/\(Int(n.width)) ly=\(Int(ly))/\(Int(fh)) inLabel=\(inLabel)")
+                if inLabel {
                     coordinator?.beginFolderRename(n.id); mode = .idle; return
                 }
             }

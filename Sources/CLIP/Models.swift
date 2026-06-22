@@ -43,6 +43,15 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     /// changes. `decodeIfPresent` → older snapshots default to `nil` (lavender).
     var folderColor: String? = nil
 
+    /// Rich text for `.stickyNote` / `.text` nodes — an archived
+    /// `NSAttributedString` (bold/italic/underline/strike runs). The plain
+    /// `content` String in `Kind` stays the authoritative fallback (search,
+    /// archive, lightbox); this carries the *formatting* on top. `nil` → render
+    /// the plain string with the default typing attributes. Stored as a struct
+    /// property (NOT a `Kind` associated value) so it needs zero enum changes,
+    /// and `decodeIfPresent` migrates older snapshots to `nil`.
+    var attributedContent: Data? = nil
+
     /// Where this node came from. `.phone` marks cards ingested from the
     /// iPhone share pipe (the iCloud Drive inbox) so the UI can badge
     /// them. `decodeIfPresent` defaults older snapshots to `.local`.
@@ -112,7 +121,8 @@ struct CanvasNode: Identifiable, Equatable, Codable {
          imagePrompt: String? = nil,
          trimStart: Double? = nil,
          trimEnd: Double? = nil,
-         folderColor: String? = nil) {
+         folderColor: String? = nil,
+         attributedContent: Data? = nil) {
         self.id = id
         self.position = position
         self.width = width
@@ -130,6 +140,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.trimStart = trimStart
         self.trimEnd = trimEnd
         self.folderColor = folderColor
+        self.attributedContent = attributedContent
     }
 
     // MARK: - Codable (manual to migrate older snapshots)
@@ -137,7 +148,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, position, width, height, kind, addedAt, groupID, folderID, origin
         case name, note, linkURL, tags, imagePrompt
-        case trimStart, trimEnd, folderColor
+        case trimStart, trimEnd, folderColor, attributedContent
     }
 
     init(from decoder: Decoder) throws {
@@ -163,6 +174,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.trimStart = try c.decodeIfPresent(Double.self, forKey: .trimStart)
         self.trimEnd   = try c.decodeIfPresent(Double.self, forKey: .trimEnd)
         self.folderColor = try c.decodeIfPresent(String.self, forKey: .folderColor)
+        self.attributedContent = try c.decodeIfPresent(Data.self, forKey: .attributedContent)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -184,6 +196,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         try c.encodeIfPresent(trimStart, forKey: .trimStart)
         try c.encodeIfPresent(trimEnd, forKey: .trimEnd)
         try c.encodeIfPresent(folderColor, forKey: .folderColor)
+        try c.encodeIfPresent(attributedContent, forKey: .attributedContent)
     }
 
     static func tweet(url: String, position: CGPoint, width: CGFloat = 360) -> CanvasNode {

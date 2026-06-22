@@ -31,6 +31,10 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
     private var isLifted = false
     private var showsSelectionOutline = false
     private var currentCount = 0
+    /// While true, the title field is the live rename editor: never auto-hide,
+    /// re-position, or let a baked-text SVG cover it (refreshes would otherwise
+    /// re-hide it for any non-empty folder, killing the edit).
+    private var isRenaming = false
     /// Current art canvas height (1044 rest/per-count, 1099 selected — the
     /// selected SVG carries extra glow margin) so layout maps the taller art.
     private var currentArtHeight: CGFloat = 1044
@@ -241,8 +245,12 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         // the 3-item art; re-export the SVGs text-free to make ALL counts dynamic
         // + support renaming.)
         let svgHasText = childIDs.count >= 1
-        countField.isHidden = svgHasText
-        titleField.isHidden = svgHasText
+        // Never re-hide the labels mid-rename (a non-empty folder's baked-text SVG
+        // would otherwise yank the live editor out from under the cursor).
+        if !isRenaming {
+            countField.isHidden = svgHasText
+            titleField.isHidden = svgHasText
+        }
         needsLayout = true
     }
 
@@ -376,6 +384,10 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
 
     func beginRename(commit: @escaping (String) -> Void) {
         renameCommit = commit
+        isRenaming = true
+        // Swap to the text-FREE art so a baked-in "Untitled" can't sit under the
+        // editor (the 1/2/3-item SVGs bake their own title; the rest art is clean).
+        shapeView.image = tintedIfNeeded(Self.restImage)
         titleField.isHidden = false                 // show even if a baked-text SVG is up
         titleField.isEditable = true
         titleField.isSelectable = true
@@ -386,23 +398,53 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         titleField.lineBreakMode = .byTruncatingTail
         titleField.maximumNumberOfLines = 1
         titleField.delegate = self
+        // Give the editor a comfortable width regardless of the sized-to-fit title.
+        let w = bounds.width
+        titleField.frame.size.width = max(titleField.frame.width, w * 0.5)
         // Defer past the current click event so the canvas input view doesn't
         // immediately re-grab first responder (which fired an instant commit).
+        focusTitleField(attempt: 0)
+    }
+
+    /// Drive the title field to first responder, retrying a couple of runloop
+    /// turns — inside an NSCollectionView item the window can refuse the first
+    /// makeFirstResponder until the item settles.
+    private func focusTitleField(attempt: Int) {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.window?.makeFirstResponder(self.titleField)
-            self.titleField.currentEditor()?.selectAll(nil)
+            guard let self, self.isRenaming, let window = self.window else { return }
+            window.makeKeyAndOrderFront(nil)
+            let ok = window.makeFirstResponder(self.titleField)
+            if ok {
+                self.titleField.currentEditor()?.selectAll(nil)
+            } else if attempt < 3 {
+                self.focusTitleField(attempt: attempt + 1)
+            }
+            FolderCardView.diag("beginRename focus ok=\(ok) attempt=\(attempt) win=\(window) hidden=\(self.titleField.isHidden)")
         }
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
         guard let commit = renameCommit else { return }
         renameCommit = nil
+        isRenaming = false
         let newTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         titleField.isEditable = false
         titleField.isSelectable = false
         titleField.delegate = nil
+        // Restore the per-count art (with its baked title) now the edit is done.
+        refreshArt()
         commit(newTitle)
+    }
+
+    /// Append a line to /tmp/clip_diag.txt (rename debugging; cheap, removed later).
+    static func diag(_ msg: String) {
+        let line = "[\(Date())] \(msg)\n"
+        let url = URL(fileURLWithPath: "/tmp/clip_diag.txt")
+        if let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close()
+        } else {
+            try? line.data(using: .utf8)?.write(to: url)
+        }
     }
 
     /// Apply the folder tint to an art image if one is set.

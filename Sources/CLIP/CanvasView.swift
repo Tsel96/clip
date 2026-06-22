@@ -651,9 +651,10 @@ struct CanvasView: View {
                 .padding(.bottom, 18)
             }
         }
-        // Unfolded-folder back chip (top-centre): re-fold to the main canvas.
-        // Esc does the same; this is the discoverable affordance.
-        .overlay(alignment: .top) {
+        // Unfolded-folder back chip (top-LEFT): re-fold to the main canvas. Anchored
+        // top-leading so it never overlaps the centered segmented control. Esc does
+        // the same; this is the discoverable affordance.
+        .overlay(alignment: .topLeading) {
             if state.canvasMode == .canvas, let fid = state.focusedFolderID,
                case .folder(let title, _, _)? = state.nodeByID[fid]?.kind {
                 Button { state.exitFolderFocus() } label: {
@@ -668,7 +669,8 @@ struct CanvasView: View {
                     .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 14)
+                .padding(.top, 18)
+                .padding(.leading, 18)
             }
         }
         // Liquid-glass minimap dome — anchored to the bottom-right corner

@@ -1396,7 +1396,24 @@ struct _PaletteRepresentable: NSViewRepresentable {
                 else if n.isStickyNote  { state.setFolderColor(id: id, hex: hex) }   // sticky tint reuses folderColor
             }
         }
-        // Download / Eject actions: TODO (pending behaviour spec).
+        // Download / Eject actions are CONTEXTUAL on the current selection — the same
+        // candy action bar, different functions per node type (Spatial-style):
+        //   • sticky → Download = export PNG, Eject = pop into a new folder
+        //   • folder → Eject = unfold (open); Download is a no-op for now
+        v.onDownloadTap = {
+            for id in state.selectedNodeIDs {
+                guard let n = state.nodes.first(where: { $0.id == id }) else { continue }
+                if n.isStickyNote { state.exportSticker(id) }
+            }
+        }
+        v.onEjectTap = {
+            let ids = Array(state.selectedNodeIDs)
+            for id in ids {
+                guard let n = state.nodes.first(where: { $0.id == id }) else { continue }
+                if n.isStickyNote { state.addStickerToNewFolder(id) }
+                else if n.isFolder { state.enterFolderFocus(folderID: id) }
+            }
+        }
     }
 
     func makeCoordinator() -> Void { }
