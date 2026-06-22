@@ -207,13 +207,13 @@ extension CanvasState {
         nodes[idx].rotation = radians
     }
 
-    /// Option-drag duplicate: clone `ids` IN PLACE (same positions, ALL fields)
-    /// and return an original→copy id mapping so the drag can retarget onto the
-    /// copies, leaving the originals where they were. One undo entry.
-    func duplicateForDrag(_ ids: Set<UUID>) -> [UUID: UUID] {
-        let expanded = expandedDragSet(from: ids)
-        guard !expanded.isEmpty else { return [:] }
-        var map: [UUID: UUID] = [:]
+    /// Option-drag: AFTER the originals have been dragged to their drop, drop a
+    /// clone of each at its ORIGINAL position (`startPositions[id]`). Done on
+    /// mouse-up — never mid-drag — so dragging stays smooth (no live duplicate of
+    /// a heavy web/video card rendering every frame). One undo entry.
+    func leaveCopies(at startPositions: [UUID: CGPoint]) {
+        let expanded = expandedDragSet(from: Set(startPositions.keys))
+        guard !expanded.isEmpty else { return }
         var freshGroupForOriginal: [UUID: UUID] = [:]
         withUndoable {
             for original in nodes where expanded.contains(original.id) {
@@ -223,7 +223,7 @@ extension CanvasState {
                     let fresh = UUID(); freshGroupForOriginal[g] = fresh; return fresh
                 }()
                 let copy = CanvasNode(
-                    position: original.position,
+                    position: startPositions[original.id] ?? original.position,
                     width: original.width,
                     height: original.height,
                     kind: original.kind,
@@ -234,13 +234,11 @@ extension CanvasState {
                     tags: original.tags, imagePrompt: original.imagePrompt,
                     trimStart: original.trimStart, trimEnd: original.trimEnd,
                     folderColor: original.folderColor,
-                    attributedContent: original.attributedContent)
+                    attributedContent: original.attributedContent,
+                    rotation: original.rotation)
                 nodes.append(copy)
-                map[original.id] = copy.id
             }
         }
-        if !map.isEmpty { selectedNodeIDs = Set(map.values) }
-        return map
     }
 
     func duplicateNodes(_ ids: Set<UUID>) -> Set<UUID> {

@@ -51,7 +51,7 @@ final class CanvasInputView: NSView {
     private var moveStartPos: [UUID: CGPoint] = [:] // world coords
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
-    private var optionDuplicated = false            // Option-drag duplicated this drag already
+    private var optionWillDuplicate = false         // Option-drag: drop copies at start on mouse-up
     private var rotateNodeID: UUID?                 // node being rotated by the handle
     private var lastRotateSnap: CGFloat?            // cardinal we're currently snapped to (haptic edge)
     private var lastRotateAngle: CGFloat = 0        // committed to the model on mouse-up
@@ -450,18 +450,11 @@ final class CanvasInputView: NSView {
         case .pendingMove, .move:
             if mode == .pendingMove {
                 if abs(dx) < 1 && abs(dy) < 1 { return }     // not a real drag yet
-                // Option-drag → duplicate in place and drag the COPIES (the
-                // originals stay put), like every other app.
-                if event.modifierFlags.contains(.option), !optionDuplicated {
-                    optionDuplicated = true
-                    let map = p.onOptionDuplicate(Set(moveStartPos.keys))
-                    if !map.isEmpty {
-                        var newStart: [UUID: CGPoint] = [:]
-                        for (old, sp) in moveStartPos { newStart[map[old] ?? old] = sp }
-                        moveStartPos = newStart
-                        if let pid = primaryMoveID, let np = map[pid] { primaryMoveID = np }
-                    }
-                }
+                // Option-drag = duplicate. We DON'T clone mid-drag (a live copy of a
+                // heavy web/video card rendering every frame is what made this
+                // laggy) — just flag it and drop the copies at the start positions
+                // on mouse-up. The drag itself is a plain (smooth) move.
+                optionWillDuplicate = event.modifierFlags.contains(.option)
                 mode = .move
                 beginIfNeeded(p, primary: primaryMoveID)
             }
@@ -573,6 +566,8 @@ final class CanvasInputView: NSView {
             for (id, sp) in moveStartPos {
                 p.onMove(id, CGPoint(x: sp.x + moveDelta.x, y: sp.y + moveDelta.y))
             }
+            // Option-drag: drop a copy of each dragged node at its ORIGINAL spot.
+            if optionWillDuplicate { p.onLeaveCopies(moveStartPos) }
             if didBegin {
                 p.onInteractionEnded()
                 p.onMoveCommitted(Set(moveStartPos.keys))   // drop-onto-folder check
@@ -639,7 +634,7 @@ final class CanvasInputView: NSView {
         coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
         mode = .idle; resizeGrip = nil; resizeNodeID = nil
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
-        optionDuplicated = false
+        optionWillDuplicate = false
         rotateNodeID = nil
         lastRotateSnap = nil
     }
