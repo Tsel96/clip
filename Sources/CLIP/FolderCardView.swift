@@ -50,6 +50,11 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     private static let oneItemImage   = loadSVG("Folder_1-item")
     private static let twoItemsImage  = loadSVG("Folder_2-items")
     private static let threeItemsImage = loadSVG("Folder_3-items")
+    /// Open-lid art shown while a card is held over the folder (drop-hover).
+    private static let hoveredImage   = loadSVG("Folder_Hovered")
+    /// Current folder tint (so the open-lid art is recoloured to match).
+    private var nodeColorHex: String?
+    private var isDropHovered = false
     /// Folder art for an item count — the card-peek is baked into each SVG.
     private static func art(forCount count: Int) -> NSImage? {
         switch count {
