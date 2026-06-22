@@ -17,11 +17,6 @@ extension CollectionCanvas.Coordinator {
         let worldOriginY = visible.origin.y + config.worldBounds.minY
         let cam = Camera(x: -worldOriginX * zoom, y: -worldOriginY * zoom, zoom: zoom)
         lastCamera = cam
-        // TEMP DIAG: confirm scroll→camera fires (esp. in Colorform). Remove later.
-        let line = "pushCam zoom=\(String(format: "%.3f", zoom)) x=\(Int(cam.x)) y=\(Int(cam.y))\n"
-        if let h = FileHandle(forWritingAtPath: "/tmp/clip_diag.txt") {
-            h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close()
-        } else { try? line.write(toFile: "/tmp/clip_diag.txt", atomically: true, encoding: .utf8) }
         config.onCameraChange(cam)
     }
 
