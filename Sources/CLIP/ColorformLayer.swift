@@ -33,3 +33,47 @@ struct ColorformLayer: View {
         .allowsHitTesting(false)
     }
 }
+
+// MARK: - Colorform pan / zoom
+
+/// Direct pan/zoom for Colorform — drives the shared `CameraStore` so the GPU
+/// field + labels move. (The native scroll view doesn't drive the camera in this
+/// read-only view mode, so we own navigation here.) Drag = pan, pinch = zoom
+/// about the viewport centre, matching the canvas projection `screen = world·zoom + camOffset`.
+struct ColorformPanZoom: View {
+    @EnvironmentObject var cameraStore: CameraStore
+    @State private var panBase: Camera?
+    @State private var zoomBase: Camera?
+
+    var body: some View {
+        GeometryReader { geo in
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(
+                    SimultaneousGesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { v in
+                                let base = panBase ?? cameraStore.camera
+                                if panBase == nil { panBase = base }
+                                cameraStore.camera = Camera(x: base.x + v.translation.width,
+                                                            y: base.y + v.translation.height,
+                                                            zoom: base.zoom)
+                            }
+                            .onEnded { _ in panBase = nil },
+                        MagnificationGesture()
+                            .onChanged { scale in
+                                let base = zoomBase ?? cameraStore.camera
+                                if zoomBase == nil { zoomBase = base }
+                                let nz = min(max(base.zoom * scale, 0.05), 8)
+                                let f = nz / max(base.zoom, 0.0001)
+                                let cx = geo.size.width / 2, cy = geo.size.height / 2
+                                cameraStore.camera = Camera(x: cx * (1 - f) + base.x * f,
+                                                            y: cy * (1 - f) + base.y * f,
+                                                            zoom: nz)
+                            }
+                            .onEnded { _ in zoomBase = nil }
+                    )
+                )
+        }
+    }
+}

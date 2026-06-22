@@ -468,6 +468,14 @@ struct CanvasView: View {
                         .allowsHitTesting(true)
                 }
 
+                // Colorform navigation: drives the shared camera directly (drag =
+                // pan, pinch = zoom) so the GPU field + labels move. The native
+                // scroll view doesn't drive the camera under the read-only
+                // Colorform overlay, so we own pan/zoom here instead.
+                if state.canvasMode == .colorform {
+                    ColorformPanZoom()
+                }
+
                 // (Smart Selection chrome is hosted in CLIPCanvasView's
                 // above-island, not as a ZStack sibling.)
 
