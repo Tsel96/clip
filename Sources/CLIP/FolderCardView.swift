@@ -244,7 +244,7 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
 
     func update(for node: CanvasNode) {
         guard case .folder(let title, let icon, let childIDs) = node.kind else { return }
-        titleField.stringValue = title.isEmpty ? "Untitled" : title
+        titleField.stringValue = (title.isEmpty ? "Untitled" : title).uppercased()
         countField.stringValue = childIDs.isEmpty
             ? "No items"
             : "\(childIDs.count) item\(childIDs.count == 1 ? "" : "s")"

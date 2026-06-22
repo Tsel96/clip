@@ -666,18 +666,19 @@ struct CanvasView: View {
         // the same; this is the discoverable affordance.
         .overlay(alignment: .topLeading) {
             if state.canvasMode == .canvas, state.focusedFolderID != nil {
-                // SAME back button as the detail view (CardDetailView's
-                // HoverIconButton): a plain `arrow.left` SF Symbol with a hover
-                // highlight — no text, no rest pill. The folder name lives in the
-                // top name-pill instead.
-                Button { state.exitFolderFocus() } label: {
-                    Image(systemName: "arrow.left")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .frame(width: 34, height: 34)
-                        .contentShape(Rectangle())
+                // Back button styled as the canvas white buttons (FigmaPill):
+                // white-60% capsule + layered shadow + the shared hover/press.
+                FigmaPill {
+                    Button { state.exitFolderFocus() } label: {
+                        Image(systemName: "arrow.left")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.black.opacity(0.78))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.hover)
+                    .help("Back  (Esc)")
                 }
-                .buttonStyle(.hover)
                 .padding(.top, 18)
                 .padding(.leading, 18)
             }

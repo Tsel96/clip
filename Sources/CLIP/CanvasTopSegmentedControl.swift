@@ -510,9 +510,7 @@ private final class SegmentHitZone: NSView {
         addTrackingArea(t)
         tracking = t
     }
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
+    // No cursor rect — a pointing-hand here fought the canvas cursorUpdate (blink).
     override func mouseEntered(with event: NSEvent) { onHover?(true) }
     override func mouseExited(with event: NSEvent) { onHover?(false) }
     override func mouseDown(with event: NSEvent) { /* accept; fire on mouse-up */ }
