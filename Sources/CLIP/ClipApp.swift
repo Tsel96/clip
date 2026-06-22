@@ -64,6 +64,13 @@ struct ClipApp: App {
                     NSApp.appearance = NSAppearance(named: .aqua)
                     NSApp.windows.forEach { $0.appearance = NSAppearance(named: .aqua) }
                 }
+                .onOpenURL { _ in
+                    // `clip://` deep links (the website's "Open CLIP" button) just
+                    // launch + focus the app. The host/path are reserved for future
+                    // routes (e.g. clip://page/<id>); for now any clip:// URL fronts it.
+                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.windows.first?.makeKeyAndOrderFront(nil)
+                }
         }
         // No top title bar — the window chrome is removed so the canvas reaches
         // the top edge (traffic lights float over the content).

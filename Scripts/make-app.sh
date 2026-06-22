@@ -106,6 +106,14 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>com.clip.app</string>
+      <key>CFBundleURLSchemes</key>
+      <array><string>clip</string></array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST
