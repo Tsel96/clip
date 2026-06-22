@@ -271,6 +271,8 @@ struct CollectionCanvas: NSViewRepresentable {
         // Inline connector-label editor (double-click a connector).
         var editingConnectorID: UUID?
         var editingConnectorField: NSTextField?
+        var editingConnectorPill: NSView?      // green-pill wrapper (Figma 88-422)
+        var editingConnectorEnter: NSImageView?
         var editingConnectorMonitor: Any?      // click-outside-to-commit monitor
         // internal (not private) so the camera-sync seam in
         // CanvasCameraController.swift can read/write the echo-suppression state.

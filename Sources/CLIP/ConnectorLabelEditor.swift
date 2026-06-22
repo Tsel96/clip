@@ -9,25 +9,25 @@ import AppKit
 /// text. Commit on Return / click-outside / focus-loss; cancel on Escape.
 extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
 
-    /// Label font size in CONTENT units (must match `ConnectorOverlayController`).
-    private static let labelContentFontSize: CGFloat = 17   // Figma: SF Mono Semibold 17
-    private static let labelTextColor = NSColor.black
-    private static let labelBGColor = NSColor(srgbRed: 0.95, green: 0.95, blue: 0.95, alpha: 1)
+    /// SCREEN-constant label size (must match `ConnectorOverlayController.labelFontSize`)
+    /// — the editor is locked to the same on-screen size at any zoom.
+    private static let labelScreenFontSize: CGFloat = 22
+    private static let labelTextColor = NSColor(srgbRed: 0.086, green: 0.094, blue: 0.102, alpha: 1)  // #16181A
+    private static let labelBGColor = NSColor(srgbRed: 0.929, green: 0.941, blue: 0.945, alpha: 1)    // #EDF0F1
 
     func beginEditingConnectorLabel(_ cid: UUID) {
         guard let container = container,
               let host = scroll?.superview,
-              let mid = connectorController?.midpoints[cid] else { return }
+              connectorController?.midpoints[cid] != nil else { return }
         finishConnectorLabelEdit(commit: false)   // dismiss any in-flight editor
 
-        let mag = max(scroll?.magnification ?? 1, 0.0001)
         let current = config.connectors.first(where: { $0.id == cid })?.label ?? ""
 
         let field = NSTextField()
         field.stringValue = current.uppercased()
         field.placeholderString = "LABEL"
-        // On-screen font = content size × zoom → matches the rendered label.
-        field.font = .monospacedSystemFont(ofSize: Self.labelContentFontSize * mag, weight: .semibold)
+        // Screen-constant font → matches the (locked-size) rendered label.
+        field.font = .monospacedSystemFont(ofSize: Self.labelScreenFontSize, weight: .semibold)
         field.alignment = .center
         field.isBezeled = false
         field.isBordered = false
@@ -67,14 +67,13 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         guard let field = editingConnectorField,
               let container = container, let host = scroll?.superview,
               let mid = connectorController?.midpoints[cid] else { return }
-        let mag = max(scroll?.magnification ?? 1, 0.0001)
-        let f = NSFont.monospacedSystemFont(ofSize: Self.labelContentFontSize * mag, weight: .semibold)
+        let f = NSFont.monospacedSystemFont(ofSize: Self.labelScreenFontSize, weight: .semibold)
         field.font = f
         field.currentEditor()?.font = f          // the ACTIVE field editor needs it too, or the live text won't resize
         let center = container.convert(mid, to: host)
         field.sizeToFit()
-        let w = max(40 * mag, field.frame.width + 14 * mag)
-        let h = field.frame.height + 4 * mag
+        let w = max(40, field.frame.width + 14)   // screen-constant (locked) — no × mag
+        let h = field.frame.height + 4
         field.frame = CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
     }
 

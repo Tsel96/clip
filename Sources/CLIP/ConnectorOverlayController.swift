@@ -39,8 +39,8 @@ final class ConnectorOverlayController {
     private static let selectedLineWidth: CGFloat = 3.5
     private static let arrowLen: CGFloat = 10
     private static let arrowHalf: CGFloat = 4.5
-    private static let labelFontSize: CGFloat = 22   // SCREEN-constant (÷mag); bigger than the Figma 17 for canvas legibility
-    private static let dotDiameter: CGFloat = 9      // yellow source dot (Figma 88-441), screen-constant
+    private static let labelFontSize: CGFloat = 18   // SCREEN-constant (÷mag)
+    private static let dotDiameter: CGFloat = 7      // yellow source dot (Figma 88-441), screen-constant
     private static let hoverDotDiameter: CGFloat = 16  // connect-hover port (Figma 100-297)
     private static let hoverDotRing: CGFloat = 3
     /// Canvas backdrop colour (light theme #EDF0F1) — masks the line behind the label.

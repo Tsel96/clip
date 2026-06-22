@@ -188,7 +188,7 @@ final class CanvasInputView: NSView {
     }
     private func locksAspect(_ n: CanvasNode) -> Bool {
         switch n.kind {
-        case .image, .video, .tweet, .instagram, .youtube, .webclip: return true
+        case .image, .video, .tweet, .instagram, .youtube, .webclip, .folder: return true
         default: return false
         }
     }
