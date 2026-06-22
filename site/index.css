@@ -519,7 +519,7 @@ button.ui-git {
   transform: translate(-50%, -50%);
   z-index: 5;
   pointer-events: none;
-  width: clamp(360px, 58vw, 960px);
+  width: clamp(400px, 66vw, 1080px);
   aspect-ratio: 16 / 10;
 }
 
@@ -568,6 +568,49 @@ button.ui-git {
 }
 
 /* ── Canvas mat background ── */
+
+/* Smooth inward slide when mat activates */
+.ui-brand {
+  transition:
+    top  0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    left 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ui-top-right {
+  transition:
+    top   0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    right 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ui-description {
+  transition:
+    bottom 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    left   0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    color  0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ui-bottom-right {
+  transition:
+    bottom 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    right  0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* When mat is active, push elements past the mat border (F ≈ 1.8vmin + some room) */
+body.mat-active .ui-brand {
+  top:  clamp(46px, calc(2vmin + 26px), 62px);
+  left: clamp(46px, calc(2vmin + 26px), 62px);
+}
+body.mat-active .ui-top-right {
+  top:   clamp(46px, calc(2vmin + 26px), 62px);
+  right: clamp(46px, calc(2vmin + 26px), 62px);
+}
+body.mat-active .ui-description {
+  bottom: clamp(46px, calc(2vmin + 26px), 62px);
+  left:   clamp(46px, calc(2vmin + 26px), 62px);
+}
+body.mat-active .ui-bottom-right {
+  bottom: clamp(46px, calc(2vmin + 26px), 62px);
+  right:  clamp(46px, calc(2vmin + 26px), 62px);
+}
+
 body.mat-active {
   background-color: #0d4d3b;
 }
