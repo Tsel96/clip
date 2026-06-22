@@ -451,6 +451,16 @@ struct CollectionCanvas: NSViewRepresentable {
             refreshChrome()
         }
 
+        // MARK: - Persistent per-node z-order (bring-to-front that STAYS)
+
+        /// Monotonic z assigned to a node when it's selected; persists across
+        /// deselect + reloadData (item views re-read it), so a clicked card stays
+        /// above its neighbours WITHOUT reordering the model (no reload → no blink).
+        private var zCounter: CGFloat = 0
+        private var nodeZ: [UUID: CGFloat] = [:]
+        func raiseZ(_ id: UUID) { zCounter += 1; nodeZ[id] = zCounter }
+        func zFor(_ id: UUID) -> CGFloat { nodeZ[id] ?? 0 }
+
         /// Refresh the native selection chrome (white ring/handles) on every
         /// visible item. Driven by `liveSelection`, so calling this right after a
         /// selection change updates the ring SYNCHRONOUSLY — no waiting for the
