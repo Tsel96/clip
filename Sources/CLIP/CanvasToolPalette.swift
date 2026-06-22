@@ -642,7 +642,7 @@ private final class MainPillView: NSView {
         // lift (hover/select), and the lift + glow (selected). Implemented as a
         // slide (the lift) + crossfade (the glow).
         markerView.setMarkerStates(
-            rest:     loadBundleImage(named: "marker-rest"),
+            rest:     loadBundleImage(named: "marker-hovered"),   // hovered art for rest too (user); just slides 10pt
             selected: loadBundleImage(named: "marker-selected"),
             lift:     10)
         markerView.onTap = { [weak self] in self?.onToolTap?(.draw) }
