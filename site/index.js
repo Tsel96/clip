@@ -33,12 +33,14 @@ async function init() {
     clearTimeout(reveal);
     html.classList.remove('js');
     wireModalFallback();
+    wireBgToggle();
     return;
   }
   clearTimeout(reveal);
   entrance();
   gestures();
   wireModal();
+  wireBgToggle();
 }
 
 /* ── Page entrance: staggered blur-rise of the overlay UI ── */
@@ -202,6 +204,19 @@ function wireModal() {
   trigger.addEventListener('click', open);
   closeBtn.addEventListener('click', close);
   backdrop.addEventListener('click', close);
+}
+
+/* ── MAT background toggle ── */
+function wireBgToggle() {
+  const btn = document.getElementById('bgToggle');
+  const bgMedia = document.querySelector('.bg-media');
+  if (!btn || !bgMedia) return;
+  let matActive = false;
+  btn.addEventListener('click', () => {
+    matActive = !matActive;
+    document.body.style.backgroundColor = matActive ? '#EDF0F1' : '';
+    bgMedia.style.opacity = matActive ? '0' : '';
+  });
 }
 
 /* ── No-Motion fallback (CDN unreachable): plain show/hide ── */
