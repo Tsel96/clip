@@ -25,8 +25,8 @@ struct FolderGridView: View {
         if let hex = folder?.folderColor, let c = Color(folderHex: hex) { return c }
         return Color(folderHex: FolderGridView.defaultFolderHex) ?? Color(white: 0.93)
     }
-    /// Default (untinted) folder lavender — matches `Folder_Rest` art.
-    static let defaultFolderHex = "#E7E3F7"
+    /// Default (untinted) folder body colour — matches the `Folder_Rest` art.
+    static let defaultFolderHex = "#EEF0F2"
 
     private var columns: [GridItem] {
         [GridItem(.adaptive(minimum: columnWidth, maximum: columnWidth + 60),
@@ -72,14 +72,21 @@ struct FolderGridView: View {
         let scale = columnWidth / w
         let cellH = min(h * scale, columnWidth * 1.6)   // cap very tall cards
 
-        DraggableNode(node: node, positioned: false)
-            .environmentObject(state)
-            .frame(width: w, height: h)
-            .scaleEffect(scale, anchor: .topLeading)
-            .frame(width: columnWidth, height: h * scale, alignment: .topLeading)
-            .frame(height: cellH, alignment: .top)
-            .clipped()
-            .allowsHitTesting(false)        // display-only inside the folder grid
+        ZStack {
+            DraggableNode(node: node, positioned: false)
+                .environmentObject(state)
+                .frame(width: w, height: h)
+                .scaleEffect(scale, anchor: .topLeading)
+                .frame(width: columnWidth, height: h * scale, alignment: .topLeading)
+                .frame(height: cellH, alignment: .top)
+                .clipped()
+                .allowsHitTesting(false)        // the card itself is display-only…
+            // …a transparent catcher on top opens the detail view on double-click.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { state.openLightbox(node.id) }
+        }
+        .frame(width: columnWidth, height: cellH)
     }
 }
 
@@ -103,6 +110,13 @@ struct FolderNameField: View {
         return ""
     }
     private static let font = Font.system(size: 15, weight: .bold, design: .monospaced)
+    /// The shared Enter icon (same as the link input + everywhere else, Figma).
+    private static let enterIcon: NSImage? = {
+        guard let url = Bundle.module.url(forResource: "Enter", withExtension: "svg") else { return nil }
+        let img = NSImage(contentsOf: url)
+        img?.size = NSSize(width: 24, height: 24)
+        return img
+    }()
 
     var body: some View {
         HStack(spacing: 8) {
@@ -124,11 +138,21 @@ struct FolderNameField: View {
             }
             .fixedSize()
 
-            // Rename glyph (Figma 105-764) — visible on hover / while editing.
-            Image(systemName: "square.and.pencil")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.black.opacity(0.55))
-                .opacity(hovering || focused ? 1 : 0)
+            // Trailing Enter icon (Figma 105-764) — same submit glyph used in the
+            // link input. Visible on hover / while editing; tap = commit.
+            Button(action: commit) {
+                Group {
+                    if let icon = Self.enterIcon {
+                        Image(nsImage: icon).resizable().renderingMode(.original)
+                    } else {
+                        Image(systemName: "return").font(.system(size: 13, weight: .semibold))
+                    }
+                }
+                .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .opacity(hovering || focused ? 1 : 0)
+            .help("Rename folder")
         }
         .padding(.horizontal, 18)
         .frame(height: 38)

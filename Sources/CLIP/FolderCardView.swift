@@ -72,12 +72,10 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
     private var isDropHovered = false
     /// Folder art for an item count — the card-peek is baked into each SVG.
     private static func art(forCount count: Int) -> NSImage? {
-        switch count {
-        case 0:  return restImage
-        case 1:  return oneItemImage
-        case 2:  return twoItemsImage
-        default: return threeItemsImage
-        }
+        // ALWAYS the text-free art: the 1/2/3-item SVGs bake in "Untitled" + a
+        // count as outlined paths, which can't reflect a renamed folder (the live
+        // name + count come from the dynamic countField/titleField instead).
+        restImage
     }
 
     /// White OFFSET-outline ring of each art (cached) — the selection outline: a
@@ -88,12 +86,7 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
     private static let twoRing   = whiteRing(of: twoItemsImage)
     private static let threeRing = whiteRing(of: threeItemsImage)
     private static func ring(forCount count: Int) -> NSImage? {
-        switch count {
-        case 0:  return restRing
-        case 1:  return oneRing
-        case 2:  return twoRing
-        default: return threeRing
-        }
+        restRing   // matches the always-rest art above
     }
 
     /// A thin WHITE ring offset a gap OUTSIDE `image`'s silhouette: dilate the folder
@@ -225,7 +218,7 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         titleField.stringValue = title.isEmpty ? "Untitled" : title
         countField.stringValue = childIDs.isEmpty
             ? "No items"
-            : "\(childIDs.count) Items"
+            : "\(childIDs.count) item\(childIDs.count == 1 ? "" : "s")"
         iconChip.isHidden = icon.isEmpty
         if !icon.isEmpty {
             iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
@@ -240,17 +233,10 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
             shapeView.image = Self.tinted(base, with: color)
         }
         // The 1/2/3-item SVGs bake in their own count + "Untitled" (as outlined
-        // paths), so suppress our dynamic overlays whenever a baked-text SVG is
-        // shown — only the text-stripped empty Folder_Rest needs them. (4+ caps at
-        // the 3-item art; re-export the SVGs text-free to make ALL counts dynamic
-        // + support renaming.)
-        let svgHasText = childIDs.count >= 1
-        // Never re-hide the labels mid-rename (a non-empty folder's baked-text SVG
-        // would otherwise yank the live editor out from under the cursor).
-        if !isRenaming {
-            countField.isHidden = svgHasText
-            titleField.isHidden = svgHasText
-        }
+        // Art is ALWAYS the text-free Folder_Rest now, so the dynamic count +
+        // name labels are ALWAYS shown (they carry the live, renamable values).
+        countField.isHidden = false
+        titleField.isHidden = false
         needsLayout = true
     }
 
@@ -311,9 +297,9 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         isDropHovered = hovering
         // Show the labels on hover (the open lid covers any baked-in SVG text);
         // restore the per-count visibility on exit.
-        let showLabels = hovering || currentCount == 0
-        countField.isHidden = !showLabels
-        titleField.isHidden = !showLabels
+        // Labels are always visible now (text-free art); nothing to toggle here.
+        countField.isHidden = false
+        titleField.isHidden = false
         lidView.image = tintedIfNeeded(Self.openLidImage)
         // ONLY the lid animates (the body art stays put): the open-lid overlay fades
         // + springs UP out of the folder front on enter, and back on exit.

@@ -288,7 +288,7 @@ extension CanvasState {
             let s = fitInto(maxDim: 600, naturalSize: CGSize(width: curW, height: curH))
             return (s.width, s.height)
         case .video:              return (480, 480 * aspect)
-        case .folder:             return (546, node.height.map { _ in 546 * aspect })
+        case .folder:             return (437, node.height.map { _ in 437 * aspect })
         default:                  return nil
         }
     }
