@@ -1658,6 +1658,12 @@ private final class FolderActionBarView: NSView {
     private func applyMode() {
         let shown = Set(activeButtons)
         allButtons.forEach { $0.isHidden = !shown.contains($0) }
+        if mode == .textFormat {
+            refreshFormatState()
+        } else {
+            // Clear any stale green circles when leaving the format bar.
+            [boldBtn, italicBtn, underlineBtn, strikeBtn].forEach { $0.setActive(false, animated: false) }
+        }
         needsLayout = true
         superview?.needsLayout = true   // parent re-centers using preferredWidth
     }
