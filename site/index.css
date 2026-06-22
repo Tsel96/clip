@@ -511,6 +511,62 @@ button.ui-git {
   cursor: pointer;
 }
 
+/* ── Centered app preview window ── */
+.app-window-wrap {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  pointer-events: none;
+  width: clamp(360px, 58vw, 960px);
+  aspect-ratio: 16 / 10;
+}
+
+.app-window {
+  width: 100%;
+  height: 100%;
+  border-radius: 26px;
+  background: #edf0f1;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.23),
+    0 16px 48px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  position: relative;
+}
+
+.app-window-controls {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  z-index: 1;
+  padding: 1px;
+}
+
+.app-traffic-light {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 0.5px solid rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.app-close    { background: #ff736a; }
+.app-minimize { background: #febc2e; }
+.app-zoom     { background: #19c332; }
+
+.app-window-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 /* ── Canvas mat background ── */
 body.mat-active {
   background-color: #0d4d3b;
