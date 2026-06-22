@@ -511,8 +511,16 @@ struct CollectionCanvas: NSViewRepresentable {
         /// next SwiftUI re-render (which lagged the ring by one event).
         func refreshChrome() {
             guard let cv = collection else { return }
+            // VIEWPORT CULLING (chrome only): every item stays MOUNTED (so cards
+            // never blink in/out), but we skip the per-tick chrome + shadow recompute
+            // for cards well outside the viewport — they're invisible, so there's
+            // nothing to update. Cuts pan/zoom cost from O(all cards) to O(on-screen).
+            let vis = cv.visibleRect
+            let mx = vis.width * 0.35, my = vis.height * 0.35
+            let near = vis.insetBy(dx: -mx, dy: -my)
             for ip in cv.indexPathsForVisibleItems() {
                 if let card = (cv.item(at: ip) as? HostingCollectionItem)?.cardView {
+                    guard near.intersects(card.frame) else { continue }
                     card.updateChrome()
                     card.updateShadow()      // fade the float shadow with zoom
                 }
@@ -1305,6 +1313,9 @@ final class CardItemView: NSView {
     /// → the cache is reused across zoom ticks; the zoom-out fade rides the layer's
     /// composite `opacity`, which never invalidates the cache.
     private var lastLiftedForShadow: Bool?
+    /// Skips the shadow path/radius/offset re-bake when geometry/rotation is
+    /// unchanged (the common pan/zoom case) — only the zoom-fade opacity updates.
+    private var lastShadowGeomKey: String = ""
     /// Enlarge the shadow layer past the card so rasterization can't clip the blur.
     private static let shadowMargin: CGFloat = 48
     func updateShadow() {
@@ -1330,6 +1341,13 @@ final class CardItemView: NSView {
         // tight contact shadow; hover/selected lifts into a larger softer pool. These
         // change only on a lift/resize → no per-zoom re-raster.
         let lifted = isLifted
+        // The expensive part (shadowPath/radius/offset re-bake) only changes on a
+        // lift/resize/rotation. On a plain pan/zoom NONE of those change, so skip
+        // it — the cheap zoom-fade `opacity` above already updated. Big pan/zoom win.
+        let angleNow = liveRotationOverride ?? n.rotation
+        let geomKey = "\(lifted)|\(Int(bounds.width))x\(Int(bounds.height))|\(Int(angleNow * 1000))|\(n.isText)|\(n.isStickyNote)"
+        if geomKey == lastShadowGeomKey { return }
+        lastShadowGeomKey = geomKey
         let baseOpacity: Float = lifted ? 0.17 : 0.13
         let offsetY: CGFloat   = lifted ? 16 : 6
         let radius: CGFloat    = lifted ? 20 : 8

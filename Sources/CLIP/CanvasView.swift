@@ -735,6 +735,12 @@ struct CanvasView: View {
                     .padding(.bottom, 0)
             }
         }
+        // FPS meter (top-right) — measure perceived frame rate at a glance.
+        .overlay(alignment: .topTrailing) {
+            FPSHud()
+                .padding(.top, 16)
+                .padding(.trailing, 16)
+        }
         // Top-CENTER: while a folder is open, the folder-NAME pill (rename) REPLACES
         // the Canvas/Colorform/Archive segmented control (Figma 105-755/764).
         // Otherwise the segmented control — the affordance to switch modes.

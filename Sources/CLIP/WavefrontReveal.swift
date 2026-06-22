@@ -3,6 +3,8 @@ import MetalKit
 import AppKit
 import QuartzCore
 import WebKit
+import AVFoundation
+import AVKit
 
 /*  Wavefront image reveal — ported from DopeDrop's Metal shader.
 
@@ -923,6 +925,20 @@ func renderOffscreen<V: View>(_ view: V, width: CGFloat, fixedHeight: CGFloat?,
             return cg
         }
     }
+    // VIDEO: an AVPlayerLayer renders BLACK into cacheDisplay off-screen (same as
+    // web views). Instead generate a real poster frame from the asset so the
+    // aurora has actual content to sweep over.
+    if let asset = findPlayerAsset(in: host) {
+        let gen = AVAssetImageGenerator(asset: asset)
+        gen.appliesPreferredTrackTransform = true
+        gen.requestedTimeToleranceBefore = .positiveInfinity
+        gen.requestedTimeToleranceAfter = .positiveInfinity
+        gen.maximumSize = CGSize(width: width * 2, height: h * 2)
+        let at = CMTime(seconds: 0.1, preferredTimescale: 600)
+        if let result = try? await gen.image(at: at), result.image.width > 1 {
+            return result.image
+        }
+    }
     guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
     host.cacheDisplay(in: host.bounds, to: rep)
     return rep.cgImage
@@ -936,6 +952,26 @@ private func findWebView(in view: NSView) -> WKWebView? {
     if let web = view as? WKWebView { return web }
     for sub in view.subviews {
         if let web = findWebView(in: sub) { return web }
+    }
+    return nil
+}
+
+/// Find the asset of the first AVPlayer hosted under `view` (an `AVPlayerView` or
+/// a layer-hosted `AVPlayerLayer`) so a video card's reveal can use a real poster
+/// frame instead of a black off-screen capture.
+@MainActor
+private func findPlayerAsset(in view: NSView) -> AVAsset? {
+    if let pv = view as? AVPlayerView, let a = pv.player?.currentItem?.asset { return a }
+    if let layer = view.layer, let a = playerAssetInLayer(layer) { return a }
+    for sub in view.subviews {
+        if let a = findPlayerAsset(in: sub) { return a }
+    }
+    return nil
+}
+private func playerAssetInLayer(_ layer: CALayer) -> AVAsset? {
+    if let pl = layer as? AVPlayerLayer, let a = pl.player?.currentItem?.asset { return a }
+    for s in layer.sublayers ?? [] {
+        if let a = playerAssetInLayer(s) { return a }
     }
     return nil
 }
