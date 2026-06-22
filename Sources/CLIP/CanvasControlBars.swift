@@ -46,10 +46,10 @@ struct FigmaPill<Content: View>: View {
             .background(Color.white.opacity(0.6), in: Capsule(style: .continuous))
             .overlay(Capsule(style: .continuous)
                 .strokeBorder(Color.black.opacity(0.04), lineWidth: 0.5))
-            // Figma 74:25918 drop shadow (the visible levels of the 5-stop stack).
+            // Identical 3-stop shadow to the sidebar "i" button (the reference).
             .shadow(color: .black.opacity(0.03), radius: 1, y: 1)
-            .shadow(color: .black.opacity(0.02), radius: 2, y: 2)
-            .shadow(color: .black.opacity(0.01), radius: 2.5, y: 4.5)
+            .shadow(color: .black.opacity(0.02), radius: 2, y: 4)
+            .shadow(color: .black.opacity(0.01), radius: 2.5, y: 9)
     }
 }
 
@@ -60,7 +60,6 @@ private struct PillIconButton: View {
     var isOn: Bool = true
     let action: () -> Void
     var help: String = ""
-    @State private var hover = false
 
     var body: some View {
         Button(action: action) {
@@ -69,12 +68,9 @@ private struct PillIconButton: View {
                 .frame(height: 28)
                 .frame(minWidth: 28)
                 .padding(.horizontal, 4)
-                .background(hover ? Color.black.opacity(0.06) : .clear,
-                            in: Capsule(style: .continuous))
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
-        .onHover { hover = $0 }
+        .buttonStyle(.hover)                              // identical hover/press to the "i" button
         .help(help)
     }
 }
@@ -105,8 +101,6 @@ struct CanvasControlsBar: View {
 
 struct SidebarToggleButton: View {
     @EnvironmentObject var state: CanvasState
-    @State private var hover = false
-
     var body: some View {
         Button {
             withAnimation(Motion.popper) { state.showSidebar.toggle() }
@@ -115,18 +109,16 @@ struct SidebarToggleButton: View {
                 .frame(height: 28)
                 .frame(minWidth: 28)
                 .padding(.horizontal, 4)
-                .background(hover ? Color.black.opacity(0.06) : .clear,
-                            in: Capsule(style: .continuous))
                 .padding(4)
                 .background(Color.white.opacity(0.6), in: Capsule(style: .continuous))
                 .overlay(Capsule(style: .continuous)
                     .strokeBorder(Color.black.opacity(0.04), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.03), radius: 1, y: 1)
-                .shadow(color: .black.opacity(0.02), radius: 2.5, y: 4)
+                .shadow(color: .black.opacity(0.02), radius: 2, y: 4)
+                .shadow(color: .black.opacity(0.01), radius: 2.5, y: 9)
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
-        .onHover { hover = $0 }
+        .buttonStyle(.hover)
         .help(state.showSidebar ? "Hide sidebar" : "Show sidebar")
         .accessibilityIdentifier("canvas.sidebarToggle")
     }
@@ -185,19 +177,15 @@ private struct ZoomStepButton: View {
     let symbol: String
     let action: () -> Void
     var help: String = ""
-    @State private var hover = false
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.black.opacity(0.75))
                 .frame(width: 28, height: 28)
-                .background(hover ? Color.black.opacity(0.06) : .clear,
-                            in: Capsule(style: .continuous))
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
-        .onHover { hover = $0 }
+        .buttonStyle(.hover)
         .help(help)
     }
 }

@@ -1354,6 +1354,7 @@ final class CanvasState: ObservableObject {
         // overlap area with a meaningful threshold (≥25% of the folder) — covering
         // the folder files it; merely brushing past it does not.
         var best: (id: UUID, area: CGFloat)?
+        let dragArea = max(dragRect.width * dragRect.height, 1)
         for f in nodes {
             guard case .folder = f.kind, !draggedIDs.contains(f.id) else { continue }
             let fr = CGRect(x: f.position.x, y: f.position.y,
@@ -1361,7 +1362,12 @@ final class CanvasState: ObservableObject {
             let inter = fr.intersection(dragRect)
             guard !inter.isNull else { continue }
             let area = inter.width * inter.height
-            guard area >= fr.width * fr.height * 0.25 else { continue }
+            // Require the overlap to be ≥25% of the SMALLER of the folder / dragged
+            // cards — so a small card files into a large folder (and vice-versa).
+            // (The old "25% of the folder" rule meant a normal card could never
+            // cover enough of an over-sized folder, so filing silently failed.)
+            let threshold = min(fr.width * fr.height, dragArea) * 0.25
+            guard area >= threshold else { continue }
             if area > (best?.area ?? 0) { best = (f.id, area) }
         }
         if let best { addToFolder(best.id, nodeIDs: Set(cards)) }
