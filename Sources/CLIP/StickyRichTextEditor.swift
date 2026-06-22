@@ -40,6 +40,9 @@ struct StickyRichTextEditor: NSViewRepresentable {
     var alignment: NSTextAlignment = .left
     var kern: CGFloat = -0.17
     var inset: NSSize = NSSize(width: 22, height: 24)
+    /// Vertically centre the text in the view (text nodes — single-line pills).
+    /// Off for stickies (top-aligned, multi-line, scrollable).
+    var verticalCenter: Bool = false
     /// Fired on every text change (used by text nodes to live-resize the pill).
     var onTextChange: ((String) -> Void)? = nil
     let onCommit: (NSAttributedString) -> Void
@@ -93,9 +96,16 @@ struct StickyRichTextEditor: NSViewRepresentable {
         tv.minSize = NSSize(width: 0, height: 0)
         tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                             height: CGFloat.greatestFiniteMagnitude)
-        tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
-        tv.autoresizingMask = [.width]
+        tv.verticallyCentered = verticalCenter
+        if verticalCenter {
+            // Fill the clip view (so there's height to centre WITHIN).
+            tv.isVerticallyResizable = false
+            tv.autoresizingMask = [.width, .height]
+        } else {
+            tv.isVerticallyResizable = true
+            tv.autoresizingMask = [.width]
+        }
         scroll.documentView = tv
 
         context.coordinator.textView = tv
@@ -221,7 +231,19 @@ struct StickyRichTextEditor: NSViewRepresentable {
 /// attributes so the eraser can restore the correct font/colour/alignment.
 final class StickyTextView: NSTextView {
     var baseAttributes: [NSAttributedString.Key: Any] = [:]
+    var verticallyCentered = false
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func layout() {
+        super.layout()
+        guard verticallyCentered, let lm = layoutManager, let tc = textContainer else { return }
+        lm.ensureLayout(for: tc)
+        let used = lm.usedRect(for: tc).height
+        let top = max(0, (bounds.height - used) / 2)
+        if abs(textContainerInset.height - top) > 0.5 {
+            textContainerInset = NSSize(width: textContainerInset.width, height: top)
+        }
+    }
 }
 
 enum StickyTextFormatting {

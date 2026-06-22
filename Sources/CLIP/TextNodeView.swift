@@ -47,6 +47,7 @@ struct TextNodeView: View {
                 alignment: .center,
                 kern: 0,
                 inset: NSSize(width: 4, height: 2),
+                verticalCenter: true,
                 onTextChange: { state.liveResizeText(id: nodeID, content: $0) },
                 onCommit: { attr in
                     let plain = attr.string.trimmingCharacters(in: .whitespacesAndNewlines)

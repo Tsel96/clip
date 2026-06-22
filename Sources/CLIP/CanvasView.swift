@@ -197,10 +197,10 @@ struct CanvasView: View {
     private var bulbsOpacity: Double {
         guard state.canvasMode == .colorform else { return 0 }
         let z = cameraStore.camera.zoom
-        // Field full when zoomed out (≤ ~7%), crossfades to the cards by ~15%
-        // zoom — so the colour map is the zoomed-out overview and the actual
-        // cards reveal as you zoom in past 15%.
-        let t = max(0, min(1, (0.15 - z) / 0.08))
+        // Field full when zoomed out (≤ ~30%), crossfades to the cards by ~60%
+        // zoom — so Colorform opens on the colour field (it's framed at ≤30% on
+        // entry) and the actual cards reveal as you zoom in past 60%.
+        let t = max(0, min(1, (0.6 - z) / 0.3))
         return Double(3 * t * t - 2 * t * t * t)   // smoothstep
     }
     private var cardsOpacity: Double {

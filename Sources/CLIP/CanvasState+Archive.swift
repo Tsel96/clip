@@ -210,9 +210,13 @@ extension CanvasState {
         let pad: CGFloat = 620        // cell halo (420) + cream gutter (~200)
         let worldW = max(1, (maxX - minX) + pad * 2)
         let worldH = max(1, (maxY - minY) + pad * 2)
+        // Cap at 0.30 so Colorform always opens zoomed-out enough to SEE the
+        // colour field (it's fully faded above ~60% zoom). For a small
+        // constellation this shows the cells comfortably instead of zooming past
+        // the field into the (faded) cards.
         let z = min(
             min(viewportSize.width / worldW, viewportSize.height / worldH),
-            1.2
+            0.30
         )
         let zoom = max(Self.minZoom, min(Self.maxZoom, z))
         let centerX = (minX + maxX) / 2
