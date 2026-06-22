@@ -389,6 +389,7 @@ private final class PropButton: NSView {
     var onTap: (() -> Void)?
     private let imageView = NSImageView()        // rest / base art
     private let hoverImageView = NSImageView()   // hover art, crossfaded over base
+    private let selectedImageView = NSImageView() // marker selected art (lifted + glow)
     private var isActive  = false
     private var isHovered = false
     private var isPressed = false
@@ -396,6 +397,11 @@ private final class PropButton: NSView {
     /// (the sticky button) — and it has NO active state and no hover-grow; the
     /// art itself carries the state. When false it's the scale-based prop (Marker).
     private var usesStateImages = false
+    /// Marker prop: rest art slides UP `markerLift` pt on hover/select (the SVGs
+    /// differ by a pure 10pt lift) and the selected art (lift + glow) crossfades
+    /// in on top. The "best smooth transition" for a lift is a slide, not a fade.
+    private var usesMarkerStates = false
+    private var markerLift: CGFloat = 0
 
     init(image: NSImage?) {
         super.init(frame: .zero)
