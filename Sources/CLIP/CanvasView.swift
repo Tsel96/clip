@@ -204,7 +204,12 @@ struct CanvasView: View {
         return Double(3 * t * t - 2 * t * t * t)   // smoothstep
     }
     private var cardsOpacity: Double {
-        state.canvasMode == .colorform ? 1 - bulbsOpacity : 1
+        guard state.canvasMode == .colorform else { return 1 }
+        // Keep a hair of opacity at full field strength: the hosted NSScrollView
+        // drives Colorform pan/zoom, and an AppKit view at alpha 0 stops receiving
+        // scroll/magnify (navigation froze at ≤7% zoom, exactly where the cards
+        // fully faded). 5% is invisible under the 100%-opaque field above it.
+        return max(0.05, 1 - bulbsOpacity)
     }
     private var cardsBlur: CGFloat {
         state.canvasMode == .colorform ? 14 * CGFloat(bulbsOpacity) : 0
