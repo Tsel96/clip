@@ -202,18 +202,12 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         iconChip.addSubview(iconView)
         addSubview(iconChip)
 
-        // Up-arrow drop affordance (Figma 104:675) — ABOVE everything, shown on
-        // hover. A SUBTLE translucent-dark circle (Figma 4% black, a touch darker)
-        // + a thin up-arrow; NOT an opaque white chip.
+        // Up-arrow drop affordance (Figma 104:675) — the exact SVG, ABOVE
+        // everything, faded in on hover.
+        dropArrow.image = Self.arrowImage
+        dropArrow.imageScaling = .scaleAxesIndependently
         dropArrow.wantsLayer = true
-        dropArrow.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.06).cgColor
-        dropArrow.layer?.masksToBounds = true
         dropArrow.layer?.opacity = 0
-        dropArrowGlyph.image = NSImage(systemSymbolName: "arrow.up", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 40, weight: .medium))
-        dropArrowGlyph.contentTintColor = NSColor.black.withAlphaComponent(0.50)   // a bit darker
-        dropArrowGlyph.imageScaling = .scaleProportionallyDown
-        dropArrow.addSubview(dropArrowGlyph)
         addSubview(dropArrow)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -305,6 +299,11 @@ final class FolderCardView: NSView, NativeCardUpdatable {
     func setDropHover(_ hovering: Bool) {
         guard hovering != isDropHovered else { return }
         isDropHovered = hovering
+        // Show the labels on hover (the open lid covers any baked-in SVG text);
+        // restore the per-count visibility on exit.
+        let showLabels = hovering || currentCount == 0
+        countField.isHidden = !showLabels
+        titleField.isHidden = !showLabels
         lidView.image = tintedIfNeeded(Self.openLidImage)
         // ONLY the lid animates (the body art stays put): the open-lid overlay fades
         // + springs UP out of the folder front on enter, and back on exit.
@@ -421,8 +420,8 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         countField.font = .systemFont(ofSize: max(8, h * 0.0714), weight: .light)
         titleField.font = NSFont.monospacedSystemFont(ofSize: max(9, h * 0.0714), weight: .medium)
         countField.sizeToFit(); titleField.sizeToFit()
-        countField.frame.origin = CGPoint(x: pad, y: h * 0.688)
-        titleField.frame.origin = CGPoint(x: pad, y: h * 0.768)
+        countField.frame.origin = CGPoint(x: pad, y: h * 0.688 + 3)   // +3pt (per user)
+        titleField.frame.origin = CGPoint(x: pad, y: h * 0.768 + 3)
 
         // Identity-icon chip, lower-right.
         let chip = min(w, h) * 0.20
@@ -430,14 +429,10 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         iconChip.layer?.cornerRadius = chip * 0.28
         iconView.frame = iconChip.bounds.insetBy(dx: chip * 0.26, dy: chip * 0.26)
 
-        // Up-arrow drop affordance — its Figma sub-rect, a perfect circle, nudged
-        // 5pt LOWER (per the user). Glyph ≈ 53% of the circle (Figma).
+        // Up-arrow drop affordance — its Figma sub-rect, nudged 5pt LOWER.
         dropArrow.frame = CGRect(x: (Self.arrowRect.minX - Self.folderRect.minX) * sx,
                                  y: (Self.arrowRect.minY - Self.folderRect.minY) * sy + 5,
                                  width: Self.arrowRect.width * sx,
                                  height: Self.arrowRect.height * sy)
-        dropArrow.layer?.cornerRadius = dropArrow.frame.width / 2
-        dropArrowGlyph.frame = dropArrow.bounds.insetBy(dx: dropArrow.frame.width * 0.24,
-                                                        dy: dropArrow.frame.height * 0.24)
     }
 }

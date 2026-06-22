@@ -69,6 +69,32 @@ struct StickyActionBar: View {
     }
 }
 
+/// Mounts the selected-sticky bar floating above the single selected sticky.
+/// Observes the camera so ONLY this small view repositions on pan/zoom (the
+/// canvas body doesn't re-render).
+struct StickyBarHost: View {
+    @EnvironmentObject var state: CanvasState
+    @EnvironmentObject var cameraStore: CameraStore
+
+    var body: some View {
+        GeometryReader { _ in
+            if state.canvasMode == .canvas, state.editingTextNodeID == nil,
+               state.selectedNodeIDs.count == 1, let id = state.selectedNodeIDs.first,
+               let n = state.nodeByID[id], case .stickyNote(_, let color) = n.kind {
+                let cam = cameraStore.camera
+                StickyActionBar(
+                    current: color,
+                    onDownload: { state.exportSticker(id) },
+                    onPickColor: { state.setStickyColor(id: id, to: $0) },
+                    onFolder: { state.addStickerToNewFolder(id) }
+                )
+                .position(x: (n.position.x + n.width / 2) * cam.zoom + cam.x,
+                          y: n.position.y * cam.zoom + cam.y - 44)
+            }
+        }
+    }
+}
+
 private extension Color {
     init(rgb: UInt32) {
         self.init(.sRGB,

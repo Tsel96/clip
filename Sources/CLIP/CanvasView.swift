@@ -509,6 +509,10 @@ struct CanvasView: View {
                     StackFocusLayer(layer: .chrome)
                 }
 
+                // Selected-sticky action bar (Figma 104:651) — floats above a
+                // single selected sticky; repositions itself on pan/zoom.
+                StickyBarHost()
+
                 // (Alignment + spacing guides are drawn natively by
                 // GuideOverlayController inside the scrolled container.)
 

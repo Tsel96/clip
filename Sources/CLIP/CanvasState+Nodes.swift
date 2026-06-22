@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import AVFoundation
 import Combine
+import UniformTypeIdentifiers
 
 // Split out of CanvasState.swift (god-object refactor): text / sticky-note / folder creation.
 extension CanvasState {
@@ -129,6 +130,37 @@ extension CanvasState {
             if case .stickyNote(let content, _) = nodes[idx].kind {
                 nodes[idx].kind = .stickyNote(content: content, color: color)
             }
+        }
+    }
+
+    // MARK: - Sticky action bar (Figma 104:651)
+
+    /// Create a folder at the sticky's position and tuck the sticky into it.
+    func addStickerToNewFolder(_ id: UUID) {
+        guard let n = nodeByID[id], n.isStickyNote else { return }
+        let centre = CGPoint(x: n.position.x + n.width / 2,
+                             y: n.position.y + (n.height ?? n.width) / 2)
+        let fid = addFolder(at: centre)
+        addToFolder(fid, nodeIDs: [id])
+    }
+
+    /// Render the sticky to a PNG and save it (Download).
+    @MainActor
+    func exportSticker(_ id: UUID) {
+        guard let n = nodeByID[id], case .stickyNote(let content, let color) = n.kind else { return }
+        let size = CGSize(width: n.width, height: n.height ?? n.width)
+        let renderer = ImageRenderer(content:
+            StickyExportView(content: content, color: color)
+                .frame(width: size.width, height: size.height))
+        renderer.scale = max(2, NSScreen.main?.backingScaleFactor ?? 2)
+        guard let img = renderer.nsImage, let tiff = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "sticker.png"
+        panel.begin { resp in
+            if resp == .OK, let url = panel.url { try? png.write(to: url) }
         }
     }
 
