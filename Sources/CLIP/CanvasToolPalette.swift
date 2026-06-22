@@ -560,22 +560,25 @@ private final class StickerProp: NSView {
     private let paperSize = CGSize(width: 91, height: 89)
     private let foldSize   = CGSize(width: 80, height: 88)
 
-    // Element centres per state (89×64 toolbar slot, top-left origin → flipped).
-    // Rest = Figma sticky-btn-rest (78-265); hover applies the fan delta.
-    private let paperCRest  = CGPoint(x: 44.19, y: 44.39)
-    private let paperCHover = CGPoint(x: 42.19, y: 43.39)
-    private let foldCRest   = CGPoint(x: 49.08, y: 39.00)
-    private let foldCHover  = CGPoint(x: 54.08, y: 37.20)
+    // Element centres per state (126×76 frame, top-left origin → flipped).
+    // Rest = Figma sticky-btn 90-557, hover = 90-537.
+    private let paperCRest  = CGPoint(x: 50.19, y: 55.38)
+    private let paperCHover = CGPoint(x: 48.19, y: 54.39)
+    private let foldCRest   = CGPoint(x: 55.08, y: 43.80)
+    private let foldCHover  = CGPoint(x: 60.08, y: 42.00)
 
-    // Rotation deltas vs the SVGs' baked (REST) rotation, degrees. On hover the
-    // two sheets fan: paper -10.93°→-16.3° (-5.37), fold -0.38°→+4.72° (+5.1).
-    private let paperHoverRot: CGFloat = -5.37
-    private let foldHoverRot:  CGFloat =  5.10
+    // Front sheet is smaller at rest (Figma fold box 65.6→78 ⇒ ×0.841 at rest).
+    private let foldRestScale: CGFloat = 0.841
+
+    // Rotation deltas vs the SVGs' baked (HOVER) pose, degrees. Rest rotates the
+    // sheets back toward flat: paper -16.3°→-10.93° (+5.37), fold +4.72°→0° (-4.72).
+    private let paperRestRot: CGFloat =  5.37
+    private let foldRestRot:  CGFloat = -4.72
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.masksToBounds = false         // let the sheets fan out past the slot on hover
+        layer?.masksToBounds = true          // clip sheets to the 126×76 frame, like Figma
         for iv in [paper, fold, foldWash] {   // foldWash on top of fold
             iv.imageScaling = .scaleAxesIndependently
             iv.wantsLayer = true
@@ -610,10 +613,12 @@ private final class StickerProp: NSView {
     private func apply(animated: Bool) {
         let pC = lifted ? paperCHover : paperCRest
         let fC = lifted ? foldCHover  : foldCRest
-        let pRot: CGFloat = lifted ? paperHoverRot : 0
-        let fRot: CGFloat = lifted ? foldHoverRot  : 0
+        let pRot: CGFloat = lifted ? 0 : paperRestRot
+        let fRot: CGFloat = lifted ? 0 : foldRestRot
+        let fSize = CGSize(width:  foldSize.width  * (lifted ? 1 : foldRestScale),
+                           height: foldSize.height * (lifted ? 1 : foldRestScale))
         let pOrigin = CGPoint(x: pC.x - paperSize.width / 2, y: pC.y - paperSize.height / 2)
-        let fOrigin = CGPoint(x: fC.x - foldSize.width / 2,  y: fC.y - foldSize.height / 2)
+        let fOrigin = CGPoint(x: fC.x - fSize.width / 2,     y: fC.y - fSize.height / 2)
 
         if animated {
             NSAnimationContext.runAnimationGroup { ctx in
@@ -624,7 +629,7 @@ private final class StickerProp: NSView {
                 paper.animator().setFrameOrigin(pOrigin)
                 paper.animator().frameCenterRotation = pRot
                 for v in [fold, foldWash] {            // wash tracks the fold exactly
-                    v.setFrameSize(foldSize)
+                    v.animator().setFrameSize(fSize)
                     v.animator().setFrameOrigin(fOrigin)
                     v.animator().frameCenterRotation = fRot
                 }
@@ -632,7 +637,7 @@ private final class StickerProp: NSView {
             }
         } else {
             paper.setFrameSize(paperSize); paper.setFrameOrigin(pOrigin); paper.frameCenterRotation = pRot
-            for v in [fold, foldWash] { v.setFrameSize(foldSize); v.setFrameOrigin(fOrigin); v.frameCenterRotation = fRot }
+            for v in [fold, foldWash] { v.setFrameSize(fSize); v.setFrameOrigin(fOrigin); v.frameCenterRotation = fRot }
             foldWash.alphaValue = isHovered ? 0.30 : 0
         }
     }
@@ -696,8 +701,8 @@ private final class MainPillView: NSView {
     // green ring), and the cap pokes 28pt above (needs propOverflow ≥ ~30).
     private static let markerX: CGFloat   = 112
     private static let markerY: CGFloat   = -16   // rest: chisel base flush with pill bottom; hover slides it up 10pt
-    private static let stickersX: CGFloat = 176   // 89×64 slot (Figma sticky-btn-rest)
-    private static let stickersY: CGFloat = -6    // slot bottom flush with capsule bottom (58)
+    private static let stickersX: CGFloat = 165   // 126×76 frame (Figma sticky-btn 90-557/90-537)
+    private static let stickersY: CGFloat = -18   // frame bottom flush with capsule bottom (58)
 
     // MARK: Layers
 
@@ -859,8 +864,8 @@ private final class MainPillView: NSView {
 
         // Stickers: 89 × 64, at (195, -6) from inner capsule top
         // The Figma clip is bottom-aligned (bottom: 0)
-        let stickersW: CGFloat = 89
-        let stickersH: CGFloat = 64
+        let stickersW: CGFloat = 126
+        let stickersH: CGFloat = 76
         stickersView.frame = NSRect(
             x: innerOriginX + Self.stickersX,
             y: innerOriginY + Self.stickersY,
