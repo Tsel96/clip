@@ -55,6 +55,10 @@ extension CanvasState {
         }()
         let node = CanvasNode.stickyNote(position: position, size: size)
         withUndoable { nodes.append(node) }
+        // Drive the SwiftUI StickyNodeView into edit mode (focused caret), same
+        // as `addText`; `editingTextNodeID` also makes CanvasInputView pass clicks
+        // through to the editor.
+        editingTextNodeID = node.id
         pendingFocusNodeID = node.id
         select(node.id)
         toolMode = .select

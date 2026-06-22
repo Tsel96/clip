@@ -26,8 +26,10 @@ func makeNativeCardContent(for node: CanvasNode) -> NSView? {
         return CardDrawingContentView(stroke: stroke)
     case .section(let title, let color):
         return CardSectionContentView(title: title, color: color)
-    case .stickyNote(let content, let color):
-        return CardStickyContentView(content: content, color: color)
+    case .stickyNote:
+        // Sticky renders via the SwiftUI StickyNodeView (Figma 88-415 light card,
+        // recolour + inline editing). Returning nil hosts that fallback.
+        return nil
     case .folder:
         let v = FolderCardView(); v.update(for: node); return v
     case .text(let content, let fontSize):

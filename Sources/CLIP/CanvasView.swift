@@ -408,6 +408,11 @@ struct CanvasView: View {
                                         state.select(id)
                                         state.editingTextNodeID = id
                                         state.pendingFocusNodeID = id
+                                    } else if case .stickyNote = node.kind {
+                                        // Double-click a sticky → inline text edit (not lightbox).
+                                        state.select(id)
+                                        state.editingTextNodeID = id
+                                        state.pendingFocusNodeID = id
                                     } else if state.isStackHead(id), state.focusedStackID == nil {
                                         state.enterStackFocus(headID: id)
                                     } else if case .folder = node.kind {

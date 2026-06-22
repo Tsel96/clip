@@ -44,22 +44,23 @@ struct StickyNodeView: View {
                     .focused($focused)
                     .padding(.horizontal, 30)
                     .padding(.vertical, 28)
+                    // Only the editing sticky captures clicks; at rest the canvas
+                    // owns them (drag / select) via CanvasInputView.
+                    .allowsHitTesting(isEditing)
             }
-            // Soft drop shadow approximating the 88-415 multi-layer shadow.
-            .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 2)
-            .shadow(color: .black.opacity(0.04), radius: 9, x: 0, y: 8)
             .onAppear {
                 editingText = content
-                if state.pendingFocusNodeID == node.id {
-                    // Defer one runloop tick so the @FocusState binding is wired
-                    // into the responder chain first (same as TextNodeView).
-                    DispatchQueue.main.async { focused = true }
-                }
+                if isEditing { DispatchQueue.main.async { focused = true } }
             }
             .onChange(of: content) { newContent in
                 // External mutation (undo / paste) — sync the buffer only when
                 // we're not the one driving the change.
                 if !focused { editingText = newContent }
+            }
+            .onChange(of: isEditing) { editing in
+                // Created / double-clicked → focus; cleared → blur (commits).
+                if editing { DispatchQueue.main.async { focused = true } }
+                else if focused { focused = false }
             }
             .onChange(of: focused) { isFocused in
                 if !isFocused { commit() }
@@ -67,15 +68,17 @@ struct StickyNodeView: View {
             .onExitCommand { focused = false }       // Esc commits + blurs
     }
 
+    /// This sticky is the one being edited (drives focus + click capture).
+    private var isEditing: Bool { state.editingTextNodeID == node.id }
+
     // MARK: - Commit
 
     private func commit() {
         if editingText != content {
             state.setStickyContent(id: node.id, to: editingText)
         }
-        if state.pendingFocusNodeID == node.id {
-            state.pendingFocusNodeID = nil
-        }
+        if state.editingTextNodeID == node.id { state.editingTextNodeID = nil }
+        if state.pendingFocusNodeID == node.id { state.pendingFocusNodeID = nil }
     }
 }
 
