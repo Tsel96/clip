@@ -129,15 +129,25 @@ extension CanvasState {
     }
 
     private func paste(payload: NodeClipboard) {
+        guard !payload.nodes.isEmpty else { return }
         // Rewrite every UUID so pasted nodes don't collide with existing ones
         // (and so connector endpoints can be remapped to the new ids).
         var idMap: [UUID: UUID] = [:]
         for n in payload.nodes { idMap[n.id] = UUID() }
-        let offset: CGFloat = 24
+        // Drop the group CENTRED on the viewport ("paste where I'm looking") rather
+        // than at the original coords +24 — so it lands on-screen on whatever page
+        // / scroll position you're viewing. The group's internal layout is kept.
+        let minX = payload.nodes.map { $0.position.x }.min() ?? 0
+        let minY = payload.nodes.map { $0.position.y }.min() ?? 0
+        let maxX = payload.nodes.map { $0.position.x + $0.width }.max() ?? 0
+        let maxY = payload.nodes.map { $0.position.y + ($0.height ?? 120) }.max() ?? 0
+        let groupCentre = CGPoint(x: (minX + maxX) / 2, y: (minY + maxY) / 2)
+        let target = screenToWorld(point: viewportCentre)
+        let dx = target.x - groupCentre.x, dy = target.y - groupCentre.y
         let newNodes: [CanvasNode] = payload.nodes.map { n in
             CanvasNode(
                 id: idMap[n.id] ?? UUID(),
-                position: CGPoint(x: n.position.x + offset, y: n.position.y + offset),
+                position: CGPoint(x: n.position.x + dx, y: n.position.y + dy),
                 width: n.width,
                 height: n.height,
                 kind: n.kind
@@ -145,7 +155,9 @@ extension CanvasState {
         }
         let newConnectors: [Connector] = payload.connectors.compactMap { c in
             guard let s = idMap[c.sourceID], let t = idMap[c.targetID] else { return nil }
-            return Connector(sourceID: s, targetID: t)
+            return Connector(sourceID: s, targetID: t, label: c.label,
+                             sourceSide: c.sourceSide, targetSide: c.targetSide,
+                             labelOffset: c.labelOffset)
         }
         withUndoable {
             nodes.append(contentsOf: newNodes)
