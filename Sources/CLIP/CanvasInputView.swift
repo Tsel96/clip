@@ -218,22 +218,10 @@ final class CanvasInputView: NSView {
     /// one exception: while a text node is being edited, clicks INSIDE its frame
     /// fall through to the TextField below so the caret/keys work — everything
     /// else returns self.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        if let p = config, let editID = p.editingTextNodeID,
-           let n = p.nodes.first(where: { $0.id == editID }) {
-            let local = convert(point, from: superview)
-            let cf = contentFrame(n, p)
-            let hit = cf.contains(local)
-            if hit {
-                FolderCardView.diag("HT pt=\(fmt(point)) local=\(fmt(local)) cf=\(fmt(cf.origin))±\(Int(cf.width))x\(Int(cf.height)) super=\(type(of: superview)) → passthrough")
-                return nil
-            } else {
-                FolderCardView.diag("HT MISS pt=\(fmt(point)) local=\(fmt(local)) cf=\(fmt(cf.origin))±\(Int(cf.width))x\(Int(cf.height)) super=\(type(of: superview))")
-            }
-        }
-        return super.hitTest(point)
-    }
-    private func fmt(_ p: CGPoint) -> String { "(\(Int(p.x)),\(Int(p.y)))" }
+    // The input view always owns clicks. While a text/sticky node is being edited,
+    // its clicks are FORWARDED to that node's text view in `mouseDown` (the SwiftUI
+    // gestures in the hosted card swallow a passed-through click, so forwarding to
+    // AppKit's own selection loop is the reliable path).
 
     override func mouseDown(with event: NSEvent) {
         guard let p = config else { return }
@@ -241,9 +229,15 @@ final class CanvasInputView: NSView {
         // etc.). Clicks INSIDE an editing text node never reach here (hitTest
         // passes them to the field), so this won't interrupt active text editing.
         let pt0 = convert(event.locationInWindow, from: nil)
-        if let eid = p.editingTextNodeID, let en = p.nodes.first(where: { $0.id == eid }) {
-            let inEdit = contentFrame(en, p).contains(pt0)
-            FolderCardView.diag("CIV mouseDown editing=\(eid.uuidString.prefix(4)) inEditRegion=\(inEdit) — passthrough \(inEdit ? "FAILED" : "ok")")
+        // While editing a text/sticky node, a click INSIDE it goes straight to its
+        // text view so AppKit's selection loop runs (place caret / drag-select).
+        // The text view is already the first responder (typing works), and its
+        // mouseDown tracks the whole drag until mouse-up.
+        if let eid = p.editingTextNodeID, let en = p.nodes.first(where: { $0.id == eid }),
+           contentFrame(en, p).contains(pt0),
+           let tv = window?.firstResponder as? NSTextView {
+            tv.mouseDown(with: event)
+            return
         }
         if window?.firstResponder !== self { window?.makeFirstResponder(self) }
         let pt = convert(event.locationInWindow, from: nil)
