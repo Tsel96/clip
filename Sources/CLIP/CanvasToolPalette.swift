@@ -113,7 +113,7 @@ final class CanvasToolPaletteView: NSView {
     static let gap: CGFloat        = 10
     /// Visual content height = 62; decorative props overflow ~12 pt above.
     static let contentH: CGFloat   = 62
-    static let propOverflow: CGFloat = 18   // marker pokes ~12 pt above pill + margin
+    static let propOverflow: CGFloat = 32   // marker cap pokes ~28 pt above the pill
     /// Bottom gap = how far the pill sits off the viewport bottom (18 pt, user
     /// spec) AND the room for the visible drop-shadow. The frame bottom sits flush
     /// with the viewport (`.padding(.bottom, 0)`), so the faint shadow tail past
@@ -563,8 +563,11 @@ private final class MainPillView: NSView {
     // Decorative prop positions (Figma 89-610, inner-capsule coords; Y from top).
     // Marker:   x=117  (overflows above rim by 12)
     // Stickers: x=176  (overflows above rim by 6)
-    private static let markerX: CGFloat   = 117
-    private static let markerY: CGFloat   = -8    // base sits flush with the pill bottom (no gap)
+    // Figma 90-362/90-406: marker-btn at left=112, top=-28 (71×84). The container
+    // bottom lands at inner-y 56 (above the toolbar bottom → never overflows the
+    // green ring), and the cap pokes 28pt above (needs propOverflow ≥ ~30).
+    private static let markerX: CGFloat   = 112
+    private static let markerY: CGFloat   = -28
     private static let stickersX: CGFloat = 176
     private static let stickersY: CGFloat = -6
 
