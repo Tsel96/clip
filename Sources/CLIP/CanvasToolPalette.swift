@@ -62,6 +62,7 @@ final class CanvasToolPaletteView: NSView {
     // Folder-bar actions (only live while morphed in).
     var onDownloadTap: (() -> Void)?
     var onEjectTap: (() -> Void)?
+    var onStickyFolderTap: (() -> Void)?   // sticky bar's Folder button (104:651)
 
     // MARK: - Init
 
@@ -101,6 +102,7 @@ final class CanvasToolPaletteView: NSView {
         folderBar.onDownload = { [weak self] in self?.onDownloadTap?() }
         folderBar.onColor    = { [weak self] in self?.presentColorFlower() }
         folderBar.onEject    = { [weak self] in self?.onEjectTap?() }
+        folderBar.onFolder   = { [weak self] in self?.onStickyFolderTap?() }
 
         // Allow the morph's animated Gaussian blur to render on these layers.
         [mainPill, addPill, folderBar].forEach { $0.layerUsesCoreImageFilters = true }
@@ -1491,12 +1493,13 @@ private extension NSColor {
 /// 168×62 capsule, with three round icon buttons — Download / Color / Eject.
 private final class FolderActionBarView: NSView {
 
-    /// The bar shows ONE of two button sets in the same candy capsule (Spatial-
-    /// style contextual toolbar): folder/sticky actions, or text-format buttons.
-    enum Mode { case folder, textFormat }
+    /// The bar shows ONE button set in the same candy capsule (Spatial-style
+    /// contextual toolbar): folder actions, sticky actions (Figma 104:651), or
+    /// text-format buttons (Figma 104:593).
+    enum Mode { case folder, sticky, textFormat }
 
     static let outerH: CGFloat = 62
-    /// Center-x of the Color (droplet) button in folder mode — flower anchor.
+    /// Center-x of the Color (droplet) button — flower anchor (folder/sticky).
     /// originX(4) + slot(54) + half(26).
     static let colorButtonCenterX: CGFloat = 84
     private static let bs: CGFloat = 52
@@ -1507,30 +1510,44 @@ private final class FolderActionBarView: NSView {
         didSet { guard mode != oldValue else { return }; applyMode() }
     }
 
-    /// Width the capsule wants for the current mode (3 folder vs 4 format buttons).
+    /// Width the capsule wants for the current mode (button count varies).
     var preferredWidth: CGFloat {
-        let count = (mode == .folder) ? 3 : 4
+        let count = activeButtons.count
         return Self.originX * 2 + CGFloat(count - 1) * Self.step + Self.bs
     }
 
     var onDownload: (() -> Void)?
     var onColor: (() -> Void)?
     var onEject: (() -> Void)?
+    var onFolder: (() -> Void)?   // sticky → add to a new folder (Figma 104:651)
 
     private let outerLayer = CALayer()
     private let innerLayer = CAGradientLayer()
-    // Folder / sticky actions.
+    // Folder actions.
     private let download = ToolPaletteButton(iconName: "Download")
     private let colorBtn = ToolPaletteButton(iconName: "Color")
     private let eject    = ToolPaletteButton(iconName: "Eject")
+    // Sticky actions (Figma 104:651) — Download / Color / Folder.
+    private let stickyFolder = ToolPaletteButton(symbolName: "folder")
     // Text-format actions (Figma 104:593) — SF Symbols, same button skin.
     private let boldBtn      = ToolPaletteButton(symbolName: "bold")
     private let italicBtn    = ToolPaletteButton(symbolName: "italic")
     private let underlineBtn = ToolPaletteButton(symbolName: "underline")
     private let strikeBtn    = ToolPaletteButton(symbolName: "strikethrough")
+    private let eraserBtn    = ToolPaletteButton(symbolName: "eraser")
 
-    private var folderButtons: [ToolPaletteButton] { [download, colorBtn, eject] }
-    private var formatButtons: [ToolPaletteButton] { [boldBtn, italicBtn, underlineBtn, strikeBtn] }
+    /// Buttons shown for the current mode (order = left→right).
+    private var activeButtons: [ToolPaletteButton] {
+        switch mode {
+        case .folder:     return [download, colorBtn, eject]
+        case .sticky:     return [download, colorBtn, stickyFolder]
+        case .textFormat: return [boldBtn, italicBtn, underlineBtn, strikeBtn, eraserBtn]
+        }
+    }
+    private var allButtons: [ToolPaletteButton] {
+        [download, colorBtn, eject, stickyFolder,
+         boldBtn, italicBtn, underlineBtn, strikeBtn, eraserBtn]
+    }
 
     override init(frame: NSRect) { super.init(frame: frame); commonInit() }
     required init?(coder: NSCoder) { super.init(coder: coder); commonInit() }
@@ -1550,21 +1567,33 @@ private final class FolderActionBarView: NSView {
         innerLayer.endPoint   = CGPoint(x: 0.5, y: 1)
         innerLayer.masksToBounds = true
         outerLayer.addSublayer(innerLayer)
-        download.onTap = { [weak self] in self?.onDownload?() }
-        colorBtn.onTap = { [weak self] in self?.onColor?() }
-        eject.onTap    = { [weak self] in self?.onEject?() }
+        download.onTap     = { [weak self] in self?.onDownload?() }
+        colorBtn.onTap     = { [weak self] in self?.onColor?() }
+        eject.onTap        = { [weak self] in self?.onEject?() }
+        stickyFolder.onTap = { [weak self] in self?.onFolder?() }
         // Format buttons act on the active editor (first-responder NSTextView).
         boldBtn.onTap      = { StickyTextFormatting.toggleBold() }
         italicBtn.onTap    = { StickyTextFormatting.toggleItalic() }
         underlineBtn.onTap = { StickyTextFormatting.toggleUnderline() }
         strikeBtn.onTap    = { StickyTextFormatting.toggleStrikethrough() }
-        (folderButtons + formatButtons).forEach(addSubview)
+        eraserBtn.onTap    = { StickyTextFormatting.clearFormatting() }
+        // Native tooltips.
+        download.toolTip = "Download"
+        colorBtn.toolTip = "Colour"
+        eject.toolTip = "Open folder"
+        stickyFolder.toolTip = "Add to a new folder"
+        boldBtn.toolTip = "Bold"
+        italicBtn.toolTip = "Italic"
+        underlineBtn.toolTip = "Underline"
+        strikeBtn.toolTip = "Strikethrough"
+        eraserBtn.toolTip = "Clear formatting"
+        allButtons.forEach(addSubview)
         applyMode()
     }
 
     private func applyMode() {
-        folderButtons.forEach { $0.isHidden = (mode != .folder) }
-        formatButtons.forEach { $0.isHidden = (mode != .textFormat) }
+        let shown = Set(activeButtons)
+        allButtons.forEach { $0.isHidden = !shown.contains($0) }
         needsLayout = true
         superview?.needsLayout = true   // parent re-centers using preferredWidth
     }
@@ -1583,8 +1612,7 @@ private final class FolderActionBarView: NSView {
         innerLayer.cornerCurve  = .continuous
         CATransaction.commit()
         let y = (bounds.height - Self.bs) / 2
-        let active = (mode == .folder) ? folderButtons : formatButtons
-        for (i, b) in active.enumerated() {
+        for (i, b) in activeButtons.enumerated() {
             b.frame = NSRect(x: Self.originX + CGFloat(i) * Self.step,
                              y: y, width: Self.bs, height: Self.bs)
         }

@@ -219,4 +219,18 @@ enum StickyTextFormatting {
         storage.endEditing()
         tv.didChangeText()
     }
+
+    /// Eraser (Figma 104:593) — strip bold/italic/underline/strike back to the
+    /// default sticky typing attributes for the selection (or typing attrs).
+    static func clearFormatting() {
+        guard let tv = activeTextView(), let storage = tv.textStorage else { return }
+        let color = (tv.typingAttributes[.foregroundColor] as? NSColor) ?? .black
+        let attrs = StickyRichTextEditor.defaultAttributes(color)
+        let range = tv.selectedRange()
+        if range.length == 0 { tv.typingAttributes = attrs; return }
+        storage.beginEditing()
+        storage.setAttributes(attrs, range: range)
+        storage.endEditing()
+        tv.didChangeText()
+    }
 }
