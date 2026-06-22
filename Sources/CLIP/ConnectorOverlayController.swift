@@ -76,21 +76,48 @@ final class ConnectorOverlayController {
         return l
     }()
 
+    private var hoverGen = 0
+
     func showHoverDot(at point: CGPoint, mag: CGFloat) {
+        hoverGen += 1
         let d = Self.hoverDotDiameter / mag
+        let wasHidden = hoverDot.isHidden
+        // Centred bounds + position so the scale spring grows from the dot's centre.
         CATransaction.begin(); CATransaction.setDisableActions(true)
+        hoverDot.bounds = CGRect(x: 0, y: 0, width: d, height: d)
+        hoverDot.position = point
         hoverDot.lineWidth = Self.hoverDotRing / mag
-        hoverDot.path = CGPath(ellipseIn: CGRect(x: point.x - d / 2, y: point.y - d / 2,
-                                                 width: d, height: d), transform: nil)
+        hoverDot.path = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: d, height: d), transform: nil)
+        hoverDot.transform = CATransform3DIdentity
         hoverDot.isHidden = false
         CATransaction.commit()
+        if wasHidden { hoverDot.add(Self.popSpring(from: 0.2, to: 1), forKey: "pop") }
     }
 
     func hideHoverDot() {
         guard !hoverDot.isHidden else { return }
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        hoverDot.isHidden = true
-        CATransaction.commit()
+        hoverGen += 1
+        let gen = hoverGen
+        hoverDot.add(Self.popSpring(from: 1, to: 0.2), forKey: "pop")
+        // Hide once the spring-down settles — unless it was re-shown meanwhile.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in
+            guard let self, self.hoverGen == gen else { return }
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            self.hoverDot.isHidden = true
+            self.hoverDot.transform = CATransform3DIdentity
+            CATransaction.commit()
+        }
+    }
+
+    /// Pleasurable scale spring (≈ Motion.pop) for the connect port.
+    private static func popSpring(from: CGFloat, to: CGFloat) -> CASpringAnimation {
+        let a = CASpringAnimation(keyPath: "transform.scale")
+        a.fromValue = from; a.toValue = to
+        a.mass = 1; a.stiffness = 220; a.damping = 15; a.initialVelocity = 0
+        a.duration = a.settlingDuration
+        a.fillMode = .forwards
+        a.isRemovedOnCompletion = false
+        return a
     }
 
     func removeFromSuperlayer() { root.removeFromSuperlayer() }
