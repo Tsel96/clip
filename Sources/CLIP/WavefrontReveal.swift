@@ -2,6 +2,7 @@ import SwiftUI
 import MetalKit
 import AppKit
 import QuartzCore
+import WebKit
 
 /*  Wavefront image reveal — ported from DopeDrop's Metal shader.
 
@@ -907,9 +908,36 @@ func renderOffscreen<V: View>(_ view: V, width: CGFloat, fixedHeight: CGFloat?,
     win.setContentSize(size)
     host.frame = CGRect(origin: .zero, size: size)
     host.layoutSubtreeIfNeeded()
+    // WKWebView (tweet / instagram / youtube / webclip) does NOT paint into
+    // cacheDisplay while off-screen → a black capture. `takeSnapshot` forces a
+    // render of the loaded DOM regardless of visibility, so we snapshot the web
+    // view directly when the card hosts one. cacheDisplay stays the fallback.
+    if let web = findWebView(in: host), web.bounds.width > 1, web.bounds.height > 1 {
+        let cfg = WKSnapshotConfiguration()
+        cfg.rect = web.bounds
+        let snap: NSImage? = await withCheckedContinuation { cont in
+            web.takeSnapshot(with: cfg) { image, _ in cont.resume(returning: image) }
+        }
+        if let cg = snap?.cgImage(forProposedRect: nil, context: nil, hints: nil),
+           cg.width > 1, cg.height > 1 {
+            return cg
+        }
+    }
     guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
     host.cacheDisplay(in: host.bounds, to: rep)
     return rep.cgImage
+}
+
+/// Depth-first search for the first `WKWebView` hosted under `view` (tweet /
+/// instagram / youtube / webclip cards are web-view backed). Used so the reveal
+/// can `takeSnapshot` it instead of cacheDisplay-ing a black off-screen frame.
+@MainActor
+private func findWebView(in view: NSView) -> WKWebView? {
+    if let web = view as? WKWebView { return web }
+    for sub in view.subviews {
+        if let web = findWebView(in: sub) { return web }
+    }
+    return nil
 }
 
 /// Wraps any card view: when the node is freshly added, the on-screen card is
@@ -950,7 +978,9 @@ struct RevealingCard<Content: View>: View {
     let captureHeight: CGFloat?     // nil = auto (tweet → sized to media aspect)
     let content: Content
     var debugKind: String = "?"
-    var settleNanos: UInt64 = 650_000_000
+    // Web cards (WKWebView) need time to LOAD their embed before we takeSnapshot
+    // it for the reveal — 650 ms snapshotted a half-loaded (often black) tweet.
+    var settleNanos: UInt64 = 1_400_000_000
     var duration: CFTimeInterval = 1.5
 
     @State private var phase: Phase = .idle
