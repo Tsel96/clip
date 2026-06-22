@@ -169,9 +169,9 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
             uniforms.cursorX = Float(p.x)
             uniforms.cursorY = Float(p.y)
         }
-        uniforms.hoverRadius = max(uniforms.sigma * 1.1, 1)
-        uniforms.swirlAmt = 1.2
-        uniforms.pushAmt = uniforms.sigma * 0.35
+        uniforms.hoverRadius = max(uniforms.sigma * 1.2, 1)
+        uniforms.swirlAmt = 0.8                       // peak twist (radians) — gentle
+        uniforms.pushAmt = uniforms.sigma * 0.25      // peak outward push (world units)
 
         guard let pipeline,
               let drawable = view.currentDrawable,
@@ -227,13 +227,19 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
             float2 d = world - cur;
             float dist = length(d);
             float R = max(u.hoverRadius, 1.0);
-            float fall = exp(-(dist * dist) / (R * R));     // 1 at cursor → 0 far
+            float x = dist / R;
+            float fall = exp(-x * x);                       // 1 at cursor → 0 far (bloom weight)
             s = u.hoverStrength * fall;
-            float ang = u.swirlAmt * s;                     // vortex near cursor
+            // Smooth LENS: displacement is ZERO at the cursor (no focal dot/pinch)
+            // AND far away, peaking in a soft ring around it — so the field bulges
+            // and twists its SURROUNDINGS without a singularity at the centre.
+            // (2.33·x·e^-x² is the normalised ring bump — peaks at 1.0.)
+            float ring = 2.33 * x * exp(-x * x) * u.hoverStrength;
+            float ang = u.swirlAmt * ring;                  // gentle twist, 0 at center
             float ca = cos(ang), sa = sin(ang);
             float2 rot = float2(d.x * ca - d.y * sa, d.x * sa + d.y * ca);
             float2 dir = dist > 1e-4 ? d / dist : float2(0.0);
-            sampleW = cur + rot + dir * (u.pushAmt * s);    // part outward + swirl
+            sampleW = cur + rot + dir * (u.pushAmt * ring); // push a ring outward, smooth center
         }
 
         float sig = max(u.sigma, 1.0);
@@ -262,8 +268,8 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
         float3 base  = mix(float3(0.86), vivid, smoothstep(0.015, 0.07, mx));
         float lum = dot(base, float3(0.299, 0.587, 0.114));
         col = clamp(mix(float3(lum), base, 1.4), 0.0, 1.0);        // saturation boost
-        // Bloom follows the cursor — brighten + lift where the warp is strongest.
-        col = mix(col, clamp(col * 1.25 + 0.06, 0.0, 1.0), 0.55 * s);
+        // Bloom follows the cursor — a soft brighten/lift (gentle, no hard centre).
+        col = mix(col, clamp(col * 1.18 + 0.04, 0.0, 1.0), 0.32 * s);
         return float4(col, 1.0);                                   // opaque, full-bleed
     }
     """

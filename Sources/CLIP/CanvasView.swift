@@ -235,17 +235,21 @@ struct CanvasView: View {
     // invisible; this stays put so the cards actually move on screen.
     private var worldBounds: CGRect {
         let base = state.stableWorldBounds()
-        // In Colorform the cards spread into colour clusters far from their
-        // canvas positions (centred near the origin), so the grows-only canvas
-        // box may not cover them — union in the bulb layout so you can scroll to
-        // every cluster.
         guard state.canvasMode == .colorform, !state.colorBulbs.isEmpty else { return base }
-        var ext = base
+        // Bounding box of the colour-cluster layout (cards spread into clusters
+        // centred near the origin, far from their canvas positions)...
+        var bb = CGRect.null
         for b in state.colorBulbs {
-            let r = b.radius + 1500
-            ext = ext.union(CGRect(x: b.center.x - r, y: b.center.y - r, width: 2 * r, height: 2 * r))
+            bb = bb.union(CGRect(x: b.center.x - b.radius, y: b.center.y - b.radius,
+                                 width: 2 * b.radius, height: 2 * b.radius))
         }
-        return ext
+        // ...inflated so the field stays freely pannable even at min zoom. The
+        // scroll view clamps panning to the content box; at ~7% the un-inflated
+        // box fit entirely in the viewport, so pan dead-ended. Pad to cover
+        // viewport / minZoom (0.05) so there's always room to scroll.
+        let vp = state.viewportSize
+        let pad = max(20000, max(vp.width, vp.height) / 0.05)
+        return bb.insetBy(dx: -pad, dy: -pad)
     }
 
     /// Content-coordinate camera for the native canvas's world-space overlay
