@@ -178,20 +178,31 @@ final class ConnectorOverlayController {
             let isSel = lastSelected.contains(c.id)
             let route = ConnectorPathMath.route(source: s, target: t,
                                                 sourceSide: c.sourceSide, targetSide: c.targetSide)
-            mids[c.id] = route.midpoint
 
             let b = bundles[c.id] ?? makeBundle(for: c.id)
             let color = (isSel ? Self.greenSelected : Self.green).cgColor
 
             // Label centre = midpoint + the user's (live-dragged or stored) offset.
+            let hasLabel = !c.label.isEmpty
             let off = (liveLabelDrag?.id == c.id ? liveLabelDrag!.offset : (c.labelOffset ?? .zero))
             let labelCenter = CGPoint(x: route.midpoint.x + off.x, y: route.midpoint.y + off.y)
+            mids[c.id] = labelCenter            // editor opens at the (dragged) label
 
-            // Break the line under the label (at the curve point nearest the label,
-            // so the break follows it as it's dragged).
-            b.line.path = c.label.isEmpty ? route.path
-                : gappedLinePath(route, labelCenter: labelCenter,
+            // Bend the curve THROUGH the label so the LINE FOLLOWS it: shifting both
+            // control points by 4/3·offset moves B(0.5) onto the label (0 offset = the
+            // plain route). The arrow/source endpoints stay pinned to their cards.
+            let bx = hasLabel ? (4.0 / 3.0) * off.x : 0, by = hasLabel ? (4.0 / 3.0) * off.y : 0
+            let p0 = route.sourceAnchor, p3 = route.arrowFrom
+            let c1 = CGPoint(x: route.control1.x + bx, y: route.control1.y + by)
+            let c2 = CGPoint(x: route.control2.x + bx, y: route.control2.y + by)
+            let fullPath = CGMutablePath()
+            fullPath.move(to: p0); fullPath.addCurve(to: p3, control1: c1, control2: c2)
+
+            // Break the line under the label (at the curve point nearest the label).
+            b.line.path = hasLabel
+                ? gappedLinePath(p0: p0, p1: c1, p2: c2, p3: p3, labelCenter: labelCenter,
                                  gap: labelGapWidth(c.label, mag: mag, selected: isSel))
+                : fullPath
             b.line.lineWidth = (isSel ? Self.selectedLineWidth : Self.screenLineWidth) / mag
             b.line.strokeColor = color
 
@@ -442,8 +453,8 @@ final class ConnectorOverlayController {
     /// The bezier with a `gap` removed at the curve point NEAREST the label, so the
     /// break sits under the label wherever it's been dragged (Figma — line
     /// interrupts under the label).
-    private func gappedLinePath(_ r: BezierRoute, labelCenter: CGPoint, gap: CGFloat) -> CGPath {
-        let p0 = r.sourceAnchor, p1 = r.control1, p2 = r.control2, p3 = r.arrowFrom
+    private func gappedLinePath(p0: CGPoint, p1: CGPoint, p2: CGPoint, p3: CGPoint,
+                                labelCenter: CGPoint, gap: CGFloat) -> CGPath {
         func at(_ t: CGFloat) -> CGPoint {
             let u = 1 - t, a = (1-t)*(1-t)*(1-t), b = 3*u*u*t, c = 3*u*t*t, d = t*t*t
             return CGPoint(x: a*p0.x + b*p1.x + c*p2.x + d*p3.x,

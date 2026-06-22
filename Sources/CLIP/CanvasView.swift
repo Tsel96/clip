@@ -703,10 +703,11 @@ struct CanvasView: View {
         }
         // Transient share toast — slides in from the top when a link
         // arrives from the iPhone; tap to jump to the Incoming page.
-        .overlay(alignment: .top) {
+        .overlay(alignment: .topTrailing) {
             if let toast = state.toast {
                 ToastView(toast: toast) { state.goToIncomingPage() }
                     .padding(.top, 16)
+                    .padding(.trailing, 16)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }

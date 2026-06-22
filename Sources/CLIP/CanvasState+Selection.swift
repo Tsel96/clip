@@ -40,6 +40,7 @@ extension CanvasState {
 
     /// Select exactly one node (or clear if nil). Always clears connector selection.
     func select(_ id: UUID?) {
+        if let id { raiseToFront([id]) }      // clicked card floats up and STAYS up
         selectedNodeIDs = id.map { [$0] } ?? []
         selectedConnectorIDs = []
     }

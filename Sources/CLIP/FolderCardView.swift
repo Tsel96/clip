@@ -86,9 +86,9 @@ final class FolderCardView: NSView, NativeCardUpdatable {
         let solid = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to: ext)
             .applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: base])
         // Disc dilation (rounded) grows the silhouette outward; the band between the
-        // two grown copies is the offset ring. ~10 art-units gap, ~5 thick.
+        // two grown copies is the offset ring. ~10 art-units gap, ~7.5 thick (+50%).
         let inner = solid.applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 10 * unit]).cropped(to: ext)
-        let outer = solid.applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 15 * unit]).cropped(to: ext)
+        let outer = solid.applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 17.5 * unit]).cropped(to: ext)
         let ring = outer.applyingFilter("CISourceOutCompositing", parameters: [kCIInputBackgroundImageKey: inner]).cropped(to: ext)
         let result = NSImage(size: image.size)
         result.addRepresentation(NSCIImageRep(ciImage: ring))
