@@ -11,16 +11,36 @@ extension CanvasState {
 
     /// Create a text node at the given world position and put it straight into
     /// edit mode. If `worldPoint` is nil, place at viewport centre.
+    /// Text pill padding (Figma 96-720 proportions, scaled to the font size).
+    static func textPillPadding(_ fontSize: CGFloat) -> (h: CGFloat, v: CGFloat) {
+        (h: fontSize * 0.9, v: fontSize * 0.5)
+    }
+
+    /// The text node's pill frame for `content` — measured glyph box (IBM Plex
+    /// Sans SemiBold) plus the pill padding. Empty content uses the placeholder.
+    static func textPillSize(content: String, fontSize: CGFloat) -> CGSize {
+        let text = content.isEmpty ? "Text" : content
+        let font = NSFont(name: "IBMPlexSans-SemiBold", size: fontSize)
+            ?? .systemFont(ofSize: fontSize, weight: .semibold)
+        let b = (text as NSString).boundingRect(
+            with: CGSize(width: 100_000, height: 100_000),
+            options: [.usesLineFragmentOrigin], attributes: [.font: font])
+        let pad = textPillPadding(fontSize)
+        return CGSize(width: ceil(b.width) + pad.h * 2, height: ceil(b.height) + pad.v * 2)
+    }
+
     @discardableResult
     func addText(at worldPoint: CGPoint? = nil) -> UUID {
-        let position = worldPoint ?? {
-            let c = screenToWorld(point: viewportCentre)
-            return CGPoint(x: c.x - 120, y: c.y - 14)
-        }()
-        let node = CanvasNode.text(content: "", position: position)
+        let fontSize: CGFloat = 16
+        let size = Self.textPillSize(content: "", fontSize: fontSize)
+        let centre = worldPoint ?? screenToWorld(point: viewportCentre)
+        let position = CGPoint(x: centre.x - size.width / 2, y: centre.y - size.height / 2)
+        var node = CanvasNode.text(content: "", position: position, fontSize: fontSize)
+        node.width = size.width
+        node.height = size.height
         withUndoable { nodes.append(node) }
-        // Native text: editingTextNodeID makes the new item mount the SwiftUI
-        // inline editor immediately (pendingFocus then focuses it on appear).
+        // editingTextNodeID mounts the SwiftUI inline editor immediately
+        // (pendingFocus then focuses it on appear).
         editingTextNodeID = node.id
         pendingFocusNodeID = node.id
         select(node.id)
@@ -33,9 +53,24 @@ extension CanvasState {
             guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }
             if case .text(_, let fontSize) = nodes[idx].kind {
                 nodes[idx].kind = .text(content: content, fontSize: fontSize)
+                let s = Self.textPillSize(content: content, fontSize: fontSize)
+                nodes[idx].width = s.width
+                nodes[idx].height = s.height
             }
         }
         if pendingFocusNodeID == id { pendingFocusNodeID = nil }
+    }
+
+    /// Live (non-undoable) resize of a text node's pill while typing, so the
+    /// pill + selection grow with the glyphs before the commit lands.
+    func liveResizeText(id: UUID, content: String) {
+        guard let idx = nodes.firstIndex(where: { $0.id == id }),
+              case .text(_, let fontSize) = nodes[idx].kind else { return }
+        let s = Self.textPillSize(content: content, fontSize: fontSize)
+        guard abs(nodes[idx].width - s.width) > 0.5
+           || abs((nodes[idx].height ?? 0) - s.height) > 0.5 else { return }
+        nodes[idx].width = s.width
+        nodes[idx].height = s.height
     }
 
     // MARK: - Sticky notes
