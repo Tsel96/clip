@@ -814,7 +814,7 @@ final class CardItemView: NSView {
         var isDrawing = false, wantsHairline = false
         switch node?.kind {
         case .drawing: isDrawing = true
-        case .image, .video, .stickyNote: wantsHairline = true
+        case .image, .video, .stickyNote, .text: wantsHairline = true
         default: break
         }
         let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
@@ -844,9 +844,10 @@ final class CardItemView: NSView {
             let lineW = 4 / mag, gap = 7 / mag      // gap 1px smaller (was 8)
             let inset = -(gap - lineW / 2)
             let rect = bounds.insetBy(dx: inset, dy: inset)
-            // Square cards → radius = gap; stickies add their 37pt corner so the
-            // ring follows the rounded silhouette.
-            let cardR: CGFloat = (node?.isStickyNote == true) ? StickyNodeView.cornerRadius * liftS : 0
+            // Square cards → radius = gap; stickies add their 37pt corner; text
+            // is a full pill (height/2) so the ring follows the rounded silhouette.
+            let cardR: CGFloat = node?.isStickyNote == true ? StickyNodeView.cornerRadius * liftS
+                               : node?.isText == true ? bounds.height / 2 : 0
             let radius = cardR + gap - lineW / 2    // outer corner radius
             outlineLayer.path = CGPath(roundedRect: rect, cornerWidth: radius,
                                        cornerHeight: radius, transform: nil)
@@ -862,9 +863,10 @@ final class CardItemView: NSView {
             let scaled = CGRect(x: (bounds.width - sw) / 2, y: (bounds.height - sh) / 2,
                                 width: sw, height: sh)
             let lw = 0.5 / mag
-            // Stickies are rounded (37pt) — round the hairline so it doesn't poke
-            // out past the corners as a square. Media cards stay square (r = 0).
-            let r: CGFloat = (node?.isStickyNote == true) ? StickyNodeView.cornerRadius * liftS : 0
+            // Stickies are rounded (37pt) and text is a full pill (height/2) —
+            // round the hairline to match. Media cards stay square (r = 0).
+            let r: CGFloat = node?.isStickyNote == true ? StickyNodeView.cornerRadius * liftS
+                           : node?.isText == true ? scaled.height / 2 : 0
             innerHairlineLayer.path = CGPath(roundedRect: scaled.insetBy(dx: lw / 2, dy: lw / 2),
                                              cornerWidth: r, cornerHeight: r, transform: nil)
             innerHairlineLayer.lineWidth = lw
@@ -1060,9 +1062,12 @@ final class CardItemView: NSView {
         layer.shadowOpacity = baseOpacity * Float(zoomFade)
         layer.shadowRadius = radius
         layer.shadowOffset = CGSize(width: 0, height: offsetY)
+        // Pill (text) / rounded (sticky) cards round their shadow to match.
+        let shadowR: CGFloat = n.isText ? shadowRect.height / 2
+                             : n.isStickyNote ? StickyNodeView.cornerRadius * liftS
+                             : shadowCornerRadius
         layer.shadowPath = CGPath(roundedRect: shadowRect,
-                                  cornerWidth: shadowCornerRadius,
-                                  cornerHeight: shadowCornerRadius,
+                                  cornerWidth: shadowR, cornerHeight: shadowR,
                                   transform: nil)
         CATransaction.commit()
     }
