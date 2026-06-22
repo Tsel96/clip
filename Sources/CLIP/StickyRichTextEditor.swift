@@ -182,18 +182,10 @@ struct StickyRichTextEditor: NSViewRepresentable {
 /// `NSTextView`). Used by the bottom toolbar's text-format buttons — no responder
 /// `toggleBold:` selectors (NSTextView doesn't implement them); we toggle the font
 /// traits / underline / strike directly, then `didChangeText()` for undo.
-/// Sticky editor text view. Accepts first-mouse (so a click selects even when the
-/// window just became key) and logs mouse events while we debug selection.
+/// Sticky editor text view. Accepts first-mouse so a click selects even when the
+/// window just became key.
 final class StickyTextView: NSTextView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) {
-        FolderCardView.diag("STV mouseDown editable=\(isEditable) selectable=\(isSelectable) fr=\(window?.firstResponder === self) clicks=\(event.clickCount)")
-        super.mouseDown(with: event)
-    }
-    override func mouseDragged(with event: NSEvent) {
-        FolderCardView.diag("STV mouseDragged sel=\(selectedRange())")
-        super.mouseDragged(with: event)
-    }
 }
 
 enum StickyTextFormatting {

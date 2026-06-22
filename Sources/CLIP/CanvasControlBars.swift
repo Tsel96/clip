@@ -60,6 +60,7 @@ private struct PillIconButton: View {
     var isOn: Bool = true
     let action: () -> Void
     var help: String = ""
+    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -68,9 +69,13 @@ private struct PillIconButton: View {
                 .frame(height: 28)
                 .frame(minWidth: 28)
                 .padding(.horizontal, 4)
+                .background(Capsule(style: .continuous)
+                    .fill(Color.black.opacity(hovering ? 0.07 : 0)))   // visible hover wash
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.hover)                              // identical hover/press to the "i" button
+        .buttonStyle(.hover)                              // press scale + brightness
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
         .help(help)
     }
 }
@@ -132,6 +137,7 @@ struct CanvasZoomPill: View {
     @EnvironmentObject var state: CanvasState
     @EnvironmentObject var cameraStore: CameraStore
     @State private var customZoom = ""
+    @State private var pctHovering = false
 
     var body: some View {
         FigmaPill {
@@ -164,11 +170,15 @@ struct CanvasZoomPill: View {
                 .font(.clip(13).monospacedDigit())
                 .foregroundStyle(.black.opacity(0.78))
                 .frame(minWidth: 52, minHeight: 28)
+                .background(Capsule(style: .continuous)
+                    .fill(Color.black.opacity(pctHovering ? 0.07 : 0)))
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .onHover { pctHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: pctHovering)
         .help("Change zoom level")
     }
 }
@@ -177,15 +187,20 @@ private struct ZoomStepButton: View {
     let symbol: String
     let action: () -> Void
     var help: String = ""
+    @State private var hovering = false
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.black.opacity(0.75))
                 .frame(width: 28, height: 28)
+                .background(Capsule(style: .continuous)
+                    .fill(Color.black.opacity(hovering ? 0.07 : 0)))
                 .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.hover)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
         .help(help)
     }
 }

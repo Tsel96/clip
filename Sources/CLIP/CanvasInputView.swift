@@ -52,6 +52,9 @@ final class CanvasInputView: NSView {
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
     private var optionDuplicated = false            // Option-drag duplicated this drag already
+    /// While editing a text node, the text view we're forwarding a drag-select to
+    /// (so mouseDragged/mouseUp extend the selection instead of panning the canvas).
+    private weak var forwardDragTV: NSTextView?
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
     private var labelDragID: UUID?                  // connector whose label is being dragged
@@ -229,13 +232,15 @@ final class CanvasInputView: NSView {
         // etc.). Clicks INSIDE an editing text node never reach here (hitTest
         // passes them to the field), so this won't interrupt active text editing.
         let pt0 = convert(event.locationInWindow, from: nil)
-        // While editing a text/sticky node, a click INSIDE it goes straight to its
-        // text view so AppKit's selection loop runs (place caret / drag-select).
-        // The text view is already the first responder (typing works), and its
-        // mouseDown tracks the whole drag until mouse-up.
+        forwardDragTV = nil
+        // While editing a text/sticky node, a click INSIDE it is forwarded to its
+        // text view (already first responder) so AppKit handles caret + selection.
+        // This NSTextView doesn't run a modal loop on a forwarded mouseDown, so we
+        // also forward mouseDragged/mouseUp (below) to extend the drag-selection.
         if let eid = p.editingTextNodeID, let en = p.nodes.first(where: { $0.id == eid }),
            contentFrame(en, p).contains(pt0),
            let tv = window?.firstResponder as? NSTextView {
+            forwardDragTV = tv
             tv.mouseDown(with: event)
             return
         }
@@ -364,6 +369,8 @@ final class CanvasInputView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        // Forward to the editing text view to extend its drag-selection.
+        if let tv = forwardDragTV { tv.mouseDragged(with: event); return }
         guard let p = config else { return }
         let pt = convert(event.locationInWindow, from: nil)
         let dx = pt.x - startPt.x, dy = pt.y - startPt.y
@@ -483,6 +490,8 @@ final class CanvasInputView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        // End a forwarded text drag-selection.
+        if let tv = forwardDragTV { tv.mouseUp(with: event); forwardDragTV = nil; return }
         guard let p = config else { reset(); return }
         switch mode {
         case .pendingMarquee:
