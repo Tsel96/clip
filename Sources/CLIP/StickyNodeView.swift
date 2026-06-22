@@ -24,9 +24,12 @@ struct StickyNodeView: View {
 
     static let cornerRadius: CGFloat = 37
 
-    /// Default light card (#F3F4F5), overridden by the recolour tint.
+    /// Default light card (#F3F4F5), overridden by the recolour tint. Reads the
+    /// LIVE node from `state` so the flower picker's preview/commit re-renders
+    /// (the captured `node` value wouldn't reflect a `folderColor` change).
     private var fill: Color {
-        if let hex = node.folderColor, let c = Color(hexString: hex) { return c }
+        let hex = state.nodes.first(where: { $0.id == node.id })?.folderColor
+        if let hex, let c = Color(hexString: hex) { return c }
         return Color(hexString: "#F3F4F5") ?? Color(white: 0.957)
     }
     private var textColor: Color { Color(hexString: "#16181A") ?? .black }
@@ -38,7 +41,9 @@ struct StickyNodeView: View {
                 TextEditor(text: $editingText)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
-                    .font(.system(size: 17, weight: .regular))
+                    .font(.system(size: 17, weight: .medium, design: .monospaced))  // SF Mono Medium (88-415)
+                    .kerning(-0.17)
+                    .lineSpacing(2)                                                  // ≈ 22pt line height
                     .foregroundStyle(textColor)
                     .tint(textColor)
                     .focused($focused)
