@@ -535,6 +535,127 @@ private final class PropButton: NSView {
     }
 }
 
+// MARK: - StickerProp
+
+/// The sticky-note prop: a back **paper** sheet and a front **corner-fold**
+/// sheet that physically fan apart + lift on hover (Figma sticky-btn 90-557 rest
+/// → 90-537 hover), plus a 30% white wash over the front sheet. Built from the
+/// per-element SVGs and driven with CALayer position + transform (which animate
+/// reliably, unlike NSView.frameCenterRotation). No selected state.
+private final class StickerProp: NSView {
+    var onTap: (() -> Void)?
+
+    private let paper    = CALayer()   // back sheet (carries the baked shadow)
+    private let fold     = CALayer()   // front sheet with the folded corner
+    private let foldWash  = CALayer()  // 30% white wash, masked to the fold shape
+
+    private var isHovered = false
+    private var isPressed = false
+
+    // View is NOT flipped → CALayer geometry is y-up (origin bottom-left).
+    private let paperSize = CGSize(width: 91, height: 89)
+    private let foldSize   = CGSize(width: 80, height: 87)
+
+    // Element centres (126×76 frame), Figma top-left converted to y-up (76 − y).
+    // Rest = 90-557, hover = 90-537.
+    private let paperCRest  = CGPoint(x: 50.19, y: 20.62)
+    private let paperCHover = CGPoint(x: 48.19, y: 21.61)
+    private let foldCRest   = CGPoint(x: 55.08, y: 32.20)
+    private let foldCHover  = CGPoint(x: 60.08, y: 34.00)
+
+    // Front sheet is smaller at rest (Figma fold box 65.6→78 ⇒ ×0.841).
+    private let foldRestScale: CGFloat = 0.841
+    // Rest rotates the sheets back from the baked (hover) pose (y-up: +CCW):
+    // paper -16.3°→-10.93° = +5.37° CW = −rad ; fold +4.72°→0° = −4.72° CW = +rad.
+    private let paperRestRot: CGFloat = -5.37 * .pi / 180
+    private let foldRestRot:  CGFloat =  4.72 * .pi / 180
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = true                       // clip to 126×76, like Figma
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        paper.bounds = CGRect(origin: .zero, size: paperSize)
+        fold.bounds  = CGRect(origin: .zero, size: foldSize)
+        for l in [paper, fold] {
+            l.contentsGravity = .resize
+            l.contentsScale = scale
+            layer?.addSublayer(l)
+        }
+        foldWash.frame = CGRect(origin: .zero, size: foldSize)   // child of fold → inherits its transform
+        foldWash.backgroundColor = NSColor.white.cgColor
+        foldWash.contentsScale = scale
+        foldWash.opacity = 0
+        fold.addSublayer(foldWash)
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func setElements(paper p: NSImage?, fold f: NSImage?) {
+        paper.contents = p
+        fold.contents = f
+        if let f = f {                                    // clip the wash to the fold silhouette
+            let mask = CALayer()
+            mask.frame = CGRect(origin: .zero, size: foldSize)
+            mask.contents = f
+            mask.contentsGravity = .resize
+            mask.contentsScale = fold.contentsScale
+            foldWash.mask = mask
+        }
+        needsLayout = true
+    }
+
+    func setActive(_ active: Bool) {}                     // sticky: no selected state
+
+    private var lifted: Bool { isHovered }
+
+    override func layout() {
+        super.layout()
+        apply(animated: false)
+    }
+
+    private func apply(animated: Bool) {
+        let pC = lifted ? paperCHover : paperCRest
+        let fC = lifted ? foldCHover  : foldCRest
+        let pT = lifted ? CATransform3DIdentity
+                        : CATransform3DMakeRotation(paperRestRot, 0, 0, 1)
+        var fT = lifted ? CATransform3DIdentity
+                        : CATransform3DMakeRotation(foldRestRot, 0, 0, 1)
+        if !lifted { fT = CATransform3DScale(fT, foldRestScale, foldRestScale, 1) }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        if animated {
+            CATransaction.setAnimationDuration(0.24)
+            CATransaction.setAnimationTimingFunction(CLIPSpring.easeOutSoft)
+        }
+        paper.position = pC
+        paper.transform = pT
+        fold.position = fC
+        fold.transform = fT
+        foldWash.opacity = isHovered ? 0.30 : 0
+        CATransaction.commit()
+    }
+
+    // MARK: hover + click
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self))
+    }
+    override func mouseEntered(with event: NSEvent) { isHovered = true; apply(animated: true) }
+    override func mouseExited(with event: NSEvent)  { isHovered = false; isPressed = false; apply(animated: true) }
+    override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) != nil ? self : nil }
+    override func mouseDown(with event: NSEvent) { isPressed = true }
+    override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        if inside { onTap?() }
+    }
+}
+
 // MARK: - MainPillView
 
 /// The 470 × (62 + propOverflow) view.  The bottom 62 pt is the candy pill;
@@ -654,9 +775,8 @@ private final class MainPillView: NSView {
         markerView.onTap = { [weak self] in self?.onToolTap?(.draw) }
         addSubview(markerView)
 
-        // Sticky button crossfades between two artworks on hover (Figma
-        // Layered sticky-note prop (paper + corner-fold + green select-bg) that
-        // fans apart / lifts on hover and gains the green backdrop when active.
+        // Sticky button: paper + corner-fold sheets physically fan apart on hover
+        // (Figma 90-557 → 90-537), via CALayer transforms. No selected state.
         stickersView.setElements(
             paper: loadBundleImage(named: "sticky-paper"),
             fold:  loadBundleImage(named: "sticky-corner-fold"))
