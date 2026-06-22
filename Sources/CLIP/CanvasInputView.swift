@@ -232,6 +232,11 @@ final class CanvasInputView: NSView {
         // Take focus from any text field so the canvas owns the keyboard (Delete,
         // etc.). Clicks INSIDE an editing text node never reach here (hitTest
         // passes them to the field), so this won't interrupt active text editing.
+        let pt0 = convert(event.locationInWindow, from: nil)
+        if let eid = p.editingTextNodeID, let en = p.nodes.first(where: { $0.id == eid }) {
+            let inEdit = contentFrame(en, p).contains(pt0)
+            FolderCardView.diag("CIV mouseDown editing=\(eid.uuidString.prefix(4)) inEditRegion=\(inEdit) — passthrough \(inEdit ? "FAILED" : "ok")")
+        }
         if window?.firstResponder !== self { window?.makeFirstResponder(self) }
         let pt = convert(event.locationInWindow, from: nil)
         startPt = pt

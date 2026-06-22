@@ -51,7 +51,7 @@ struct StickyRichTextEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
+        let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = false
         scroll.hasHorizontalScroller = false
@@ -59,7 +59,24 @@ struct StickyRichTextEditor: NSViewRepresentable {
         scroll.verticalScrollElasticity = .none
         scroll.autohidesScrollers = true
 
-        let tv = scroll.documentView as! NSTextView
+        // Explicit text stack so we can use a logging/selectable subclass and
+        // guarantee the text view fills its width (clicks anywhere select text).
+        let container = NSTextContainer(containerSize:
+            NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        let layout = NSLayoutManager()
+        layout.addTextContainer(container)
+        let storage = NSTextStorage()
+        storage.addLayoutManager(layout)
+        let tv = StickyTextView(frame: .zero, textContainer: container)
+        tv.minSize = NSSize(width: 0, height: 0)
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                            height: CGFloat.greatestFiniteMagnitude)
+        tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.autoresizingMask = [.width]
+        scroll.documentView = tv
+
         context.coordinator.textView = tv
         tv.delegate = context.coordinator
         tv.isRichText = true
@@ -165,6 +182,20 @@ struct StickyRichTextEditor: NSViewRepresentable {
 /// `NSTextView`). Used by the bottom toolbar's text-format buttons — no responder
 /// `toggleBold:` selectors (NSTextView doesn't implement them); we toggle the font
 /// traits / underline / strike directly, then `didChangeText()` for undo.
+/// Sticky editor text view. Accepts first-mouse (so a click selects even when the
+/// window just became key) and logs mouse events while we debug selection.
+final class StickyTextView: NSTextView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) {
+        FolderCardView.diag("STV mouseDown editable=\(isEditable) selectable=\(isSelectable) fr=\(window?.firstResponder === self) clicks=\(event.clickCount)")
+        super.mouseDown(with: event)
+    }
+    override func mouseDragged(with event: NSEvent) {
+        FolderCardView.diag("STV mouseDragged sel=\(selectedRange())")
+        super.mouseDragged(with: event)
+    }
+}
+
 enum StickyTextFormatting {
     static func activeTextView() -> NSTextView? {
         (NSApp.keyWindow?.firstResponder as? NSTextView)

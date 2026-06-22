@@ -665,22 +665,19 @@ struct CanvasView: View {
         // top-leading so it never overlaps the centered segmented control. Esc does
         // the same; this is the discoverable affordance.
         .overlay(alignment: .topLeading) {
-            if state.canvasMode == .canvas, let fid = state.focusedFolderID,
-               case .folder(let title, _, _)? = state.nodeByID[fid]?.kind {
+            if state.canvasMode == .canvas, state.focusedFolderID != nil {
+                // SAME back button as the detail view (CardDetailView's
+                // HoverIconButton): a plain `arrow.left` SF Symbol with a hover
+                // highlight — no text, no rest pill. The folder name lives in the
+                // top name-pill instead.
                 Button { state.exitFolderFocus() } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "chevron.backward")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(title.isEmpty ? "Untitled" : title).lineLimit(1)
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundStyle(.primary.opacity(0.7))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .contentShape(Capsule())
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .frame(width: 34, height: 34)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.hover)
-                .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
                 .padding(.top, 18)
                 .padding(.leading, 18)
             }
