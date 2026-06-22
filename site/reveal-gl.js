@@ -628,11 +628,16 @@ export function revealImage(img, opts = {}) {
 
       const vs = compile(gl, gl.VERTEX_SHADER, VERT);
       const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
-      if (!vs || !fs) { resolve(); return; }
+      if (!vs || !fs) {
+        if (vs) gl.deleteShader(vs);
+        if (fs) gl.deleteShader(fs);
+        resolve(); return;
+      }
       const prog = gl.createProgram();
       gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
       if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
         console.warn('[reveal] link failed:', gl.getProgramInfoLog(prog));
+        gl.deleteShader(vs); gl.deleteShader(fs); gl.deleteProgram(prog);
         resolve(); return;
       }
 
@@ -641,7 +646,13 @@ export function revealImage(img, opts = {}) {
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rasterise(img));
+      try {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rasterise(img));
+      } catch (e) {
+        gl.deleteTexture(tex); gl.deleteShader(vs); gl.deleteShader(fs);
+        gl.deleteProgram(prog); gl.deleteVertexArray(vao);
+        resolve(); return;
+      }
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -671,28 +682,33 @@ export function revealImage(img, opts = {}) {
 
       const durSec = o.duration / 1000;
       const t0 = performance.now();
+      let rafId;
+      let doneCalled = false;
+      const done = () => {
+        if (doneCalled) return;
+        doneCalled = true;
+        cancelAnimationFrame(rafId);
+        canvas.remove();
+        gl.deleteTexture(tex); gl.deleteShader(vs); gl.deleteShader(fs);
+        gl.deleteProgram(prog); gl.deleteVertexArray(vao);
+        const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
+        resolve();
+      };
       function frame(now) {
         const elapsed = (now - t0) / 1000;
         const p = Math.min(elapsed / durSec, 1);
         gl.uniform1f(loc.progress, easeInOutCubic(p));
         gl.uniform1f(loc.time, elapsed);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
-        if (p < 1) { requestAnimationFrame(frame); return; }
+        if (p < 1) { rafId = requestAnimationFrame(frame); return; }
         // Land on the crisp image, then fade the canvas out and clean up.
         img.style.visibility = prevVis;
         canvas.style.transition = 'opacity 160ms ease';
         canvas.style.opacity = '0';
-        const done = () => {
-          canvas.remove();
-          gl.deleteTexture(tex); gl.deleteProgram(prog);
-          gl.deleteShader(vs); gl.deleteShader(fs); gl.deleteVertexArray(vao);
-          const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
-          resolve();
-        };
         canvas.addEventListener('transitionend', done, { once: true });
         setTimeout(done, 320);   // safety in case transitionend doesn't fire
       }
-      requestAnimationFrame(frame);
+      rafId = requestAnimationFrame(frame);
     };
 
     if (img.complete && img.naturalWidth) start();

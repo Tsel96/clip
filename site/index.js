@@ -67,31 +67,35 @@ function gestures() {
 
   // Download pill — lift + warm fill on hover, tactile press, icon lean-in
   const pill = document.getElementById('downloadBtn');
-  const icon = pill.querySelector('.ui-pill-icon img');
-  // Only animate the lift + icon — CSS owns the gradient/gloss/glow/edge finish
-  hover(pill, () => {
-    animate(pill, { y: -2 }, SPRING_HOVER);
-    animate(icon, { scale: 1.08 }, SPRING_HOVER);
-    return () => {
-      animate(pill, { y: 0 }, SPRING_HOVER);
-      animate(icon, { scale: 1 }, SPRING_HOVER);
-    };
-  });
-  press(pill, () => {
-    animate(pill, { scale: 0.97 }, SPRING_PRESS);
-    return () => animate(pill, { scale: 1 }, SPRING_BACK);
-  });
+  if (pill) {
+    const icon = pill.querySelector('.ui-pill-icon img');
+    // Only animate the lift + icon — CSS owns the gradient/gloss/glow/edge finish
+    hover(pill, () => {
+      animate(pill, { y: -2 }, SPRING_HOVER);
+      if (icon) animate(icon, { scale: 1.08 }, SPRING_HOVER);
+      return () => {
+        animate(pill, { y: 0 }, SPRING_HOVER);
+        if (icon) animate(icon, { scale: 1 }, SPRING_HOVER);
+      };
+    });
+    press(pill, () => {
+      animate(pill, { scale: 0.97 }, SPRING_PRESS);
+      return () => animate(pill, { scale: 1 }, SPRING_BACK);
+    });
+  }
 
   // Close button — yellow fill on hover (matches pill identity), no rotation
   const closeBtn = document.getElementById('modalClose');
-  hover(closeBtn, () => {
-    animate(closeBtn, { backgroundColor: '#f0ec00' }, SPRING_HOVER);
-    return () => animate(closeBtn, { backgroundColor: '#ffffff' }, SPRING_HOVER);
-  });
-  press(closeBtn, () => {
-    animate(closeBtn, { scale: 0.9 }, SPRING_PRESS);
-    return () => animate(closeBtn, { scale: 1 }, SPRING_BACK);
-  });
+  if (closeBtn) {
+    hover(closeBtn, () => {
+      animate(closeBtn, { backgroundColor: '#f0ec00' }, SPRING_HOVER);
+      return () => animate(closeBtn, { backgroundColor: '#ffffff' }, SPRING_HOVER);
+    });
+    press(closeBtn, () => {
+      animate(closeBtn, { scale: 0.9 }, SPRING_PRESS);
+      return () => animate(closeBtn, { scale: 1 }, SPRING_BACK);
+    });
+  }
 
   // Modal download link — underline deepens on hover, same as .ui-git
   const modalDownload = document.getElementById('modalDownloadBtn');
@@ -194,7 +198,7 @@ function wireModal() {
     if (e.key === 'Escape') { close(); return; }
     if (e.key === 'Tab') {           // contain focus within the modal
       const focusables = [...modal.querySelectorAll('a[href], button')];
-      const first = closeBtn;
+      const first = focusables[0] || closeBtn;
       const last = focusables[focusables.length - 1] || closeBtn;
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
