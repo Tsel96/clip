@@ -53,6 +53,7 @@ final class CanvasInputView: NSView {
     private var primaryMoveID: UUID?
     private var optionDuplicated = false            // Option-drag duplicated this drag already
     private var rotateNodeID: UUID?                 // node being rotated by the handle
+    private var lastRotateSnap: CGFloat?            // cardinal we're currently snapped to (haptic edge)
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
     private var labelDragID: UUID?                  // connector whose label is being dragged
@@ -224,6 +225,12 @@ final class CanvasInputView: NSView {
         guard f.insetBy(dx: -r, dy: -r).contains(lp),
               g.left || g.right || g.top || g.bottom else { return nil }
         return g
+    }
+
+    /// True when `a` is (essentially) a multiple of 90° — i.e. a snapped cardinal.
+    private func isCardinal(_ a: CGFloat) -> Bool {
+        let q = CGFloat.pi / 2
+        return abs(a - (a / q).rounded() * q) < 1e-5
     }
 
     /// Snap rotation to the nearest cardinal (0 / 90 / 180 / 270°) within ~7°, so
@@ -430,8 +437,12 @@ final class CanvasInputView: NSView {
             let f = contentFrame(n, p)
             let c = CGPoint(x: f.midX, y: f.midY)
             // The card's "up" points at the cursor: rotation = pointer angle + 90°.
-            var ang = atan2(pt.y - c.y, pt.x - c.x) + .pi / 2
-            ang = snapRotation(ang, freeForm: event.modifierFlags.contains(.command))
+            let free = event.modifierFlags.contains(.command)
+            let ang = snapRotation(atan2(pt.y - c.y, pt.x - c.x) + .pi / 2, freeForm: free)
+            // Haptic tick each time we newly LAND on a cardinal snap (esp. 0°).
+            let snap = (!free && isCardinal(ang)) ? ang : nil
+            if let s = snap, s != lastRotateSnap { Haptics.tap() }
+            lastRotateSnap = snap
             p.onRotate(id, ang)
             coordinator?.refreshChrome()
         case .pendingMove, .move:
@@ -621,6 +632,7 @@ final class CanvasInputView: NSView {
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
         optionDuplicated = false
         rotateNodeID = nil
+        lastRotateSnap = nil
     }
 
     private func beginIfNeeded(_ p: CanvasConfig, primary: UUID?) {

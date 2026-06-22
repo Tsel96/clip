@@ -1156,7 +1156,10 @@ final class CardItemView: NSView {
         lastLiftFactor = factor
         lastAngle = angle
         let contentLayers = subviews.compactMap { $0.layer }
-        let all = contentLayers + [outlineLayer, innerHairlineLayer, sectionLayer, rotateHandleLayer]
+        // The baked shadow rotates + scales WITH the card (user: the drop shadow
+        // must follow the rotation).
+        let all = contentLayers + [shadowLayer, outlineLayer, innerHairlineLayer,
+                                   sectionLayer, rotateHandleLayer]
         for layer in all {
             if animateLift {
                 layer.add(Self.liftSpring(from: layer.presentation()?.transform ?? layer.transform,

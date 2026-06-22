@@ -14,7 +14,7 @@ extension CanvasState {
     /// edit mode. If `worldPoint` is nil, place at viewport centre.
     /// White-pill internal padding (text → white edge), Figma 96-720 proportions.
     static func textPillPadding(_ fontSize: CGFloat) -> (h: CGFloat, v: CGFloat) {
-        (h: fontSize * 0.45, v: fontSize * 0.28)
+        (h: fontSize * 0.62, v: fontSize * 0.36)   // roomier breathing space (user)
     }
 
     /// The green band + yellow border around the white pill (Figma 96-720) — the
