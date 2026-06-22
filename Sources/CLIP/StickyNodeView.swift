@@ -18,73 +18,43 @@ struct StickyNodeView: View {
     let content: String
     let color: StickyColor          // legacy (archive / lightbox); canvas tint = folderColor
 
-    /// Local edit buffer; authoritative only while focused.
-    @State private var editingText: String = ""
-    @FocusState private var focused: Bool
-
     static let cornerRadius: CGFloat = 37
 
     /// Default light card (#F3F4F5), overridden by the recolour tint. Reads the
     /// LIVE node from `state` so the flower picker's preview/commit re-renders
     /// (the captured `node` value wouldn't reflect a `folderColor` change).
+    private var liveNode: CanvasNode { state.nodes.first(where: { $0.id == node.id }) ?? node }
     private var fill: Color {
-        let hex = state.nodes.first(where: { $0.id == node.id })?.folderColor
-        if let hex, let c = Color(hexString: hex) { return c }
+        if let hex = liveNode.folderColor, let c = Color(hexString: hex) { return c }
         return Color(hexString: "#F3F4F5") ?? Color(white: 0.957)
     }
-    private var textColor: Color { Color(hexString: "#16181A") ?? .black }
+    private static let textNSColor = NSColor(srgbRed: 0x16/255, green: 0x18/255, blue: 0x1A/255, alpha: 1)
 
     var body: some View {
         RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
             .fill(fill)
             .overlay(alignment: .topLeading) {
-                TextEditor(text: $editingText)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .font(.system(size: 17, weight: .medium, design: .monospaced))  // SF Mono Medium (88-415)
-                    .kerning(-0.17)
-                    .lineSpacing(2)                                                  // ≈ 22pt line height
-                    .foregroundStyle(textColor)
-                    .tint(textColor)
-                    .focused($focused)
-                    .padding(.horizontal, 30)
-                    .padding(.vertical, 28)
-                    // Only the editing sticky captures clicks; at rest the canvas
-                    // owns them (drag / select) via CanvasInputView.
-                    .allowsHitTesting(isEditing)
+                // Native rich-text editor (NSTextView): real caret/selection +
+                // bold/italic/underline/strike that persist. Only the editing
+                // sticky captures clicks; at rest the canvas owns them (drag /
+                // select) via CanvasInputView.
+                StickyRichTextEditor(
+                    node: liveNode,
+                    isEditing: isEditing,
+                    textColor: Self.textNSColor,
+                    onCommit: { attr in state.setStickyAttributed(id: node.id, attr) },
+                    onEndEditing: {
+                        if state.editingTextNodeID == node.id { state.editingTextNodeID = nil }
+                        if state.pendingFocusNodeID == node.id { state.pendingFocusNodeID = nil }
+                    })
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .allowsHitTesting(isEditing)
             }
-            .onAppear {
-                editingText = content
-                if isEditing { DispatchQueue.main.async { focused = true } }
-            }
-            .onChange(of: content) { newContent in
-                // External mutation (undo / paste) — sync the buffer only when
-                // we're not the one driving the change.
-                if !focused { editingText = newContent }
-            }
-            .onChange(of: isEditing) { editing in
-                // Created / double-clicked → focus; cleared → blur (commits).
-                if editing { DispatchQueue.main.async { focused = true } }
-                else if focused { focused = false }
-            }
-            .onChange(of: focused) { isFocused in
-                if !isFocused { commit() }
-            }
-            .onExitCommand { focused = false }       // Esc commits + blurs
     }
 
     /// This sticky is the one being edited (drives focus + click capture).
     private var isEditing: Bool { state.editingTextNodeID == node.id }
-
-    // MARK: - Commit
-
-    private func commit() {
-        if editingText != content {
-            state.setStickyContent(id: node.id, to: editingText)
-        }
-        if state.editingTextNodeID == node.id { state.editingTextNodeID = nil }
-        if state.pendingFocusNodeID == node.id { state.pendingFocusNodeID = nil }
-    }
 }
 
 private extension Color {

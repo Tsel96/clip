@@ -124,6 +124,30 @@ extension CanvasState {
         }
     }
 
+    /// Commit a sticky / text node's RICH text: archive the attributed string to
+    /// RTF in `attributedContent` AND keep the plain `content` in `Kind` in sync
+    /// (search / archive / lightbox read the plain string). One undo entry per
+    /// edit session — called on commit, like `setStickyContent`.
+    func setStickyAttributed(id: UUID, _ attributed: NSAttributedString) {
+        let range = NSRange(location: 0, length: attributed.length)
+        let rtf = try? attributed.data(from: range,
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+        let plain = attributed.string
+        withUndoable {
+            guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }
+            // Drop the archive when the text carries no formatting differences
+            // worth storing? Keep it simple: store whenever there's any text.
+            nodes[idx].attributedContent = attributed.length > 0 ? rtf : nil
+            switch nodes[idx].kind {
+            case .stickyNote(_, let color):
+                nodes[idx].kind = .stickyNote(content: plain, color: color)
+            case .text(_, let fontSize):
+                nodes[idx].kind = .text(content: plain, fontSize: fontSize)
+            default: break
+            }
+        }
+    }
+
     func setStickyColor(id: UUID, to color: StickyColor) {
         withUndoable {
             guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }

@@ -1133,18 +1133,40 @@ final class ToolPaletteButton: NSView {
     private var isHovered = false
     private var isPressed = false
     private let iconName: String
+    /// When set, the icon is an SF Symbol template (text-format buttons) instead
+    /// of a bundled `tool_*.svg` — same candy button skin, no `_active` art.
+    private let symbolName: String?
     /// Rest (outlined black template) ↔ selected (solid brand-yellow) artwork —
     /// swapped on selection so the SHAPE changes, not just the tint (Figma states).
-    private lazy var restImage: NSImage?   = Self.loadIcon(iconName)
+    private lazy var restImage: NSImage? = {
+        if let s = symbolName {
+            let cfg = NSImage.SymbolConfiguration(pointSize: 19, weight: .semibold)
+            let img = NSImage(systemSymbolName: s, accessibilityDescription: nil)?
+                .withSymbolConfiguration(cfg)
+            img?.isTemplate = true
+            return img
+        }
+        return Self.loadIcon(iconName)
+    }()
     // Active art loads as a TEMPLATE too and is tinted brand-yellow — the solid
     // `_active` SVGs make a filled yellow shape, and NSImage's SVG colour
     // rendering is unreliable, so tinting a template is the robust path.
-    private lazy var activeImage: NSImage? = Self.loadIcon(iconName + "_active")
+    private lazy var activeImage: NSImage? =
+        symbolName == nil ? Self.loadIcon(iconName + "_active") : nil
 
     // MARK: - Init
 
     init(iconName: String) {
         self.iconName = iconName
+        self.symbolName = nil
+        super.init(frame: .zero)
+        commonInit()
+    }
+
+    /// SF-Symbol variant (text-format buttons: bold / italic / underline / strike).
+    init(symbolName: String) {
+        self.iconName = ""
+        self.symbolName = symbolName
         super.init(frame: .zero)
         commonInit()
     }
