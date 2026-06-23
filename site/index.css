@@ -612,3 +612,42 @@ body.mat-active .ui-git {
 body.mat-active .ui-git {
   text-decoration-color: rgba(255, 255, 255, 0.25);
 }
+
+/* ── Mobile / narrow-portrait reflow ───────────────────────────
+   The desktop layout pins four clusters to the corners; on a narrow
+   screen they collide — the platform label slides under the brand and
+   the description overlaps the links. Reflow into a tidy single column. */
+@media (max-width: 700px) {
+  /* Preview window: fit the width so it never forces horizontal scroll
+     (desktop min-width of 400px overflowed sub-400px phones) */
+  .app-window-wrap {
+    width: min(90vw, 540px);
+  }
+
+  /* Top-right: stack the platform label above the pill, both
+     right-aligned, so neither runs under the brand */
+  .ui-top-right {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: clamp(6px, 2vw, 12px);
+  }
+
+  /* Description: use most of the width (fewer lines) and ride well
+     above the links cluster */
+  .ui-description {
+    max-width: min(82vw, 460px);
+    bottom: calc(var(--gap) + 5em);
+    line-height: 1.4;
+  }
+
+  /* Links: a full-width wrapping row pinned to the bottom-left */
+  .ui-bottom-right {
+    left: var(--gap);
+    right: var(--gap);
+    bottom: var(--gap);
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    column-gap: clamp(14px, 4vw, 26px);
+    row-gap: 10px;
+  }
+}
