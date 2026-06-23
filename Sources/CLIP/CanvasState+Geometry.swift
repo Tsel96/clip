@@ -72,31 +72,22 @@ extension CanvasState {
         // The card being trimmed hands playback to the trim overlay's own
         // seekable player, so tear down its background loop player.
         if trimmingCardID == node.id { return false }
-        switch node.kind {
-        case .video, .tweet, .instagram, .image, .youtube, .webclip:
-            break               // gated below
-        default:
-            return true
-        }
         // "Show video previews only" — a user TOGGLE (not LOD) that forces
-        // every video-bearing kind to its resting poster regardless of viewport.
+        // every video-bearing kind to its resting poster.
         if videosShowPreviewOnly {
             switch node.kind {
             case .video, .tweet, .instagram, .youtube: return false
             default: break
             }
         }
-        // VISIBLE = LIVE. No size/zoom level-of-detail pausing: it never helped
-        // zoom perf (the lag is layer compositing under magnification, not the
-        // media) and it froze videos / stuck them on a poster after a zoom. Any
-        // media card that intersects the viewport stays fully live; only cards
-        // scrolled ENTIRELY off-screen unload, which bounds the live
-        // WKWebView/decoder count. The lightbox no longer forces posters either
-        // — that remount was the "videos blink on exit of detail view" bug.
-        let nodeRect = CGRect(
-            x: node.position.x, y: node.position.y,
-            width: node.width, height: renderedHeight(of: node)
-        )
-        return visibleWorldRect.intersects(nodeRect)
+        // PRE-LOD BEHAVIOUR: all media is ALWAYS live. The zoom/size/viewport
+        // level-of-detail gate is gone entirely — it never helped zoom perf (the
+        // cost is layer compositing under magnification, not the media itself)
+        // and, because native cards don't re-render on zoom, it stuck web/video
+        // cards on a STALE poster until some unrelated re-render (a click) — the
+        // "videos only play when I click empty canvas" bug, which did not exist
+        // before LOD. Cards stay mounted + playing whether or not they're on
+        // screen, exactly as they did pre-LOD.
+        return true
     }
 }

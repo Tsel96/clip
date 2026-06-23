@@ -727,15 +727,6 @@ private final class MainPillView: NSView {
     private let markerView   = PropButton(image: nil)
     private let stickersView = StickerProp()
 
-    /// A click-through view that redraws JUST the green pill ring on top of
-    /// everything (added last → topmost). The marker prop overflows the pill's
-    /// top rim and, as a subview, composites above the green `outerLayer`, so it
-    /// breaks the continuous green ring where its base crosses the rim. This
-    /// overlay paints the 2 pt ring back over the marker base so the toolbar's
-    /// green outline reads as an unbroken edge (Figma). It owns no hit area
-    /// (`hitTest` → nil), so clicks fall through to the buttons/props beneath.
-    private let borderOverlay = PaletteRingOverlay()
-
     // MARK: - Init
 
     override init(frame: NSRect) {
@@ -811,8 +802,9 @@ private final class MainPillView: NSView {
         stickersView.toolTip = "Sticky note"
         addSubview(stickersView)
 
-        // Green ring, repainted on top so the marker base can't break it.
-        addSubview(borderOverlay)
+        // The green ring (`outerLayer`) stays BELOW the marker/sticker props, so
+        // the props sit ON TOP of the outline (user: "outline must be UNDER the
+        // tools"). No top-most ring repaint.
     }
 
     /// Loads an SVG/PNG from the app bundle's Resources folder.
@@ -848,11 +840,6 @@ private final class MainPillView: NSView {
         let outerR = pillH / 2   // 31 → effectively 999px-radius capsule
         outerLayer.cornerRadius  = outerR
         outerLayer.cornerCurve   = .continuous
-
-        // Top-most green ring overlay traces the exact same capsule, so it paints
-        // the 2 pt green edge back over the marker base (which overflows the rim).
-        borderOverlay.frame = outerLayer.frame
-        borderOverlay.configureRing(cornerRadius: outerR, width: Self.innerSideInset)
 
         // Inner layer: 2pt inset on each side, 2pt from top
         let innerW = bounds.width - Self.innerSideInset * 2
