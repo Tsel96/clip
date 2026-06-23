@@ -534,7 +534,12 @@ button.ui-git {
   transform: translate(-50%, -50%);
   z-index: 5;
   pointer-events: none;
-  width: clamp(400px, 66vw, 1080px);
+  /* 66vw is the design intent (1544px on the 2340px canvas). The old
+     1080px cap froze the size, so on a 4K display the window shrank to
+     ~28% of the width. Scale with the viewport, but also clamp by height
+     (118vh ≈ 74vh of window height) so it never collides with the
+     top/bottom corner UI on short or ultrawide screens. */
+  width: clamp(400px, min(66vw, 118vh), 2600px);
   aspect-ratio: 3420 / 2150;
 }
 
