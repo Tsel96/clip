@@ -1,21 +1,6 @@
 import AppKit
 import AVFoundation
 
-/// TEMP diag — appends a line to /tmp/clip_diag.txt to trace the video-LOD
-/// playback gate (why videos resume only on an empty-canvas click). Remove once
-/// the cause is found.
-func clipDiag(_ msg: String) {
-    let line = String(format: "%.3f %@\n", Date().timeIntervalSince1970, msg)
-    if let data = line.data(using: .utf8) {
-        let url = URL(fileURLWithPath: "/tmp/clip_diag.txt")
-        if let fh = try? FileHandle(forWritingTo: url) {
-            fh.seekToEndOfFile(); fh.write(data); try? fh.close()
-        } else {
-            try? data.write(to: url)
-        }
-    }
-}
-
 /// Native (AppKit) card content — the start of replacing the SwiftUI-hosted
 /// cards with native views per type, mirroring Spatial's `CanvasItemView` /
 /// `Canvas*View` architecture. Each type renders directly into an NSView that
@@ -474,21 +459,6 @@ final class CardVideoContentView: NSView {
 
     /// Node id this view is cached under (for NativeVideoCache.park on detach).
     var cacheNodeID: UUID? { nodeID }
-
-    /// LOD gate: when inactive (small on screen / zoomed out / camera moving), PAUSE
-    /// the player and hide its layer so only the static poster shows — an
-    /// AVPlayerLayer compositing during a magnify is what made zoom-out lag. Plays
-    /// again when the card is large + the camera is settled.
-    private var playbackActive = true
-    func setPlaybackActive(_ active: Bool) {
-        clipDiag("setPlaybackActive(\(active)) was=\(playbackActive) node=\(nodeID?.uuidString.prefix(4) ?? "?")")
-        guard active != playbackActive else { return }
-        playbackActive = active
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        host.isHidden = !active                      // poster (behind) shows when paused
-        CATransaction.commit()
-        if active { player?.play() } else { player?.pause() }
-    }
 
     /// Stop + release the player. Called by NativeVideoCache when its deferred
     /// teardown fires — i.e. the node really went away, not just a reload.

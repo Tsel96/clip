@@ -52,12 +52,6 @@ extension CanvasState {
     // Dozens of media cards can coexist because at most a handful are
     // actually decoding / compositing at any one moment.
 
-    /// Minimum on-screen height (in pt) below which a media-bearing card
-    /// falls back to a static placeholder. Picked so a card that's
-    /// clearly a peripheral thumbnail (~ icon-sized) stays cheap, but a
-    /// card the user has zoomed in on renders fully without hesitation.
-    static let livePlaybackMinScreenSide: CGFloat = 120
-
     /// Below this projected on-screen size (pt), a card drops to its
     /// level-of-detail proxy (see `DraggableNode.isTiny`): content + position
     /// only, no per-card chrome/gestures. Keeps deep zoom-out cheap when the
@@ -75,10 +69,6 @@ extension CanvasState {
     /// there's nothing to gate (text, sticky, section, drawing all render
     /// cheaply at any size).
     func isLive(_ node: CanvasNode) -> Bool {
-        // While the lightbox is open, force EVERY canvas card to its static
-        // poster — no WKWebViews/players composite behind the hero spin, so
-        // the animation stays buttery (and the dimmed grid is cheap to draw).
-        if lightboxCardID != nil { return false }
         // The card being trimmed hands playback to the trim overlay's own
         // seekable player, so tear down its background loop player.
         if trimmingCardID == node.id { return false }
@@ -88,27 +78,21 @@ extension CanvasState {
         default:
             return true
         }
-        // NOTE: media is intentionally NOT suppressed during a pan. The
-        // pan-crash culprit was the minimap's `.glassEffect` re-laying out
-        // every tick (an AppKit constraint view), not the media cards — a
-        // build with media fully suppressed during pan still crashed until
-        // the glass was removed. SwiftUI `.scaleEffect`/`.offset` transform
-        // the media layers without an AppKit constraint pass, so live
-        // players during a pan are safe; suppressing them only made cards
-        // blink (poster<->live) on every pan. `isCameraInteracting` now
-        // gates only the minimap glass (see LiquidGlassMinimap).
-        // "Show video previews only" — force every video-bearing kind to
-        // its resting (poster) state regardless of zoom / viewport. Images
-        // are left to the normal gate below: isLive controls an image's
-        // actual pixels and an image has no playback to stop.
+        // "Show video previews only" — a user TOGGLE (not LOD) that forces
+        // every video-bearing kind to its resting poster regardless of viewport.
         if videosShowPreviewOnly {
             switch node.kind {
             case .video, .tweet, .instagram, .youtube: return false
             default: break
             }
         }
-        let screenSide = min(node.width, renderedHeight(of: node)) * camera.zoom
-        guard screenSide >= Self.livePlaybackMinScreenSide else { return false }
+        // VISIBLE = LIVE. No size/zoom level-of-detail pausing: it never helped
+        // zoom perf (the lag is layer compositing under magnification, not the
+        // media) and it froze videos / stuck them on a poster after a zoom. Any
+        // media card that intersects the viewport stays fully live; only cards
+        // scrolled ENTIRELY off-screen unload, which bounds the live
+        // WKWebView/decoder count. The lightbox no longer forces posters either
+        // — that remount was the "videos blink on exit of detail view" bug.
         let nodeRect = CGRect(
             x: node.position.x, y: node.position.y,
             width: node.width, height: renderedHeight(of: node)

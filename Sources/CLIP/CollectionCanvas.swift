@@ -128,12 +128,6 @@ struct CanvasConfig {
     let maxZoom: CGFloat
     /// Pushed out on every live scroll / magnify (read-only: minimap + zoom readout).
     let onCameraChange: (Camera) -> Void
-    /// Fired ONCE when the camera comes to rest (debounced settle), NOT per tick.
-    /// Lets the SwiftUI-hosted cards re-render once at the resting zoom so their
-    /// `isLive` LOD gate re-evaluates — otherwise a web/video card stays on its
-    /// poster after a zoom (no zoom re-render: `suppressZoomEpoch`) until an
-    /// unrelated `@Published` change (e.g. a click) happens to re-render it.
-    let onCameraSettled: () -> Void
     /// Builds the SwiftUI view hosted by a node's item.
     let content: (CanvasNode) -> AnyView
     /// World-space overlay (connectors / selection / guides) drawn above the
@@ -199,9 +193,6 @@ struct CanvasConfig {
     /// this node's frame through to its TextField (so editing works) and owns
     /// everything else.
     let editingTextNodeID: UUID?
-    /// True while the camera is panning/zooming — native video pauses to its
-    /// poster so an AVPlayerLayer doesn't composite during the magnify (LOD).
-    let isCameraInteracting: Bool
     /// Reads the LIVE selection (state.selectedNodeIDs) — used by the native
     /// chrome so it reflects selection changes immediately, instead of the stale
     /// `selectedNodeIDs` snapshot baked into this struct (which only refreshes on
@@ -521,40 +512,6 @@ struct CollectionCanvas: NSViewRepresentable {
         private var nodeZ: [UUID: CGFloat] = [:]
         func raiseZ(_ id: UUID) { zCounter += 1; nodeZ[id] = zCounter }
         func zFor(_ id: UUID) -> CGFloat { nodeZ[id] ?? 0 }
-
-        // MARK: - Camera-settle (native-video LOD, SwiftUI-independent)
-
-        /// Coordinator-local "camera is moving" flag, the truth the native-video
-        /// LOD gate reads. The old gate read `config.isCameraInteracting`, which
-        /// only refreshes via the @Published → SwiftUI → `updateNSView` → `apply`
-        /// round-trip; once a zoom *settles*, the scroll path stops firing
-        /// `boundsDidChange`, so no `refreshChrome` runs at the resting zoom and a
-        /// paused video never re-evaluated — it stayed on its poster until the
-        /// next unrelated `apply` (e.g. a click-to-deselect), which is exactly the
-        /// "videos only start when I click empty canvas" bug. This flag is owned
-        /// by the bounds/zoom observer instead, and its settle re-runs
-        /// `refreshChrome` itself, so a video reliably resumes the instant the
-        /// camera comes to rest.
-        private(set) var cameraMoving = false
-        private var cameraSettle: DispatchWorkItem?
-
-        /// Called on every live scroll/magnify tick. Marks the camera moving and
-        /// arms a 0.12 s settle; each tick cancels the previous one, so the settle
-        /// fires only once ticks actually stop (gesture + momentum both ended).
-        /// Scheduled on the main queue (common modes → also services during
-        /// `.eventTracking`), so it fires after a held-still pause too.
-        func cameraDidTick() {
-            cameraMoving = true
-            cameraSettle?.cancel()
-            let work = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.cameraMoving = false
-                self.refreshChrome()        // native video gate re-eval at rest
-                self.config.onCameraSettled()   // poke SwiftUI cards → isLive re-eval
-            }
-            cameraSettle = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
-        }
 
         /// Refresh the native selection chrome (white ring/handles) on every
         /// visible item. Driven by `liveSelection`, so calling this right after a
@@ -1090,20 +1047,9 @@ final class CardItemView: NSView {
         let node = liveNode
         let valid = bounds.width > 1 && bounds.height > 1
         let folderView = subviews.compactMap { $0 as? FolderCardView }.first
-        // Native-video LOD: pause + show poster when the card is small on screen
-        // (zoomed out, e.g. ~12%) or the camera is moving — no AVPlayerLayer
-        // composites during the magnify. Plays when large + settled.
-        if valid, let videoView = subviews.compactMap({ $0 as? CardVideoContentView }).first {
-            let screenSide = min(bounds.width, bounds.height) * mag
-            // `cameraMoving` is the coordinator's own settle flag (cleared by a
-            // self-scheduled `refreshChrome` at rest), NOT the SwiftUI-routed
-            // `config.isCameraInteracting` — so a paused video resumes the instant
-            // the camera settles instead of waiting for the next click.
-            let interacting = coordinator?.cameraMoving ?? false
-            let decision = !interacting && screenSide >= CanvasState.livePlaybackMinScreenSide
-            clipDiag("GATE screenSide=\(Int(screenSide)) mag=\(String(format: "%.2f", mag)) interacting=\(interacting) -> \(decision)")
-            videoView.setPlaybackActive(decision)
-        }
+        // Native videos always play while mounted — no zoom/size LOD pausing
+        // (it never helped zoom perf and froze/stuck videos). Off-screen items
+        // are still recycled + parked by the collection / NativeVideoCache.
         let selected = valid && isSelectedNow
         let hovered = valid && isHoveredNow
         let lifted = selected || hovered

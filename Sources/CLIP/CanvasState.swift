@@ -318,16 +318,6 @@ final class CanvasState: ObservableObject {
             }
     }
 
-    /// The native canvas suppresses per-tick `zoomEpoch` bumps (`suppressZoomEpoch`)
-    /// so cards don't re-render mid-gesture (the boundary blink). But once the
-    /// camera comes to REST, the SwiftUI-hosted cards must re-render exactly once
-    /// so their `isLive` LOD gate re-evaluates at the resting zoom — otherwise a
-    /// web/video card stays frozen on its poster until some other `@Published`
-    /// change (a click) happens to re-render it. The coordinator's debounced
-    /// settle calls this; bumping the `@Published` `zoomEpoch` fires
-    /// `objectWillChange`, re-rendering every card observing `state` just once.
-    func cameraDidSettle() { zoomEpoch &+= 1 }
-
     /// The full document as it should hit disk: the live camera is flushed
     /// into a LOCAL copy of `pages` — mutating `self.pages` here would fire
     /// `$pages` and re-trigger the debounced save in an infinite loop.
