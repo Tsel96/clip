@@ -85,17 +85,14 @@ extension CanvasState {
             default: break
             }
         }
-        switch node.kind {
-        case .youtube, .instagram, .webclip:
-            // WKWebView-backed: re-rasterizing a live web view every frame while
-            // the canvas magnifies is the ~1 fps killer, so drop these to a cached
-            // poster for the ZOOM's duration only (live again at rest + on pan).
-            return !isZoomInteracting
-        default:
-            // Local video, tweet video, images, etc. are AVPlayer / bitmap-backed —
-            // the GPU scales them cheaply during a magnify, so they stay LIVE
-            // always and never blink (the user's "videos blinking on zoom" fix).
-            return true
-        }
+        // ALL media stays LIVE — through zoom, pan, and at rest. Swapping a card to
+        // a poster mid-zoom is what produced the "social-media videos blink while
+        // zooming" the user flagged as the single worst issue; the swap (and the
+        // WKWebView remount it implies) is the blink. Cards ride the scroll's
+        // magnify transform as live layers instead, so nothing blinks. (If a
+        // boardful of WKWebViews makes the magnify itself heavy, the next step is
+        // a fresh snapshot taken AT zoom-start — seamless because it matches the
+        // live frame — not a stale poster swap.)
+        return true
     }
 }

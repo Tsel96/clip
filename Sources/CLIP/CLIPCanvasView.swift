@@ -145,12 +145,12 @@ final class CLIPCanvasView: NSView {
             // here, so panning never suppresses/blinks media.
             coordinator?.refreshChrome()
         }
-        // Live MAGNIFY ticks: update connector stroke widths + drive the zoom-only
-        // media suppression (poster during the magnify, live again at rest).
+        // Live MAGNIFY ticks: update connector stroke widths + the inline label
+        // editor. NO media suppression — all cards stay live through the magnify
+        // (the suppression swap is the "social-media videos blink on zoom" bug).
         scroll.onZoomChange = { [weak coordinator] in
             coordinator?.pushCameraFromScroll()
             coordinator?.refreshChrome()
-            coordinator?.zoomDidTick()
         }
 
         // Escape deselects (keyboard path, always available — no race).
