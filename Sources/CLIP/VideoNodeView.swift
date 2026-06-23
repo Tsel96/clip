@@ -102,49 +102,28 @@ struct VideoNodeView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(posterBackdrop)
 
-                // Mute / play / trim controls. Always faintly visible so
-                // they're discoverable without cursor-sweeping (hiding
-                // controls behind hover breaks spatial memory); hover or
-                // selection brings them to full strength. Only mounted
-                // while the card is live — the user has no reason (or
-                // way) to interact with a paused-and-unmounted card.
+                // Mute / play / trim controls — Figma 88-360/367/373: 60%-white
+                // circular buttons. Shown ONLY on hover or selection (hidden
+                // otherwise, per the design), springing in.
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
                         HStack(spacing: 6) {
                             if let onTrim {
-                                Button(action: onTrim) {
-                                    Image(systemName: "scissors")
-                                        .frame(width: 22, height: 22)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .help("Trim video")
+                                VideoCircleButton(systemName: "scissors", help: "Trim video", action: onTrim)
                             }
-
-                            Button { userPlaying.toggle() } label: {
-                                Image(systemName: userPlaying ? "pause.fill" : "play.fill")
-                                    .frame(width: 22, height: 22)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .help(userPlaying ? "Pause" : "Play")
-
-                            Button { isMuted.toggle() } label: {
-                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                    .frame(width: 22, height: 22)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .help(isMuted ? "Unmute" : "Mute")
+                            VideoCircleButton(systemName: userPlaying ? "pause.fill" : "play.fill",
+                                              help: userPlaying ? "Pause" : "Play") { userPlaying.toggle() }
+                            VideoCircleButton(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                                              help: isMuted ? "Unmute" : "Mute") { isMuted.toggle() }
                         }
                         .padding(8)
                     }
                 }
-                .opacity((hovering || isSelected) ? 1 : 0.45)
-                .animation(.easeOut(duration: 0.12), value: hovering)
-                .animation(.easeOut(duration: 0.12), value: isSelected)
+                .opacity((hovering || isSelected) ? 1 : 0)
+                .animation(.easeOut(duration: 0.14), value: hovering)
+                .animation(.easeOut(duration: 0.14), value: isSelected)
             } else {
                 // Resting state — no AVPlayer in the view tree.
                 placeholder
@@ -177,6 +156,31 @@ struct VideoNodeView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Figma 88-360 / 88-367 / 88-373: a 60%-white circular control button shown on
+/// video cards (mute / pause / trim). Black glyph, faint drop shadow; the parent
+/// reveals the cluster only on hover or selection.
+private struct VideoCircleButton: View {
+    let systemName: String
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.black.opacity(0.82))
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Color.white.opacity(hovering ? 0.85 : 0.6)))
+                .shadow(color: .black.opacity(0.06), radius: 2.5, y: 1)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
     }
 }
 
