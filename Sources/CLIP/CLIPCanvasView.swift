@@ -141,17 +141,16 @@ final class CLIPCanvasView: NSView {
             coordinator?.pushCameraFromScroll()
             // Keep native chrome (section outline + selection ring) a constant
             // on-screen width while zooming — cheap CALayer updates, no re-render.
+            // NOTE: this is the PAN/bounds path too — deliberately NO zoom tick
+            // here, so panning never suppresses/blinks media.
             coordinator?.refreshChrome()
-            // Drive the debounced settle so media re-evaluates its LOD the moment
-            // the camera comes to rest (videos resume, not only on the next click).
-            coordinator?.cameraDidTick()
         }
-        // Live magnify ticks update connector stroke widths (constant on screen)
-        // + the inline label editor — the bounds notification lagged the pinch.
+        // Live MAGNIFY ticks: update connector stroke widths + drive the zoom-only
+        // media suppression (poster during the magnify, live again at rest).
         scroll.onZoomChange = { [weak coordinator] in
             coordinator?.pushCameraFromScroll()
             coordinator?.refreshChrome()
-            coordinator?.cameraDidTick()
+            coordinator?.zoomDidTick()
         }
 
         // Escape deselects (keyboard path, always available — no race).

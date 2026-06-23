@@ -128,10 +128,10 @@ struct CanvasConfig {
     let maxZoom: CGFloat
     /// Pushed out on every live scroll / magnify (read-only: minimap + zoom readout).
     let onCameraChange: (Camera) -> Void
-    /// Fired ONCE when the camera comes to rest (debounced), NOT per tick. Lets the
-    /// SwiftUI-hosted cards re-render once so their `isLive` LOD gate re-evaluates
-    /// at the resting zoom — the fix for media stranded on a poster after a zoom.
-    let onCameraSettled: () -> Void
+    /// `true` when a ZOOM gesture starts, `false` when it settles (NOT fired on a
+    /// pan). Drives `state.isZoomInteracting`, which flips media to a cheap poster
+    /// only for the duration of a magnify (keeps zoom smooth, no pan blink).
+    let onZoomInteracting: (Bool) -> Void
     /// Builds the SwiftUI view hosted by a node's item.
     let content: (CanvasNode) -> AnyView
     /// World-space overlay (connectors / selection / guides) drawn above the
@@ -517,31 +517,30 @@ struct CollectionCanvas: NSViewRepresentable {
         func raiseZ(_ id: UUID) { zCounter += 1; nodeZ[id] = zCounter }
         func zFor(_ id: UUID) -> CGFloat { nodeZ[id] ?? 0 }
 
-        // MARK: - Camera settle (LOD re-eval at rest, SwiftUI-independent)
+        // MARK: - Zoom interaction (suppress live media during a magnify only)
 
-        /// True while the camera is actively moving — the native-video LOD gate
-        /// reads it to pause an AVPlayer mid-magnify. Cleared by the debounced
-        /// settle, which then re-runs the gate + re-renders the SwiftUI cards so a
-        /// video reliably resumes the instant the camera comes to rest (instead of
-        /// staying on its poster until the next unrelated click).
-        private(set) var cameraMoving = false
-        private var cameraSettle: DispatchWorkItem?
+        /// True while a ZOOM is actively changing — the native-video gate reads it
+        /// to pause an AVPlayer for the duration of the magnify (the one expensive
+        /// op). NOT set on a pan, so panning never pauses / blinks a video. The
+        /// debounced settle clears it and re-runs the gate so the video resumes the
+        /// instant the zoom comes to rest.
+        private(set) var zoomMoving = false
+        private var zoomSettle: DispatchWorkItem?
 
-        /// Called on every live scroll/magnify tick. Marks the camera moving and
-        /// (re)arms a 0.12 s settle; each tick cancels the previous one, so the
-        /// settle fires only once ticks actually stop. Scheduled on the main queue
-        /// (serviced in `.eventTracking` too), so a held-still pause also settles.
-        func cameraDidTick() {
-            cameraMoving = true
-            cameraSettle?.cancel()
+        /// Called on every live MAGNIFY tick (scroll's zoom callback only — never
+        /// the pan/bounds path). Marks the zoom active + (re)arms a settle; each
+        /// tick cancels the previous, so the settle fires once the magnify stops.
+        func zoomDidTick() {
+            if !zoomMoving { zoomMoving = true; config.onZoomInteracting(true) }  // SwiftUI media → poster
+            zoomSettle?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
-                self.cameraMoving = false
-                self.refreshChrome()             // native video gate re-eval at rest
-                self.config.onCameraSettled()    // re-render SwiftUI cards → isLive re-eval
+                self.zoomMoving = false
+                self.config.onZoomInteracting(false)   // SwiftUI media → live again
+                self.refreshChrome()                   // native video resumes at rest
             }
-            cameraSettle = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+            zoomSettle = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
         }
 
         /// Refresh the native selection chrome (white ring/handles) on every
@@ -1078,14 +1077,12 @@ final class CardItemView: NSView {
         let node = liveNode
         let valid = bounds.width > 1 && bounds.height > 1
         let folderView = subviews.compactMap { $0 as? FolderCardView }.first
-        // Native-video LOD: pause + show poster when the card is small on screen
-        // (zoomed out) or the camera is moving, so an AVPlayerLayer doesn't
-        // composite during the magnify. Resumes when large + settled (the settle
-        // re-runs refreshChrome → this gate → play).
+        // Native-video gate: pause + show poster ONLY while a zoom magnify is in
+        // flight (an AVPlayerLayer compositing during the magnify is the lag). It
+        // plays at rest and through pans — so no pan blink — and resumes the
+        // instant the zoom settles (the settle re-runs refreshChrome → this gate).
         if valid, let videoView = subviews.compactMap({ $0 as? CardVideoContentView }).first {
-            let screenSide = min(bounds.width, bounds.height) * mag
-            let interacting = coordinator?.cameraMoving ?? false
-            videoView.setPlaybackActive(!interacting && screenSide >= CanvasState.livePlaybackMinScreenSide)
+            videoView.setPlaybackActive(!(coordinator?.zoomMoving ?? false))
         }
         let selected = valid && isSelectedNow
         let hovered = valid && isHoveredNow

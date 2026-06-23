@@ -318,16 +318,13 @@ final class CanvasState: ObservableObject {
             }
     }
 
-    /// The native canvas suppresses per-tick `zoomEpoch` bumps (`suppressZoomEpoch`)
-    /// so cards don't re-render mid-gesture (the boundary blink + cost). But once
-    /// the camera comes to REST, the SwiftUI-hosted cards must re-render exactly
-    /// once so their `isLive` LOD gate re-evaluates at the resting zoom/pan —
-    /// otherwise a media card you've just zoomed in on stays stranded on its
-    /// poster until an unrelated `@Published` change (a click) re-renders it (the
-    /// "videos only play when I click empty canvas" bug). The coordinator's
-    /// debounced camera-settle calls this; bumping the `@Published` `zoomEpoch`
-    /// fires `objectWillChange`, re-rendering every card observing `state` once.
-    func cameraDidSettle() { zoomEpoch &+= 1 }
+    /// The native NSCollectionView canvas can't drive `isZoomInteracting` through
+    /// the `camera` setter (its scroll writes `cameraStore` directly), so the
+    /// scroll-view's magnify callback drives it through these. Toggling the
+    /// `@Published` flag re-renders every card once at the zoom's start and end,
+    /// which is exactly when `isLive` needs to flip media to/from its poster.
+    func nativeZoomBegan() { if !isZoomInteracting { isZoomInteracting = true } }
+    func nativeZoomEnded() { if isZoomInteracting { isZoomInteracting = false } }
 
     /// The full document as it should hit disk: the live camera is flushed
     /// into a LOCAL copy of `pages` — mutating `self.pages` here would fire

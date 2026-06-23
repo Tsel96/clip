@@ -91,19 +91,12 @@ extension CanvasState {
             default: break
             }
         }
-        // LEVEL OF DETAIL (perf): a media card is live only when it's BOTH in the
-        // viewport AND projected at least `livePlaybackMinScreenSide` on screen.
-        // Without this, every WKWebView/AVPlayer composites live during a magnify
-        // → ~1 fps with a boardful of social cards. The staleness that used to
-        // strand cards on a poster (because native cards don't re-render on zoom)
-        // is fixed separately by `cameraDidSettle` re-rendering once the camera
-        // comes to rest, so a card you've zoomed in on reliably goes live.
-        let screenSide = min(node.width, renderedHeight(of: node)) * camera.zoom
-        guard screenSide >= Self.livePlaybackMinScreenSide else { return false }
-        let nodeRect = CGRect(
-            x: node.position.x, y: node.position.y,
-            width: node.width, height: renderedHeight(of: node)
-        )
-        return visibleWorldRect.intersects(nodeRect)
+        // Suppress media to a static poster ONLY while the ZOOM is actively
+        // changing. The magnify is the single expensive op — re-rasterizing live
+        // WKWebViews / AVPlayerLayers every frame is the ~1 fps killer. Panning
+        // and resting are cheap (the layers just translate / sit), so we keep
+        // everything live then: nothing blinks on a pan, and a video never
+        // sticks on a poster (it's always live except for the brief magnify).
+        return !isZoomInteracting
     }
 }
