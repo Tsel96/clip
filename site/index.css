@@ -629,10 +629,11 @@ body.mat-active .ui-git {
     width: min(90vw, 540px);
   }
 
-  /* Top-right: stack the platform label above the pill, both
-     right-aligned, so neither runs under the brand */
+  /* Top-right: stack the pill on top with the platform label beneath
+     it (column-reverse keeps DOM order), both right-aligned, so
+     neither runs under the brand */
   .ui-top-right {
-    flex-direction: column;
+    flex-direction: column-reverse;
     align-items: flex-end;
     gap: clamp(6px, 2vw, 12px);
   }
