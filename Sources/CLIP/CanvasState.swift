@@ -79,6 +79,10 @@ final class CanvasState: ObservableObject {
     @Published private(set) var isCameraInteracting = false
     private var cameraSettleTimer: Timer?
 
+    /// Nodes currently being DRAGGED (or option-drag copies) — their heavy web
+    /// content renders as a cheap poster for the duration so the drag stays smooth.
+    @Published var draggingNodeIDs: Set<UUID> = []
+
     /// Mark the camera as moving and (re)arm the settle timer. Default
     /// runloop mode is deliberate: the timer cannot fire during
     /// `.eventTracking`, so the flag stays true for the whole gesture and

@@ -207,13 +207,15 @@ extension CanvasState {
         nodes[idx].rotation = radians
     }
 
-    /// Option-drag: AFTER the originals have been dragged to their drop, drop a
-    /// clone of each at its ORIGINAL position (`startPositions[id]`). Done on
-    /// mouse-up — never mid-drag — so dragging stays smooth (no live duplicate of
-    /// a heavy web/video card rendering every frame). One undo entry.
-    func leaveCopies(at startPositions: [UUID: CGPoint]) {
-        let expanded = expandedDragSet(from: Set(startPositions.keys))
-        guard !expanded.isEmpty else { return }
+    /// Option-drag duplicate: clone `ids` IN PLACE (same positions, ALL fields)
+    /// and return an original→copy id mapping so the drag retargets onto the
+    /// copies (originals stay put — standard app behaviour). The copies are added
+    /// to `draggingNodeIDs` so their heavy web content renders as a cheap POSTER
+    /// during the drag and only goes live on release (keeps the drag smooth).
+    func duplicateForDrag(_ ids: Set<UUID>) -> [UUID: UUID] {
+        let expanded = expandedDragSet(from: ids)
+        guard !expanded.isEmpty else { return [:] }
+        var map: [UUID: UUID] = [:]
         var freshGroupForOriginal: [UUID: UUID] = [:]
         withUndoable {
             for original in nodes where expanded.contains(original.id) {
@@ -223,12 +225,12 @@ extension CanvasState {
                     let fresh = UUID(); freshGroupForOriginal[g] = fresh; return fresh
                 }()
                 let copy = CanvasNode(
-                    position: startPositions[original.id] ?? original.position,
+                    position: original.position,
                     width: original.width,
                     height: original.height,
                     kind: original.kind,
                     groupID: newGroupID,
-                    folderID: nil,                 // copies live on the board, not inside a folder
+                    folderID: nil,
                     origin: original.origin,
                     name: original.name, note: original.note, linkURL: original.linkURL,
                     tags: original.tags, imagePrompt: original.imagePrompt,
@@ -237,8 +239,14 @@ extension CanvasState {
                     attributedContent: original.attributedContent,
                     rotation: original.rotation)
                 nodes.append(copy)
+                map[original.id] = copy.id
             }
         }
+        if !map.isEmpty {
+            selectedNodeIDs = Set(map.values)
+            draggingNodeIDs.formUnion(map.values)   // render copies as posters mid-drag
+        }
+        return map
     }
 
     func duplicateNodes(_ ids: Set<UUID>) -> Set<UUID> {
