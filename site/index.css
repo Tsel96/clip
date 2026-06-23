@@ -346,6 +346,7 @@ html, body {
 
 .modal-close {
   position: absolute;
+  z-index: 3;
   top: clamp(14px, calc(28 / 2340 * 100vw), 44px);
   right: clamp(14px, calc(28 / 2340 * 100vw), 44px);
   width: clamp(30px, calc(40 / 2340 * 100vw), 56px);
