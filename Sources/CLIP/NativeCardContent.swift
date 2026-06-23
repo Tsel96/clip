@@ -460,6 +460,20 @@ final class CardVideoContentView: NSView {
     /// Node id this view is cached under (for NativeVideoCache.park on detach).
     var cacheNodeID: UUID? { nodeID }
 
+    /// LOD gate: when inactive (small on screen / zoomed out / camera moving), PAUSE
+    /// the player and hide its layer so only the static poster shows — an
+    /// AVPlayerLayer compositing during a magnify is what made zoom-out lag. Plays
+    /// again when the card is large + the camera is settled.
+    private var playbackActive = true
+    func setPlaybackActive(_ active: Bool) {
+        guard active != playbackActive else { return }
+        playbackActive = active
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        host.isHidden = !active                      // poster (behind) shows when paused
+        CATransaction.commit()
+        if active { player?.play() } else { player?.pause() }
+    }
+
     /// Stop + release the player. Called by NativeVideoCache when its deferred
     /// teardown fires — i.e. the node really went away, not just a reload.
     func teardown() {

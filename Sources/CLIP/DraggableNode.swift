@@ -415,6 +415,16 @@ struct DraggableNode: View {
     /// at any zoom — the zoom-out catastrophe). Dragged copies are posters too.
     private var liveGate: Bool {
         if state.draggingNodeIDs.contains(node.id) { return false }
+        // ZOOM/PAN PERF: live WKWebViews/players are brutal to composite while the
+        // scroll view magnifies. During a camera gesture, suppress them → the card
+        // shows its cached snapshot (cheap to transform), then goes live when the
+        // camera settles. `isCameraInteracting` is @Published, so the card actually
+        // re-renders at the gesture's start/end (unlike a zoom-only dependency).
+        switch node.kind {
+        case .tweet, .instagram, .youtube, .webclip, .video:
+            if state.isCameraInteracting { return false }
+        default: break
+        }
         return state.isLive(node)
     }
 

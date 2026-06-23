@@ -193,6 +193,9 @@ struct CanvasConfig {
     /// this node's frame through to its TextField (so editing works) and owns
     /// everything else.
     let editingTextNodeID: UUID?
+    /// True while the camera is panning/zooming — native video pauses to its
+    /// poster so an AVPlayerLayer doesn't composite during the magnify (LOD).
+    let isCameraInteracting: Bool
     /// Reads the LIVE selection (state.selectedNodeIDs) — used by the native
     /// chrome so it reflects selection changes immediately, instead of the stale
     /// `selectedNodeIDs` snapshot baked into this struct (which only refreshes on

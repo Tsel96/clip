@@ -406,6 +406,7 @@ struct CanvasView: View {
                                 ? state.selectedNodeIDs.first : nil,
                             selectedNodeIDs: state.selectedNodeIDs,
                             editingTextNodeID: state.editingTextNodeID,
+                            isCameraInteracting: state.isCameraInteracting,
                             liveSelection: { state.selectedNodeIDs },
                             onInteractionBegan: { primary in
                                 state.activeResizeUndoSnapshot = state.snapshotForUndo()
