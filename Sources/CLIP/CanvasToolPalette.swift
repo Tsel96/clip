@@ -741,6 +741,13 @@ private final class MainPillView: NSView {
 
     private func commonInit() {
         wantsLayer = true
+        // Clip to bounds (= the pill bottom, since contentH == pillH): the marker
+        // prop's white base overhangs ~8 pt below the pill at rest, poking under
+        // the green bottom edge. Clipping stops it AT the edge so the green outline
+        // reads as the lowest, continuous line. The cap (top) sits inside the
+        // propOverflow band → not clipped; the drop-shadow is host-parented on the
+        // parent → not clipped.
+        layer?.masksToBounds = true
 
         // --- Outer green border layer ---  (drop-shadow is host-parented)
         outerLayer.backgroundColor  = NSColor.fromHex(0x3DA726).cgColor
