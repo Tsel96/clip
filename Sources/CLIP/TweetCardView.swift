@@ -219,37 +219,21 @@ struct TweetCardView: View {
         // hover or selection brings them to full strength.
         let revealed = hovering || isSelected
         if let tweet, tweet.bestVideoURL != nil, isLive, !isTrimming {
+            // Figma 88-360/367/373: 60%-white circular buttons, shown only on
+            // hover/selection (hidden otherwise).
             HStack(spacing: 6) {
                 if let onTrim {
-                    Button(action: onTrim) {
-                        Image(systemName: "scissors")
-                            .frame(width: 22, height: 22)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Trim video")
+                    VideoCircleButton(systemName: "scissors", help: "Trim video", action: onTrim)
                 }
-
-                Button { userPlaying.toggle() } label: {
-                    Image(systemName: userPlaying ? "pause.fill" : "play.fill")
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help(userPlaying ? "Pause" : "Play")
-
-                Button { isMuted.toggle() } label: {
-                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help(isMuted ? "Unmute" : "Mute")
+                VideoCircleButton(systemName: userPlaying ? "pause.fill" : "play.fill",
+                                  help: userPlaying ? "Pause" : "Play") { userPlaying.toggle() }
+                VideoCircleButton(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                                  help: isMuted ? "Unmute" : "Mute") { isMuted.toggle() }
             }
             .padding(8)
-            .opacity(revealed ? 1 : 0.45)
-            .animation(.easeOut(duration: 0.12), value: hovering)
-            .animation(.easeOut(duration: 0.12), value: isSelected)
+            .opacity(revealed ? 1 : 0)
+            .animation(.easeOut(duration: 0.14), value: hovering)
+            .animation(.easeOut(duration: 0.14), value: isSelected)
         }
     }
 

@@ -161,8 +161,9 @@ struct VideoNodeView: View {
 
 /// Figma 88-360 / 88-367 / 88-373: a 60%-white circular control button shown on
 /// video cards (mute / pause / trim). Black glyph, faint drop shadow; the parent
-/// reveals the cluster only on hover or selection.
-private struct VideoCircleButton: View {
+/// reveals the cluster only on hover or selection. Shared by `VideoNodeView`
+/// (local video) and `TweetCardView` (tweet video) so they match.
+struct VideoCircleButton: View {
     let systemName: String
     let help: String
     let action: () -> Void
