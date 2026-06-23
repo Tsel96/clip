@@ -549,6 +549,20 @@ button.ui-git {
   position: relative;
 }
 
+.app-window::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50px;
+  background: rgba(236, 237, 238, 0.97);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 2;
+  border-radius: 26px 26px 0 0;
+}
+
 .app-window-controls {
   position: absolute;
   top: 18px;
@@ -556,7 +570,7 @@ button.ui-git {
   display: flex;
   align-items: center;
   gap: 9px;
-  z-index: 1;
+  z-index: 3;
   padding: 1px;
 }
 
