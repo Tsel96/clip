@@ -128,6 +128,12 @@ struct CanvasConfig {
     let maxZoom: CGFloat
     /// Pushed out on every live scroll / magnify (read-only: minimap + zoom readout).
     let onCameraChange: (Camera) -> Void
+    /// Fired ONCE when the camera comes to rest (debounced settle), NOT per tick.
+    /// Lets the SwiftUI-hosted cards re-render once at the resting zoom so their
+    /// `isLive` LOD gate re-evaluates — otherwise a web/video card stays on its
+    /// poster after a zoom (no zoom re-render: `suppressZoomEpoch`) until an
+    /// unrelated `@Published` change (e.g. a click) happens to re-render it.
+    let onCameraSettled: () -> Void
     /// Builds the SwiftUI view hosted by a node's item.
     let content: (CanvasNode) -> AnyView
     /// World-space overlay (connectors / selection / guides) drawn above the
@@ -543,8 +549,8 @@ struct CollectionCanvas: NSViewRepresentable {
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 self.cameraMoving = false
-                clipDiag("SETTLE fired -> refreshChrome")
-                self.refreshChrome()   // final re-eval at rest → videos resume
+                self.refreshChrome()        // native video gate re-eval at rest
+                self.config.onCameraSettled()   // poke SwiftUI cards → isLive re-eval
             }
             cameraSettle = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)

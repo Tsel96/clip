@@ -422,7 +422,13 @@ struct DraggableNode: View {
         // re-renders at the gesture's start/end (unlike a zoom-only dependency).
         switch node.kind {
         case .tweet, .instagram, .youtube, .webclip, .video:
-            if state.isCameraInteracting { return false }
+            if state.isCameraInteracting {
+                clipDiag("LIVEGATE \(node.id.uuidString.prefix(4)) media interacting=true -> false")
+                return false
+            }
+            let live = state.isLive(node)
+            clipDiag("LIVEGATE \(node.id.uuidString.prefix(4)) media interacting=false isLive=\(live) epoch=\(state.zoomEpoch)")
+            return live
         default: break
         }
         return state.isLive(node)

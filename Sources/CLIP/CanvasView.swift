@@ -325,6 +325,7 @@ struct CanvasView: View {
                             camera: cameraStore.camera,
                             minZoom: 0.05, maxZoom: 8,
                             onCameraChange: { cameraStore.camera = $0 },
+                            onCameraSettled: { state.cameraDidSettle() },
                             content: { node in
                                 // Each collection item hosts a real card. It's a
                                 // separate NSHostingView, so re-inject the env
