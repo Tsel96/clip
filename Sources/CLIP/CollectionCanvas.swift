@@ -197,6 +197,10 @@ struct CanvasConfig {
     /// this node's frame through to its TextField (so editing works) and owns
     /// everything else.
     let editingTextNodeID: UUID?
+    /// Node whose inline video-trim editor is open. Clicks inside its frame pass
+    /// through this overlay to the trim editor's controls (otherwise the overlay
+    /// eats them and no trim button works).
+    let trimmingNodeID: UUID?
     /// Reads the LIVE selection (state.selectedNodeIDs) — used by the native
     /// chrome so it reflects selection changes immediately, instead of the stale
     /// `selectedNodeIDs` snapshot baked into this struct (which only refreshes on

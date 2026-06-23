@@ -272,6 +272,14 @@ final class CanvasInputView: NSView {
                 return tv
             }
         }
+        // While a video-trim editor is open, let clicks INSIDE that card's frame
+        // fall through to the editor's controls (scrub handles, save/reset/cancel)
+        // — otherwise this overlay swallows them and no trim button works.
+        if let p = config, let trimID = p.trimmingNodeID,
+           let n = p.nodes.first(where: { $0.id == trimID }) {
+            let local = convert(point, from: superview)
+            if contentFrame(n, p).insetBy(dx: -24, dy: -24).contains(local) { return nil }
+        }
         return super.hitTest(point)
     }
 
