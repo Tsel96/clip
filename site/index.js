@@ -244,10 +244,12 @@ function wireBgToggle() {
       // WAAPI fill — springs use rAF and lose to the fill; ease uses WAAPI and wins
       const { animate } = M;
       const opts = { duration: 0.45, ease: [0.34, 1.4, 0.5, 1] };
-      if (brand)    animate(brand,    { x:  d,  y:  d  }, opts);
-      if (topRight) animate(topRight, { x: -d,  y:  d  }, opts);
-      if (desc)     animate(desc,     { x:  d,  y: -d  }, opts);
-      if (botRight) animate(botRight, { x: -d,  y: -db }, opts);
+      const pd  = mg - g;
+      const pdb = mg - bg;
+      if (brand)    animate(brand,    { x: mat ? [0, pd]  : [pd, 0],  y: mat ? [0, pd]  : [pd, 0]  }, opts);
+      if (topRight) animate(topRight, { x: mat ? [0, -pd] : [-pd, 0], y: mat ? [0, pd]  : [pd, 0]  }, opts);
+      if (desc)     animate(desc,     { x: mat ? [0, pd]  : [pd, 0],  y: mat ? [0, -pd] : [-pd, 0] }, opts);
+      if (botRight) animate(botRight, { x: mat ? [0, -pd] : [-pd, 0], y: mat ? [0, -pdb]: [-pdb, 0]}, opts);
     } else {
       // Fallback (no CDN / reduced-motion): CSS transition handles it
       if (brand)    brand.style.transform    = d  ? `translate(${d}px,${d}px)` : '';
