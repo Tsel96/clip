@@ -222,6 +222,8 @@ struct CanvasConfig {
     let onRotate: (UUID, CGFloat) -> Void
     /// Double-click a node → activate (text edit / stack focus / lightbox).
     let onActivate: (UUID) -> Void
+    /// Click the scissors control on a video card → begin trimming it.
+    let onTrimVideo: (UUID) -> Void
     /// Commit an inline folder rename: (folder id, new title).
     let onRenameFolder: (UUID, String) -> Void
     /// Marquee box-select: rect in CONTENT coords; Bool = additive (Shift held).

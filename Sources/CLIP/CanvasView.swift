@@ -461,6 +461,12 @@ struct CanvasView: View {
                                     }
                                 }
                             },
+                            onTrimVideo: { id in
+                                // Scissors on a video card → open the inline trim editor
+                                // (same path the SwiftUI scissors button used).
+                                guard state.canvasMode == .canvas else { return }
+                                state.trimmingCardID = id
+                            },
                             onRenameFolder: { id, title in
                                 state.setFolderTitle(id: id, to: title)
                             },

@@ -272,30 +272,23 @@ final class CanvasInputView: NSView {
                 return tv
             }
         }
-        // Pass clicks through to a SELECTED video card's hover-revealed control
-        // cluster (mute / pause / trim, bottom-right) so the hosted SwiftUI
-        // buttons actually receive them — otherwise this overlay eats the click
-        // and the controls (incl. trim) never fire. Tight to the cluster so the
-        // rest of the card stays grabbable.
-        if let p = config {
-            let local = convert(point, from: superview)
-            let sel = p.liveSelection()
-            for n in p.nodes where sel.contains(n.id) && nodeShowsVideoControls(n) {
-                let f = contentFrame(n, p)
-                let w: CGFloat = 168, h: CGFloat = 54
-                let region = CGRect(x: f.maxX - w, y: f.maxY - h, width: w, height: h)
-                if region.contains(local) { return nil }   // fall through to the card's buttons
-            }
-        }
         return super.hitTest(point)
     }
 
-    /// Card kinds that render a hover/select control cluster (mute/pause/trim).
+    /// Card kinds that render a hover/select control cluster (scissors/pause/mute).
     private func nodeShowsVideoControls(_ n: CanvasNode) -> Bool {
         switch n.kind {
         case .video, .tweet, .youtube, .instagram: return true
         default: return false
         }
+    }
+
+    /// Screen/content-space rect of the SCISSORS (trim) button — the leftmost of
+    /// the bottom-right control cluster ([scissors][play][mute], 32 pt buttons,
+    /// 6 pt apart, 8 pt padding). Slightly padded for an easy hit.
+    private func scissorsRegion(of n: CanvasNode, _ p: CanvasConfig) -> CGRect {
+        let f = contentFrame(n, p)
+        return CGRect(x: f.maxX - 120, y: f.maxY - 44, width: 42, height: 42)
     }
 
     /// The NSTextView of the node currently being edited (the first responder, or
@@ -414,6 +407,17 @@ final class CanvasInputView: NSView {
             mode = .resize; resizeGrip = g; resizeNodeID = selID
             resizeStartFrame = CGRect(x: sel.position.x, y: sel.position.y,
                                       width: sel.width, height: sel.height ?? 120)
+            return
+        }
+        // Video TRIM: clicking the scissors (bottom-right control cluster) of a
+        // video card starts trimming. Dispatched natively because this overlay
+        // eats the click before the hosted SwiftUI scissors button can fire — the
+        // reason "clicking trim does nothing". The cursor being on the scissors
+        // means the card is hovered, so the cluster is visible.
+        if event.clickCount == 1, let n = hitNode(at: pt, p),
+           nodeShowsVideoControls(n), scissorsRegion(of: n, p).contains(pt) {
+            p.onTrimVideo(n.id)
+            mode = .idle
             return
         }
         if let n = hitNode(at: pt, p), !n.isSection {
