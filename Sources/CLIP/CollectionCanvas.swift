@@ -1043,6 +1043,14 @@ final class CardItemView: NSView {
         let node = liveNode
         let valid = bounds.width > 1 && bounds.height > 1
         let folderView = subviews.compactMap { $0 as? FolderCardView }.first
+        // Native-video LOD: pause + show poster when the card is small on screen
+        // (zoomed out, e.g. ~12%) or the camera is moving — no AVPlayerLayer
+        // composites during the magnify. Plays when large + settled.
+        if valid, let videoView = subviews.compactMap({ $0 as? CardVideoContentView }).first {
+            let screenSide = min(bounds.width, bounds.height) * mag
+            let interacting = coordinator?.config.isCameraInteracting ?? false
+            videoView.setPlaybackActive(!interacting && screenSide >= CanvasState.livePlaybackMinScreenSide)
+        }
         let selected = valid && isSelectedNow
         let hovered = valid && isHoveredNow
         let lifted = selected || hovered
