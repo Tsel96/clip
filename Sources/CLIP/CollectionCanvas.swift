@@ -543,6 +543,7 @@ struct CollectionCanvas: NSViewRepresentable {
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 self.cameraMoving = false
+                clipDiag("SETTLE fired -> refreshChrome")
                 self.refreshChrome()   // final re-eval at rest → videos resume
             }
             cameraSettle = work
@@ -1093,7 +1094,9 @@ final class CardItemView: NSView {
             // `config.isCameraInteracting` — so a paused video resumes the instant
             // the camera settles instead of waiting for the next click.
             let interacting = coordinator?.cameraMoving ?? false
-            videoView.setPlaybackActive(!interacting && screenSide >= CanvasState.livePlaybackMinScreenSide)
+            let decision = !interacting && screenSide >= CanvasState.livePlaybackMinScreenSide
+            clipDiag("GATE screenSide=\(Int(screenSide)) mag=\(String(format: "%.2f", mag)) interacting=\(interacting) -> \(decision)")
+            videoView.setPlaybackActive(decision)
         }
         let selected = valid && isSelectedNow
         let hovered = valid && isHoveredNow

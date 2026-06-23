@@ -564,6 +564,7 @@ final class CanvasInputView: NSView {
         guard let p = config else { reset(); return }
         switch mode {
         case .pendingMarquee:
+            clipDiag("BGCLICK (empty/section) -> onBackgroundClick")
             p.onBackgroundClick()                            // empty/section click → deselect
         case .pendingMove:
             if let id = clickedSelectedNoShift { p.onSelect(id, false) }   // collapse to one
