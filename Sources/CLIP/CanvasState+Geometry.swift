@@ -52,6 +52,11 @@ extension CanvasState {
     // Dozens of media cards can coexist because at most a handful are
     // actually decoding / compositing at any one moment.
 
+    /// Minimum on-screen height (pt) below which a media card falls back to a
+    /// static poster (level-of-detail) — keeps zoomed-out / peripheral cards
+    /// cheap so a boardful of social/video cards still magnifies smoothly.
+    static let livePlaybackMinScreenSide: CGFloat = 120
+
     /// Below this projected on-screen size (pt), a card drops to its
     /// level-of-detail proxy (see `DraggableNode.isTiny`): content + position
     /// only, no per-card chrome/gestures. Keeps deep zoom-out cheap when the
@@ -72,6 +77,12 @@ extension CanvasState {
         // The card being trimmed hands playback to the trim overlay's own
         // seekable player, so tear down its background loop player.
         if trimmingCardID == node.id { return false }
+        switch node.kind {
+        case .video, .tweet, .instagram, .image, .youtube, .webclip:
+            break               // gated below
+        default:
+            return true
+        }
         // "Show video previews only" — a user TOGGLE (not LOD) that forces
         // every video-bearing kind to its resting poster.
         if videosShowPreviewOnly {
@@ -80,14 +91,19 @@ extension CanvasState {
             default: break
             }
         }
-        // PRE-LOD BEHAVIOUR: all media is ALWAYS live. The zoom/size/viewport
-        // level-of-detail gate is gone entirely — it never helped zoom perf (the
-        // cost is layer compositing under magnification, not the media itself)
-        // and, because native cards don't re-render on zoom, it stuck web/video
-        // cards on a STALE poster until some unrelated re-render (a click) — the
-        // "videos only play when I click empty canvas" bug, which did not exist
-        // before LOD. Cards stay mounted + playing whether or not they're on
-        // screen, exactly as they did pre-LOD.
-        return true
+        // LEVEL OF DETAIL (perf): a media card is live only when it's BOTH in the
+        // viewport AND projected at least `livePlaybackMinScreenSide` on screen.
+        // Without this, every WKWebView/AVPlayer composites live during a magnify
+        // → ~1 fps with a boardful of social cards. The staleness that used to
+        // strand cards on a poster (because native cards don't re-render on zoom)
+        // is fixed separately by `cameraDidSettle` re-rendering once the camera
+        // comes to rest, so a card you've zoomed in on reliably goes live.
+        let screenSide = min(node.width, renderedHeight(of: node)) * camera.zoom
+        guard screenSide >= Self.livePlaybackMinScreenSide else { return false }
+        let nodeRect = CGRect(
+            x: node.position.x, y: node.position.y,
+            width: node.width, height: renderedHeight(of: node)
+        )
+        return visibleWorldRect.intersects(nodeRect)
     }
 }
