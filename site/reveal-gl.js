@@ -677,7 +677,6 @@ export function revealImage(img, opts = {}) {
         if (cs.position === 'static') host.style.position = 'relative';
       }
       host.appendChild(canvas);
-      const prevVis = img.style.visibility;
       img.style.visibility = 'hidden';
 
       const durSec = o.duration / 1000;
@@ -688,6 +687,7 @@ export function revealImage(img, opts = {}) {
         if (doneCalled) return;
         doneCalled = true;
         cancelAnimationFrame(rafId);
+        img.style.visibility = '';  // always restore — guards against early modal close
         canvas.remove();
         gl.deleteTexture(tex); gl.deleteShader(vs); gl.deleteShader(fs);
         gl.deleteProgram(prog); gl.deleteVertexArray(vao);
@@ -702,7 +702,7 @@ export function revealImage(img, opts = {}) {
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         if (p < 1) { rafId = requestAnimationFrame(frame); return; }
         // Land on the crisp image, then fade the canvas out and clean up.
-        img.style.visibility = prevVis;
+        img.style.visibility = '';
         canvas.style.transition = 'opacity 160ms ease';
         canvas.style.opacity = '0';
         canvas.addEventListener('transitionend', done, { once: true });
