@@ -449,6 +449,7 @@ struct DraggableNode: View {
                     state.trimmingCardID = nil
                 },
                 onCancelTrim: { state.trimmingCardID = nil },
+                onResolveVideoURL: { state.trimVideoURLs[node.id] = $0 },
                 onMediaAspect: { state.snapMediaAspect(node.id, aspect: $0) }
             )
             .revealOnAdd(state: state, node: node)

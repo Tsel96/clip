@@ -272,6 +272,38 @@ struct CanvasView: View {
         overlayCamera.camera = Camera(x: -worldBounds.minX, y: -worldBounds.minY, zoom: 1)
     }
 
+    /// The video-trim widget, mounted above the canvas and positioned directly
+    /// BELOW the trimming card at its on-screen width. Reads `cameraStore.camera`
+    /// so it tracks the card live as the canvas pans/zooms. Transparent (no hit
+    /// area) when nothing is being trimmed, so the canvas stays interactive.
+    @ViewBuilder
+    private var trimWidgetOverlay: some View {
+        if let id = state.trimmingCardID,
+           let node = state.nodes.first(where: { $0.id == id }),
+           let url = state.trimVideoURLs[id] {
+            let cam = cameraStore.camera
+            let z = cam.zoom
+            let w = node.width * z
+            let h = (node.height ?? 120) * z
+            let originX = node.position.x * z + cam.x
+            let originY = node.position.y * z + cam.y
+            let gap: CGFloat = 10
+            let trimH = min(max(h, 150), 300)            // usable height, card-derived
+            VideoTrimOverlay(
+                fileURL: url,
+                initialStart: node.trimStart,
+                initialEnd: node.trimEnd,
+                cornerRadius: 14,
+                onSave: { s, e in state.setTrim(id, start: s, end: e); state.trimmingCardID = nil },
+                onReset: { state.clearTrim(id); state.trimmingCardID = nil },
+                onCancel: { state.trimmingCardID = nil }
+            )
+            .frame(width: w, height: trimH)
+            .position(x: originX + w / 2, y: originY + h + gap + trimH / 2)
+            .transition(.opacity)
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
@@ -463,10 +495,14 @@ struct CanvasView: View {
                                 }
                             },
                             onTrimVideo: { id in
-                                // Scissors on a video card → open the inline trim editor
-                                // (same path the SwiftUI scissors button used).
+                                // Scissors on a video card → open the top-level trim
+                                // widget (mounted below, above the input layer).
                                 guard state.canvasMode == .canvas else { return }
-                                state.trimmingCardID = id
+                                if let n = state.nodes.first(where: { $0.id == id }),
+                                   case .video(let url, _) = n.kind {
+                                    state.trimVideoURLs[id] = url       // local video: URL is known
+                                }
+                                state.trimmingCardID = id               // tweets populate the cache on load
                             },
                             onRenameFolder: { id, title in
                                 state.setFolderTitle(id: id, to: title)
@@ -733,6 +769,10 @@ struct CanvasView: View {
                     }
             }
         }
+        // Video TRIM widget — mounted at the TOP level (above the canvas + its
+        // input overlay) so its controls actually receive clicks, and positioned
+        // just BELOW the card, matching its on-screen width (user spec).
+        .overlay { trimWidgetOverlay }
         // Bottom-CENTER: the Spatial-style yellow tool palette + "+" (Figma 51:12692).
         .overlay(alignment: .bottom) {
             if state.canvasMode == .canvas, state.focusedFolderID == nil {

@@ -1012,6 +1012,12 @@ final class CanvasState: ObservableObject {
     /// be dragged without moving the card.
     @Published var trimmingCardID: UUID?
 
+    /// Resolved direct-MP4 URL per node, populated by the cards (local `.video`
+    /// = its file URL; tweet/web = the async-resolved stream). The TOP-LEVEL trim
+    /// widget (mounted in `CanvasView`, above the input layer so it's actually
+    /// clickable) reads this so it can open below the card without re-resolving.
+    @Published var trimVideoURLs: [UUID: URL] = [:]
+
     /// The on-screen (window-global) rect of the card the lightbox was opened
     /// from — origin/destination of the grow/shrink. matchedGeometryEffect
     /// can't animate across the split-view→overlay boundary here, so we measure

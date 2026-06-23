@@ -38,6 +38,9 @@ struct TweetCardView: View {
     var onSaveTrim: ((Double, Double) -> Void)? = nil
     var onResetTrim: (() -> Void)? = nil
     var onCancelTrim: (() -> Void)? = nil
+    /// Reports the resolved direct-MP4 URL once the tweet loads, so the top-level
+    /// trim widget can open for this (social) video without re-resolving.
+    var onResolveVideoURL: ((URL) -> Void)? = nil
     /// Called once the media aspect is known (loaded from the poster) so the
     /// node can size to it — kills the gray gap around the aspect-fit card.
     var onMediaAspect: ((CGFloat) -> Void)? = nil
@@ -72,10 +75,9 @@ struct TweetCardView: View {
             .frame(maxWidth: .infinity)
             .figmaCardStyle(isElevated: hovering)
             .overlay(alignment: .bottomTrailing) { videoControls }
-            // Inline trim editor — covers the card while active. Hosted here
-            // (not in DraggableNode) because this view owns the resolved
-            // `bestVideoURL`, which is fetched async.
-            .overlay { trimEditor }
+            // Trim editor is no longer in-card: it's a TOP-LEVEL widget mounted
+            // in CanvasView, BELOW the card (above the input layer so it's
+            // clickable). `onResolveVideoURL` feeds it this tweet's MP4 URL.
             .onHover { hovering = $0 }
             .task(id: url) { await load() }
             .task(id: tweet?.posterURL) { await loadMediaAspect() }
@@ -268,6 +270,7 @@ struct TweetCardView: View {
         defer { isLoading = false }
         do {
             tweet = try await TweetService.fetch(tweetID: id)
+            if let v = tweet?.bestVideoURL { onResolveVideoURL?(v) }   // feed the top-level trim widget
         } catch let err as TweetServiceError {
             errorMessage = err.errorDescription
         } catch {
