@@ -233,18 +233,28 @@ function wireBgToggle() {
   const botRight = document.querySelector('.ui-bottom-right');
 
   function applyShift(mat) {
-    // Mirror CSS clamp formulas to compute pixel offsets
     const g  = Math.min(Math.max(14, 26 / 2340 * window.innerWidth), 44);
     const bg = Math.min(Math.max(14, 38 / 2340 * window.innerWidth), 56);
     const mg = Math.min(Math.max(46, 2 * Math.min(window.innerWidth, window.innerHeight) / 100 + 26), 62);
     const d  = mat ? mg - g  : 0;
     const db = mat ? mg - bg : 0;
 
-    // CSS transition: transform handles the spring animation
-    if (brand)    brand.style.transform    = d  ? `translate(${d}px, ${d}px)`    : '';
-    if (topRight) topRight.style.transform = d  ? `translate(${-d}px, ${d}px)`   : '';
-    if (desc)     desc.style.transform     = d  ? `translate(${d}px, ${-d}px)`   : '';
-    if (botRight) botRight.style.transform = db ? `translate(${-d}px, ${-db}px)` : '';
+    if (M && !REDUCE) {
+      // Use Motion (WAAPI mode) so it properly cancels the entrance animation's
+      // WAAPI fill — springs use rAF and lose to the fill; ease uses WAAPI and wins
+      const { animate } = M;
+      const opts = { duration: 0.45, ease: [0.34, 1.4, 0.5, 1] };
+      if (brand)    animate(brand,    { x:  d,  y:  d  }, opts);
+      if (topRight) animate(topRight, { x: -d,  y:  d  }, opts);
+      if (desc)     animate(desc,     { x:  d,  y: -d  }, opts);
+      if (botRight) animate(botRight, { x: -d,  y: -db }, opts);
+    } else {
+      // Fallback (no CDN / reduced-motion): CSS transition handles it
+      if (brand)    brand.style.transform    = d  ? `translate(${d}px,${d}px)` : '';
+      if (topRight) topRight.style.transform = d  ? `translate(${-d}px,${d}px)` : '';
+      if (desc)     desc.style.transform     = d  ? `translate(${d}px,${-d}px)` : '';
+      if (botRight) botRight.style.transform = db ? `translate(${-d}px,${-db}px)` : '';
+    }
   }
 
   btn.addEventListener('click', () => {
