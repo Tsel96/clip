@@ -77,12 +77,6 @@ extension CanvasState {
         // The card being trimmed hands playback to the trim overlay's own
         // seekable player, so tear down its background loop player.
         if trimmingCardID == node.id { return false }
-        switch node.kind {
-        case .video, .tweet, .instagram, .image, .youtube, .webclip:
-            break               // gated below
-        default:
-            return true
-        }
         // "Show video previews only" — a user TOGGLE (not LOD) that forces
         // every video-bearing kind to its resting poster.
         if videosShowPreviewOnly {
@@ -91,12 +85,17 @@ extension CanvasState {
             default: break
             }
         }
-        // Suppress media to a static poster ONLY while the ZOOM is actively
-        // changing. The magnify is the single expensive op — re-rasterizing live
-        // WKWebViews / AVPlayerLayers every frame is the ~1 fps killer. Panning
-        // and resting are cheap (the layers just translate / sit), so we keep
-        // everything live then: nothing blinks on a pan, and a video never
-        // sticks on a poster (it's always live except for the brief magnify).
-        return !isZoomInteracting
+        switch node.kind {
+        case .youtube, .instagram, .webclip:
+            // WKWebView-backed: re-rasterizing a live web view every frame while
+            // the canvas magnifies is the ~1 fps killer, so drop these to a cached
+            // poster for the ZOOM's duration only (live again at rest + on pan).
+            return !isZoomInteracting
+        default:
+            // Local video, tweet video, images, etc. are AVPlayer / bitmap-backed —
+            // the GPU scales them cheaply during a magnify, so they stay LIVE
+            // always and never blink (the user's "videos blinking on zoom" fix).
+            return true
+        }
     }
 }

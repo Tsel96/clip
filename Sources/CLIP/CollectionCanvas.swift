@@ -1077,13 +1077,9 @@ final class CardItemView: NSView {
         let node = liveNode
         let valid = bounds.width > 1 && bounds.height > 1
         let folderView = subviews.compactMap { $0 as? FolderCardView }.first
-        // Native-video gate: pause + show poster ONLY while a zoom magnify is in
-        // flight (an AVPlayerLayer compositing during the magnify is the lag). It
-        // plays at rest and through pans — so no pan blink — and resumes the
-        // instant the zoom settles (the settle re-runs refreshChrome → this gate).
-        if valid, let videoView = subviews.compactMap({ $0 as? CardVideoContentView }).first {
-            videoView.setPlaybackActive(!(coordinator?.zoomMoving ?? false))
-        }
+        // Native videos (AVPlayerLayer) scale cheaply with the GPU magnify, so they
+        // stay playing through zoom + pan — no poster swap, no blink. (Only the
+        // WKWebView cards drop to a poster during a zoom; see CanvasState.isLive.)
         let selected = valid && isSelectedNow
         let hovered = valid && isHoveredNow
         let lifted = selected || hovered
