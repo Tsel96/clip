@@ -534,7 +534,7 @@ button.ui-git {
   z-index: 5;
   pointer-events: none;
   width: clamp(400px, 66vw, 1080px);
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 3420 / 2150;
 }
 
 .app-window {
