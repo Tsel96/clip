@@ -205,9 +205,10 @@ struct CanvasConfig {
     /// A finished move (real drag) committed these node ids — used to detect a
     /// drop ONTO a folder (→ tuck them in). A no-op for ordinary moves.
     let onMoveCommitted: (Set<UUID>) -> Void
-    /// Option-drag: on mouse-up, drop a clone of each dragged node at its ORIGINAL
-    /// position (keyed by id). Done on release so the drag itself stays smooth.
-    let onLeaveCopies: ([UUID: CGPoint]) -> Void
+    /// Option-drag duplicate: clone these ids IN PLACE and return original→copy id
+    /// mapping (the drag retargets onto the copies; copies render as posters via
+    /// `draggingNodeIDs` so the drag stays smooth, then go live on release).
+    let onOptionDuplicate: (Set<UUID>) -> [UUID: UUID]
     /// Move a node to a new WORLD position (per drag tick). Uses the move API
     /// (`updatePosition`) so connectors stay attached — NOT `resize`.
     let onMove: (UUID, CGPoint) -> Void

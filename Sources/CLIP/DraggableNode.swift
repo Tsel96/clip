@@ -407,11 +407,16 @@ struct DraggableNode: View {
         return false
     }
 
-    /// Whether media in this card runs live. In the native collection canvas
-    /// (`positioned == false`) cards are always live — semantic-zoom teardown
-    /// would require re-rendering on zoom, which is the gesture-boundary blink.
-    /// The SwiftUI canvas keeps the viewport/size-aware gate.
-    private var liveGate: Bool { positioned ? state.isLive(node) : true }
+    /// Whether media in this card runs live — the LEVEL-OF-DETAIL gate. A live
+    /// WKWebView/player is hugely expensive to composite; when a card projects
+    /// small on screen (zoomed out) or is off-screen, `isLive` returns false and
+    /// the card draws its cheap static poster instead. This now applies to BOTH
+    /// canvases (it was bypassed on the native one, so every web card stayed live
+    /// at any zoom — the zoom-out catastrophe). Dragged copies are posters too.
+    private var liveGate: Bool {
+        if state.draggingNodeIDs.contains(node.id) { return false }
+        return state.isLive(node)
+    }
 
     /// This node's inline text editor is active → suppress the card drag so the
     /// text view can drag-select.
