@@ -272,7 +272,30 @@ final class CanvasInputView: NSView {
                 return tv
             }
         }
+        // Pass clicks through to a SELECTED video card's hover-revealed control
+        // cluster (mute / pause / trim, bottom-right) so the hosted SwiftUI
+        // buttons actually receive them — otherwise this overlay eats the click
+        // and the controls (incl. trim) never fire. Tight to the cluster so the
+        // rest of the card stays grabbable.
+        if let p = config {
+            let local = convert(point, from: superview)
+            let sel = p.liveSelection()
+            for n in p.nodes where sel.contains(n.id) && nodeShowsVideoControls(n) {
+                let f = contentFrame(n, p)
+                let w: CGFloat = 168, h: CGFloat = 54
+                let region = CGRect(x: f.maxX - w, y: f.maxY - h, width: w, height: h)
+                if region.contains(local) { return nil }   // fall through to the card's buttons
+            }
+        }
         return super.hitTest(point)
+    }
+
+    /// Card kinds that render a hover/select control cluster (mute/pause/trim).
+    private func nodeShowsVideoControls(_ n: CanvasNode) -> Bool {
+        switch n.kind {
+        case .video, .tweet, .youtube, .instagram: return true
+        default: return false
+        }
     }
 
     /// The NSTextView of the node currently being edited (the first responder, or
