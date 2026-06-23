@@ -348,7 +348,14 @@ struct CollectionCanvas: NSViewRepresentable {
             let currentIDs = Set(p.nodes.map(\.id))
             let removedIDs = didInitialApply ? seenNodeIDs.subtracting(currentIDs) : []
             if didInitialApply {
-                pendingAppearIDs.formUnion(currentIDs.subtracting(seenNodeIDs))
+                // New cards scale-in (Spatial pop) — EXCEPT freshly-drawn marker
+                // strokes: a stroke should appear exactly where it was drawn with
+                // no reveal/grow animation (it'd read as the ink lurching).
+                let freshIDs = currentIDs.subtracting(seenNodeIDs)
+                let drawingIDs = Set(p.nodes.filter {
+                    if case .drawing = $0.kind { return true }; return false
+                }.map(\.id))
+                pendingAppearIDs.formUnion(freshIDs.subtracting(drawingIDs))
             }
             seenNodeIDs = currentIDs
             didInitialApply = true

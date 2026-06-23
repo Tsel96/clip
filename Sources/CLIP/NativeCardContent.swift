@@ -1,6 +1,21 @@
 import AppKit
 import AVFoundation
 
+/// TEMP diag — appends a line to /tmp/clip_diag.txt to trace the video-LOD
+/// playback gate (why videos resume only on an empty-canvas click). Remove once
+/// the cause is found.
+func clipDiag(_ msg: String) {
+    let line = String(format: "%.3f %@\n", Date().timeIntervalSince1970, msg)
+    if let data = line.data(using: .utf8) {
+        let url = URL(fileURLWithPath: "/tmp/clip_diag.txt")
+        if let fh = try? FileHandle(forWritingTo: url) {
+            fh.seekToEndOfFile(); fh.write(data); try? fh.close()
+        } else {
+            try? data.write(to: url)
+        }
+    }
+}
+
 /// Native (AppKit) card content — the start of replacing the SwiftUI-hosted
 /// cards with native views per type, mirroring Spatial's `CanvasItemView` /
 /// `Canvas*View` architecture. Each type renders directly into an NSView that
@@ -466,6 +481,7 @@ final class CardVideoContentView: NSView {
     /// again when the card is large + the camera is settled.
     private var playbackActive = true
     func setPlaybackActive(_ active: Bool) {
+        clipDiag("setPlaybackActive(\(active)) was=\(playbackActive) node=\(nodeID?.uuidString.prefix(4) ?? "?")")
         guard active != playbackActive else { return }
         playbackActive = active
         CATransaction.begin(); CATransaction.setDisableActions(true)
