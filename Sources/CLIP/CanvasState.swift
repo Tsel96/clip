@@ -800,7 +800,11 @@ final class CanvasState: ObservableObject {
 
     /// Whether the left pages sidebar is shown (toggled by the floating
     /// sidebar-toggle button, Figma 74:25877 open / 74:13420 closed).
-    @Published var showSidebar: Bool = true
+    /// Persisted across launches as a UI preference: the initial value is read
+    /// from `UserDefaults` (defaulting to open) and every toggle writes it back.
+    @Published var showSidebar: Bool = (UserDefaults.standard.object(forKey: "clip.showSidebar") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(showSidebar, forKey: "clip.showSidebar") }
+    }
     /// Whether the connectors layer is rendered. Toggled from the
     /// bottom-right floating control bar.
     @Published var showConnectors: Bool = true
