@@ -17,36 +17,40 @@ import SwiftUI
 /// When adding motion, pick a token — only invent new physics for a
 /// genuinely new class of motion.
 enum Motion {
+    // All durations / spring responses below are 30% faster than the original
+    // tuning (×0.7) per the product call — damping fractions are unchanged so the
+    // overshoot/feel is preserved, just snappier.
+
     /// Structural rearrangement: mode enter/exit, layout reflows,
     /// stack choreography. The app's load-bearing spring.
-    static let structure = Animation.spring(response: 0.55, dampingFraction: 0.84)
+    static let structure = Animation.spring(response: 0.385, dampingFraction: 0.84)
 
     /// Decisive gesture settle: drag release, snap-to-guides landing.
-    static let settle = Animation.spring(response: 0.42, dampingFraction: 0.76)
+    static let settle = Animation.spring(response: 0.294, dampingFraction: 0.76)
 
     /// Element entrance: creation pop, chips, toasts.
-    static let pop = Animation.spring(response: 0.5, dampingFraction: 0.72)
+    static let pop = Animation.spring(response: 0.35, dampingFraction: 0.72)
 
     /// Inline popper / panel open-close — modelled on Spatial's toolbar springs:
     /// fast, snappy, smooth, almost no overshoot. Much quicker than `pop`.
-    static let popper = Animation.spring(response: 0.28, dampingFraction: 0.84)
+    static let popper = Animation.spring(response: 0.196, dampingFraction: 0.84)
 
     /// Per-tick gesture tracking (cursor pursuit with a hint of lag).
     static let track = Animation.interactiveSpring(
-        response: 0.12, dampingFraction: 0.86, blendDuration: 0.05)
+        response: 0.084, dampingFraction: 0.86, blendDuration: 0.035)
 
     /// Hover / selection / pressed feedback — fast fades.
-    static let feedback = Animation.easeOut(duration: 0.12)
+    static let feedback = Animation.easeOut(duration: 0.084)
 
     /// Quiet fades (toasts out, hints).
-    static let fade = Animation.easeOut(duration: 0.2)
+    static let fade = Animation.easeOut(duration: 0.14)
 
     // MARK: Camera-glide physics (value-level spring, see CanvasState)
 
     /// Response of the navigation glide spring (zoom buttons, fit,
     /// minimap jumps). Calm and slightly slower than UI springs — the
     /// whole world is moving.
-    static let glideResponse: CGFloat = 0.38
+    static let glideResponse: CGFloat = 0.266
     /// Near-critical damping: spatial navigation must not overshoot,
     /// or the user loses their bearings.
     static let glideDampingRatio: CGFloat = 0.95

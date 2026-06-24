@@ -318,28 +318,35 @@ func smoothCGPath(through points: [CGPoint]) -> CGPath {
 final class CardDrawingContentView: NSView {
     override var isFlipped: Bool { true }                 // top-left coords, like the stored points
     private let stroke: DrawingStroke
+    private let shape = CAShapeLayer()
 
     init(stroke: DrawingStroke) {
         self.stroke = stroke
         super.init(frame: .zero)
         wantsLayer = true
-        // The stroke is immutable, so draw it ONCE and let the layer scale on the
-        // GPU during zoom. The layer-backed default (`.duringViewResize`) re-ran
-        // the full quadratic-Bézier `smoothCGPath` stroke on every magnify tick —
-        // ×10 drawings on this page — on the main thread.
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        // Render the stroke as a VECTOR CAShapeLayer instead of a rasterized
+        // `draw(_:)`. The render server re-rasterizes the path at the current
+        // magnification, so the marker stays CRISP at any zoom (detailed view) —
+        // a cached bitmap blurs when scaled. It's also GPU work, not a per-tick
+        // main-thread re-stroke. `isGeometryFlipped` matches the stroke's top-left
+        // point coords to this flipped view.
+        shape.isGeometryFlipped = true
+        shape.fillColor = NSColor.clear.cgColor
+        shape.strokeColor = NSColor(srgbRed: stroke.color.red, green: stroke.color.green,
+                                    blue: stroke.color.blue, alpha: stroke.opacity).cgColor
+        shape.lineWidth = stroke.width
+        shape.lineCap = .round
+        shape.lineJoin = .round
+        shape.path = smoothCGPath(through: stroke.points)
+        layer?.addSublayer(shape)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext, stroke.points.count > 1 else { return }
-        ctx.addPath(smoothCGPath(through: stroke.points))
-        ctx.setStrokeColor(NSColor(srgbRed: stroke.color.red, green: stroke.color.green,
-                                   blue: stroke.color.blue, alpha: stroke.opacity).cgColor)
-        ctx.setLineWidth(stroke.width)
-        ctx.setLineCap(.round)
-        ctx.setLineJoin(.round)
-        ctx.strokePath()
+    override func layout() {
+        super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        shape.frame = bounds
+        CATransaction.commit()
     }
 
     // Native content is non-interactive — CardItemView owns select/move/resize.
