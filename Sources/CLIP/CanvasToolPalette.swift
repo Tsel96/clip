@@ -710,7 +710,7 @@ private final class MainPillView: NSView {
     // bottom lands at inner-y 56 (above the toolbar bottom → never overflows the
     // green ring), and the cap pokes 28pt above (needs propOverflow ≥ ~30).
     private static let markerX: CGFloat   = 112
-    private static let markerY: CGFloat   = -16   // rest: chisel base flush with pill bottom; hover slides it up 10pt
+    private static let markerY: CGFloat   = -26   // raised 10pt (was -16) per design; flipped coords → smaller y = higher. Applies to all states (the hover-lift rides on this base)
     private static let stickersX: CGFloat = 165   // 126×76 frame (Figma sticky-btn 90-557/90-537)
     private static let stickersY: CGFloat = -18   // frame bottom flush with capsule bottom (58)
 
