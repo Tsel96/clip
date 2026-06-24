@@ -39,7 +39,18 @@ final class CanvasState: ObservableObject {
     /// The unfolded folder, if any. While set, the canvas shows ONLY that
     /// folder's children (`canvasDisplayNodes`) under its own fitted camera;
     /// Esc / the back affordance clears it and restores the prior camera.
-    @Published var focusedFolderID: UUID? = nil
+    @Published var focusedFolderID: UUID? = nil {
+        didSet {
+            guard oldValue != focusedFolderID else { return }
+            // Folder focus covers/uncovers the board WITHOUT changing the camera,
+            // so nothing else re-triggers media liveness — page videos stayed
+            // rested after exiting a folder. Force a re-evaluation: drop the
+            // live-media memo and bump the gate epoch so every media card re-runs
+            // `isLive` (and resumes if it's back in view).
+            liveMediaCacheKey = (-1, -1, -1)
+            mediaGateEpoch &+= 1
+        }
+    }
     /// Per-member target world position while in focus mode. Empty
     /// outside focus mode; populated by `enterStackFocus`. Read by
     /// `effectivePosition` to override the node's stored position.
