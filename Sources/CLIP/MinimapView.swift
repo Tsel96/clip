@@ -97,7 +97,18 @@ final class MinimapThumbs: ObservableObject {
 ///   • Renders every node as a small rectangle (selected = accent).
 ///   • Renders the current viewport as a dashed accent rectangle.
 ///   • Click / drag to move the camera to that location.
-struct MinimapView: View {
+struct MinimapView: View, Equatable {
+    // Memoized via `.equatable()` at the mount site: the parent (CanvasView)
+    // re-renders on every magnify tick, which re-evaluated this expensive Canvas
+    // (rasterizing every node thumbnail) ~120×/s and dropped zoom to 3-5 fps.
+    // The map's stored inputs never change during a zoom, so `==` returns true
+    // and SwiftUI skips the body on parent re-renders; it still re-renders when
+    // an observed object (`state` — incl. the throttled `minimapCamera` — or
+    // `thumbs`) actually changes.
+    static func == (l: MinimapView, r: MinimapView) -> Bool {
+        l.inset == r.inset && l.showsViewport == r.showsViewport
+    }
+
     @EnvironmentObject var state: CanvasState
     // NOTE: deliberately NOT observing the live `cameraStore` here. The map is
     // camera-independent (it fits all nodes); observing the live camera redrew
