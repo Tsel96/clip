@@ -28,13 +28,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Throttle automatic deploys to once every 4 hours. The auto-snapshot
+      # pushes every few minutes; without this, each push cut a release and every
+      # install self-updated constantly. A manual `workflow_dispatch` run or a tag
+      # push always deploys (so you can force one). Otherwise: deploy only if the
+      # latest release is ≥4h old.
+      - name: Throttle deploys to every 4h
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || \
+             [ "${{ startsWith(github.ref, 'refs/tags/') }}" = "true" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"; echo "Forced deploy."; exit 0
+          fi
+          LAST=$(gh release view --repo "${{ github.repository }}" --json createdAt -q .createdAt 2>/dev/null || true)
+          if [ -z "$LAST" ]; then echo "proceed=true" >> "$GITHUB_OUTPUT"; echo "No prior release — deploying."; exit 0; fi
+          LAST_TS=$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$LAST" +%s 2>/dev/null || echo 0)
+          NOW=$(date -u +%s)
+          AGE=$(( NOW - LAST_TS ))
+          echo "Latest release was ${AGE}s ago (threshold 14400s)."
+          if [ "$LAST_TS" -gt 0 ] && [ "$AGE" -lt 14400 ]; then
+            echo "proceed=false" >> "$GITHUB_OUTPUT"; echo "Within 4h — skipping deploy."
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"; echo "≥4h since last — deploying."
+          fi
+
       - name: Show toolchain
+        if: steps.gate.outputs.proceed == 'true'
         run: swift --version && xcodebuild -version
 
       - name: Build release binary
+        if: steps.gate.outputs.proceed == 'true'
         run: swift build -c release
 
       - name: Bundle .app, .zip and .dmg
+        if: steps.gate.outputs.proceed == 'true'
         env:
           MARKETING: "1.0"
           BUILD: ${{ github.run_number }}
@@ -44,6 +73,7 @@ jobs:
         run: Scripts/make-app.sh
 
       - name: Write self-update manifest
+        if: steps.gate.outputs.proceed == 'true'
         run: |
           SHA=$(shasum -a 256 CLIP.zip | awk '{print $1}')
           cat > latest.json <<EOF
@@ -57,6 +87,7 @@ jobs:
           echo "latest.json:"; cat latest.json
 
       - name: Publish release
+        if: steps.gate.outputs.proceed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
