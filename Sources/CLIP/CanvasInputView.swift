@@ -677,13 +677,13 @@ final class CanvasInputView: NSView {
     private func reset() {
         if pannedCursorPushed { NSCursor.pop(); pannedCursorPushed = false }
         marqueeLayer.isHidden = true; marqueeLayer.path = nil
-        // Hide the draw preview on the NEXT runloop, not synchronously: the
-        // committed stroke renders a frame later (via the collection update), so
-        // hiding the preview immediately left a 1-frame gap that read as a blink on
-        // release. One frame of overlap is invisible. Guarded so a brand-new stroke
-        // started within that frame isn't hidden out from under itself.
+        // Keep the draw preview up ~3 frames after release: the committed stroke
+        // renders a tick later via the collection update, so hiding the preview on
+        // the next runloop alone still left a gap that read as a blink. The preview
+        // and committed paths are pixel-identical (same simplify), so the overlap is
+        // invisible. Guarded so a brand-new stroke isn't hidden out from under itself.
         let dl = drawLayer
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
             if self?.mode != .draw { dl.isHidden = true; dl.path = nil }
         }
         drawPoints = []
