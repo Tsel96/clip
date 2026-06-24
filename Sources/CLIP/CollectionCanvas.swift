@@ -1119,12 +1119,8 @@ final class CardItemView: NSView {
         shadowLayer.masksToBounds = false
         shadowLayer.backgroundColor = nil            // invisible body; only the shadow shows
         shadowLayer.shadowColor = NSColor.black.cgColor
-        // DIAGNOSTIC: shouldRasterize disabled. A rasterized layer caches its
-        // bitmap at a FIXED rasterizationScale; changing the scroll view's
-        // magnification invalidates that cache and forces re-rasterization of
-        // every card's shadow each zoom frame (zoom = 1fps; pan unaffected). The
-        // shadow is baked via shadowPath, so it renders cheaply without raster.
-        shadowLayer.shouldRasterize = false
+        shadowLayer.shouldRasterize = true
+        shadowLayer.rasterizationScale = NSScreen.main?.backingScaleFactor ?? 2
         shadowLayer.magnificationFilter = .trilinear
         shadowLayer.opacity = 0
         layer?.addSublayer(shadowLayer)

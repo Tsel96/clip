@@ -540,9 +540,7 @@ struct CanvasView: View {
                         }
                         .onChange(of: worldBounds) { _ in syncOverlayCamera() }
                         .opacity(cardsOpacity)
-                        // DIAGNOSTIC: blur removed to test if the always-on
-                        // .blur(radius:0) offscreen pass is the GPU zoom cost.
-                        // .blur(radius: cardsBlur)
+                        .blur(radius: cardsBlur)
                         // Interactive in every tool mode — CanvasInputView + the
                         // tool islands resolve per-mode behaviour (select / hand /
                         // draw / connect / text / sticker). Colorform is read-only for
@@ -748,11 +746,6 @@ struct CanvasView: View {
                 LiquidGlassMinimap()
                     .ignoresSafeArea()
             }
-        }
-        // TEMP: live FPS meter (top-leading) to read the real displayed framerate
-        // during a pinch-zoom. Remove after diagnosing.
-        .overlay(alignment: .topLeading) {
-            FPSHud().padding(.top, 44).padding(.leading, 12)
         }
         // Bottom-RIGHT: zoom −/NN%/+ pill (Figma 51:12692).
         .overlay(alignment: .bottomTrailing) {
