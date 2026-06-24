@@ -87,10 +87,11 @@ struct VideoNodeView: View {
 
     var body: some View {
         ZStack {
-            // Keep the player live through camera moves so video keeps playing
-            // while you zoom. The clear AVPlayerLayer background means that if
-            // SwiftUI rasterizes the card mid-zoom, the poster behind shows
-            // through instead of black — never a black tile.
+            // PERSISTENT poster base — already on screen when the player tears
+            // down (rested for perf / zoomed out), so the stop is seamless: no
+            // black flash, no reload blink. Also backs the clear AVPlayerLayer
+            // while it loads its first frame, and stays warm while live.
+            posterBackdrop
             if isLive {
                 TweetVideoPlayer(
                     url: fileURL,
@@ -100,7 +101,6 @@ struct VideoNodeView: View {
                     timeRange: trimRange
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(posterBackdrop)
 
                 // Mute / play / trim controls — Figma 88-360/367/373: 60%-white
                 // circular buttons. Shown ONLY on hover or selection (hidden
@@ -124,9 +124,6 @@ struct VideoNodeView: View {
                 .opacity((hovering || isSelected) ? 1 : 0)
                 .animation(.easeOut(duration: 0.14), value: hovering)
                 .animation(.easeOut(duration: 0.14), value: isSelected)
-            } else {
-                // Resting state — no AVPlayer in the view tree.
-                placeholder
             }
         }
         .figmaCardStyle(isElevated: hovering)

@@ -1238,7 +1238,10 @@ final class CardItemView: NSView {
         // The 4px stroke is drawn INSIDE the gap boundary (Figma border-box): the
         // outer edge sits 8px out from the card frame, the stroke grows inward →
         // centreline at gap − 2px, outer corner radius 8px.
-        if valid, folderView == nil {
+        // Only compute the ring geometry for the SELECTED card — it's hidden
+        // (opacity 0) on every other card, so rebuilding its `CGPath` + shadow
+        // for all visible cards every magnify tick was pure waste.
+        if valid, folderView == nil, selected {
             let lineW = 4 / mag, gap = 7 / mag      // gap 1px smaller (was 8)
             let inset = -(gap - lineW / 2)
             let rect = bounds.insetBy(dx: inset, dy: inset)
@@ -1247,8 +1250,12 @@ final class CardItemView: NSView {
             let cardR: CGFloat = node?.isStickyNote == true ? StickyNodeView.cornerRadius * liftS
                                : node?.isText == true ? bounds.height / 2 : 0
             let radius = cardR + gap - lineW / 2    // outer corner radius
-            outlineLayer.path = CGPath(roundedRect: rect, cornerWidth: radius,
-                                       cornerHeight: radius, transform: nil)
+            let ringPath = CGPath(roundedRect: rect, cornerWidth: radius,
+                                  cornerHeight: radius, transform: nil)
+            outlineLayer.path = ringPath
+            // Give the ring's drop shadow an explicit path so Core Animation
+            // doesn't re-derive the blur mask from the stroke's alpha each frame.
+            outlineLayer.shadowPath = ringPath
             outlineLayer.lineWidth = lineW
             outlineLayer.shadowRadius = 2 / mag
         }
@@ -1276,7 +1283,7 @@ final class CardItemView: NSView {
         // Rotate handle (dot on a stem) above the top-middle edge — flipped view,
         // so "above" is negative y. Drawn unrotated here; the lift/rotate transform
         // (applyLiftScale) carries it to the card's rotated top.
-        if valid, folderView == nil, !(node?.isSection ?? false) {
+        if valid, folderView == nil, !(node?.isSection ?? false), selected {
             let geo = Self.rotateHandleGeometry(mag: mag)
             let midX = bounds.midX
             let topY = -geo.gap
@@ -1492,7 +1499,14 @@ final class CardItemView: NSView {
         let zoomFade = max(0, min(1, (mag - minMag) / (fullMag - minMag)))
         CATransaction.begin(); CATransaction.setDisableActions(true)
         shadowLayer.opacity = Float(zoomFade)
-        shadowLayer.rasterizationScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        // Setting `rasterizationScale` INVALIDATES the rasterized-shadow cache —
+        // even to the same value — forcing a GPU re-blur next frame. The backing
+        // scale never changes mid-session, so only write it when it actually
+        // differs (this ran every magnify tick for every visible card before).
+        let rasterScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        if shadowLayer.rasterizationScale != rasterScale {
+            shadowLayer.rasterizationScale = rasterScale
+        }
         CATransaction.commit()
 
         // Per-state baked shadow (Figma 88:329 rest vs 88:330/336 lifted): rest is a

@@ -23,23 +23,25 @@ struct ImageNodeView: View {
     @State private var hovering = false
 
     var body: some View {
-        GeometryReader { geo in
+        // No GeometryReader: it forced a measure-propose-measure layout pass on
+        // every parent re-render (i.e. every magnify tick). The card already sizes
+        // this view, so `.frame(maxWidth/Height: .infinity)` + `.clipped()` fills
+        // it without reading geometry.
+        Group {
             if isLive, let nsImage {
                 Image(nsImage: nsImage)
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .clipped()
             } else if !isLive {
                 placeholder
-                    .frame(width: geo.size.width, height: geo.size.height)
             } else {
                 ProgressView()
                     .controlSize(.small)
-                    .frame(width: geo.size.width, height: geo.size.height)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .background(Color(nsColor: .windowBackgroundColor))
         .figmaCardStyle(isElevated: hovering)
         .onHover { hovering = $0 }
