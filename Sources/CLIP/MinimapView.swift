@@ -146,18 +146,21 @@ struct MinimapView: View {
             let projected = worldStep * projection.scale
             let gridSize = worldStep * max(1, (7 / max(projected, 0.0001)).rounded(.up))
             let bounds = projection.bounds
-            var gx = (bounds.minX / gridSize).rounded(.down) * gridSize
             let dotColor = Color(nsColor: .quaternaryLabelColor)
+            // Accumulate every dot into ONE Path and fill once, instead of an
+            // `ctx.fill` call per dot (was up to thousands of fills per redraw).
+            var dots = Path()
+            var gx = (bounds.minX / gridSize).rounded(.down) * gridSize
             while gx < bounds.maxX {
                 var gy = (bounds.minY / gridSize).rounded(.down) * gridSize
                 while gy < bounds.maxY {
                     let p = projection.project(CGPoint(x: gx, y: gy))
-                    let r = CGRect(x: p.x - 0.5, y: p.y - 0.5, width: 1, height: 1)
-                    ctx.fill(Path(ellipseIn: r), with: .color(dotColor))
+                    dots.addEllipse(in: CGRect(x: p.x - 0.5, y: p.y - 0.5, width: 1, height: 1))
                     gy += gridSize
                 }
                 gx += gridSize
             }
+            ctx.fill(dots, with: .color(dotColor))
         }
 
         // Nodes — drawn in their own layer so the per-card soft shadow

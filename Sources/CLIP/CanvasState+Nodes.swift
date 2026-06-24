@@ -84,8 +84,14 @@ extension CanvasState {
         let s = Self.textPillSize(content: content, fontSize: fontSize)
         guard abs(nodes[idx].width - s.width) > 0.5
            || abs((nodes[idx].height ?? 0) - s.height) > 0.5 else { return }
-        nodes[idx].width = s.width
-        nodes[idx].height = s.height
+        // Hot path (every keystroke): patch the one node in place via
+        // `mutateNode` instead of `nodes[idx].width/height =`, which would route
+        // through the `nodes` computed setter TWICE — each rebuilding the whole
+        // `nodeByID` index O(n) and firing `@Published pages`.
+        mutateNode(id) {
+            $0.width = s.width
+            $0.height = s.height
+        }
     }
 
     // MARK: - Sticky notes

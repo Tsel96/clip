@@ -13,11 +13,12 @@ struct FolderGridView: View {
     private let columnWidth: CGFloat = 280
     private let spacing: CGFloat = 28
 
-    private var folder: CanvasNode? { state.nodes.first { $0.id == folderID } }
+    private var folder: CanvasNode? { state.nodeByID[folderID] }
 
     private var children: [CanvasNode] {
         guard case .folder(_, _, let ids)? = folder?.kind else { return [] }
-        return ids.compactMap { id in state.nodes.first { $0.id == id } }
+        // O(children) via the index instead of O(children × nodes) linear scans.
+        return ids.compactMap { state.nodeByID[$0] }
     }
 
     /// Solid background = the folder's colour (or the default folder lavender).
