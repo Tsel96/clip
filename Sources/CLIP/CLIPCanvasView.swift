@@ -138,19 +138,18 @@ final class CLIPCanvasView: NSView {
             // live. The native cards are decoupled from the camera (frozen card
             // camera + suppressZoomEpoch), so this never re-renders them — the
             // reason it's safe to sync mid-gesture now without the blink.
-            coordinator?.pushCameraFromScroll()
-            // Keep native chrome (section outline + selection ring) a constant
-            // on-screen width while zooming — cheap CALayer updates, no re-render.
-            // NOTE: this is the PAN/bounds path too — deliberately NO zoom tick
-            // here, so panning never suppresses/blinks media.
-            coordinator?.refreshChrome()
+            // Coalesced to one flush per display frame (camera-push + chrome) so
+            // this PAN/bounds path and the MAGNIFY path below don't both run the
+            // refresh twice in the same frame. Still NO zoom tick here, so panning
+            // never suppresses/blinks media.
+            coordinator?.setNeedsCanvasRefresh()
         }
         // Live MAGNIFY ticks: update connector stroke widths + the inline label
         // editor. NO media suppression — all cards stay live through the magnify
         // (the suppression swap is the "social-media videos blink on zoom" bug).
+        // Coalesced via the same per-frame flush as the bounds path above.
         scroll.onZoomChange = { [weak coordinator] in
-            coordinator?.pushCameraFromScroll()
-            coordinator?.refreshChrome()
+            coordinator?.setNeedsCanvasRefresh()
         }
 
         // Escape deselects (keyboard path, always available — no race).

@@ -301,6 +301,14 @@ struct CollectionCanvas: NSViewRepresentable {
         // CanvasCameraController.swift can read/write the echo-suppression state.
         var lastCamera: Camera?
         var applyingProgrammatic = false
+        // Per-frame refresh coalescing. The clip-view bounds notification AND the
+        // scroll's `onZoomChange` can BOTH fire for one magnify tick, and a trackpad
+        // emits many ticks per display frame — so the live path did a camera-push +
+        // chrome refresh several times per frame. `setNeedsCanvasRefresh()` instead
+        // sets a flag and a CADisplayLink flushes exactly ONE refresh per display
+        // refresh (60 / 120 Hz), then re-pauses to stay power-cheap when idle.
+        private var canvasRefreshLink: AnyObject?   // CADisplayLink (macOS 14+), type-erased
+        private var pendingCanvasRefresh = false
         // Card appear animation: track which node IDs we've already shown so a
         // genuinely-new card (added after the first load) scales in, while the
         // initial board doesn't animate every card on open.
@@ -604,6 +612,54 @@ struct CollectionCanvas: NSViewRepresentable {
             cc.update(connectors: config.connectors, nodeFrames: frames,
                       selected: config.selectedConnectorIDs,
                       magnification: scroll?.magnification ?? 1)
+        }
+
+        // MARK: - Per-frame refresh coalescing (zoom / pan)
+
+        /// Request a camera-push + chrome refresh. Coalesced to one flush per
+        /// display refresh via `canvasRefreshLink`, so the bounds notification and
+        /// `onZoomChange` firing in the same frame (and a burst of trackpad ticks)
+        /// collapse to a single refresh. Falls back to an immediate flush before
+        /// macOS 14 (no `NSView.displayLink`).
+        func setNeedsCanvasRefresh() {
+            pendingCanvasRefresh = true
+            startCanvasRefreshLinkIfNeeded()
+            if #available(macOS 14.0, *), let link = canvasRefreshLink as? CADisplayLink {
+                link.isPaused = false
+            } else {
+                flushCanvasRefresh()
+            }
+        }
+
+        /// Lazily create the display link the first time a refresh is requested —
+        /// by then the scroll view is in a window (the user is interacting).
+        private func startCanvasRefreshLinkIfNeeded() {
+            guard canvasRefreshLink == nil else { return }
+            if #available(macOS 14.0, *), let v = scroll {
+                let link = v.displayLink(target: self, selector: #selector(canvasRefreshTick))
+                link.isPaused = true
+                link.add(to: .main, forMode: .common)
+                canvasRefreshLink = link
+            }
+        }
+
+        @objc private func canvasRefreshTick() {
+            guard pendingCanvasRefresh else {
+                // Nothing pending this frame → sleep the link to save power.
+                if #available(macOS 14.0, *) { (canvasRefreshLink as? CADisplayLink)?.isPaused = true }
+                return
+            }
+            pendingCanvasRefresh = false
+            flushCanvasRefresh()
+        }
+
+        private func flushCanvasRefresh() {
+            pushCameraFromScroll()
+            refreshChrome()
+        }
+
+        deinit {
+            if #available(macOS 14.0, *) { (canvasRefreshLink as? CADisplayLink)?.invalidate() }
         }
 
         /// Move the dragged items' VIEWS directly during a drag — bypassing the
