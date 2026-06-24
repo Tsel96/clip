@@ -45,7 +45,12 @@ struct LinkInputBar: View {
             if shown {
                 // Pre-fill from the clipboard if it holds a link — one Enter to add.
                 text = Self.clipboardLink() ?? ""
+                // Focus immediately AND again after the open animation: a panel that
+                // is still scaling in (ToolbarPanelTransition) can reject first
+                // responder mid-transition, so one attempt alone often misses.
+                focused = true
                 DispatchQueue.main.async { focused = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { focused = true }
             } else {
                 focused = false
             }

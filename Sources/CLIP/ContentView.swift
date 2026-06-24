@@ -81,6 +81,28 @@ struct ContentView: View {
                 .allowsHitTesting(state.lightboxCardID != nil)
                 .zIndex(100)
         }
+        // The detail (lightbox) view gets the SAME back button as folder view, in
+        // the same top-left spot — mounted ABOVE the detail host (which is z=100) so
+        // it's clickable. Folder focus uses the twin button inside CanvasView.
+        .overlay(alignment: .topLeading) {
+            if state.lightboxCardID != nil, !state.lightboxClosing {
+                FigmaPill {
+                    Button { state.closeLightbox() } label: {
+                        Image(systemName: "arrow.left")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.black.opacity(0.78))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.hover)
+                    .help("Back  (Esc)")
+                }
+                .padding(.top, 52)
+                .padding(.leading, 18)
+                .transition(.opacity)
+                .zIndex(101)
+            }
+        }
         // Top window toolbar removed entirely (user request): no sidebar toggle,
         // title, add/paste, or appearance bar. Add = ⌘N, paste = ⌘V.
         .toolbar(.hidden, for: .windowToolbar)

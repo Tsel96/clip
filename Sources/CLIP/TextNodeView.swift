@@ -38,11 +38,11 @@ struct TextNodeView: View {
         ZStack {
             Capsule(style: .continuous).fill(green)                       // green band
 
-            // The white pill is the EDITOR's `.background` (below), NOT a sibling
-            // Capsule behind it. SwiftUI was compositing a sibling shape behind the
-            // embedded AppKit editor at reduced opacity (the gray canvas showed
-            // through → "pill greys while typing"). As the editor's own backing it
-            // renders opaque.
+            // The white pill is painted by the EDITOR's own AppKit layer (pillFill
+            // below), NOT a sibling Capsule behind it. SwiftUI composites a shape
+            // placed behind an embedded AppKit view at reduced opacity (the gray
+            // canvas bled through → "pill greys while typing"); an AppKit layer fill
+            // can't be under-opacitied. The green band shows as the ring around it.
             StickyRichTextEditor(
                 node: liveNode,
                 isEditing: isEditing,
@@ -51,6 +51,10 @@ struct TextNodeView: View {
                 alignment: .center,
                 kern: 0,
                 inset: NSSize(width: 4, height: 2),
+                // White pill painted by the editor's OWN AppKit layer (capsule),
+                // NOT a SwiftUI sibling — SwiftUI under-opacities a shape behind an
+                // embedded NSView, which greyed the pill. See pillFill.
+                pillFill: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1),
                 verticalCenter: true,
                 onTextChange: { state.liveResizeText(id: nodeID, content: $0) },
                 onCommit: { attr in
@@ -64,10 +68,6 @@ struct TextNodeView: View {
                     state.selectedNodeIDs.remove(nodeID)
                 })
                 .padding(inset)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1))
-                )
                 .allowsHitTesting(isEditing)
                 // Empty placeholder (only at rest — text nodes are created focused).
                 .overlay {

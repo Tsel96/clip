@@ -40,6 +40,15 @@ struct StickyRichTextEditor: NSViewRepresentable {
     var alignment: NSTextAlignment = .left
     var kern: CGFloat = -0.17
     var inset: NSSize = NSSize(width: 22, height: 24)
+    /// When set, the editor paints an OPAQUE rounded fill of this colour on its OWN
+    /// layer (AppKit/Core Animation). This is the card's pill/sticky background.
+    /// It must be painted here — NOT as a SwiftUI sibling shape behind the editor —
+    /// because SwiftUI composites content placed directly behind an embedded
+    /// `NSViewRepresentable` at reduced opacity, so the gray canvas bled through and
+    /// the pill "greyed while editing". An AppKit layer fill can't be under-opacitied.
+    var pillFill: NSColor? = nil
+    /// Corner radius for `pillFill`. Negative ⇒ capsule (recomputed to height/2 on layout).
+    var pillCornerRadius: CGFloat = -1
     /// Vertically centre the text in the view (text nodes — single-line pills).
     /// Off for stickies (top-aligned, multi-line, scrollable).
     var verticalCenter: Bool = false
@@ -91,6 +100,15 @@ struct StickyRichTextEditor: NSViewRepresentable {
         scroll.borderType = .noBorder
         scroll.verticalScrollElasticity = .none
         scroll.autohidesScrollers = true
+
+        // Opaque card fill painted on the scroll's OWN layer (see `pillFill` doc).
+        if let pillFill {
+            scroll.wantsLayer = true
+            scroll.layer?.backgroundColor = pillFill.cgColor
+            scroll.layer?.masksToBounds = true
+            scroll.layer?.cornerCurve = .continuous
+            scroll.layer?.cornerRadius = pillCornerRadius < 0 ? scroll.bounds.height / 2 : pillCornerRadius
+        }
 
         // Explicit text stack so we can use a logging/selectable subclass and
         // guarantee the text view fills its width (clicks anywhere select text).
@@ -152,7 +170,18 @@ struct StickyRichTextEditor: NSViewRepresentable {
         // colour and the CALayer colour.
         scroll.drawsBackground = false; scroll.backgroundColor = .clear
         scroll.contentView.drawsBackground = false; scroll.contentView.backgroundColor = .clear
-        scroll.layer?.backgroundColor = NSColor.clear.cgColor
+        if let pillFill {
+            // Re-assert the opaque AppKit fill + keep the capsule radius in sync with
+            // the (auto-sizing) height. The clip/text layers stay clear so the text
+            // sits ON this fill.
+            scroll.wantsLayer = true
+            scroll.layer?.backgroundColor = pillFill.cgColor
+            scroll.layer?.masksToBounds = true
+            scroll.layer?.cornerCurve = .continuous
+            scroll.layer?.cornerRadius = pillCornerRadius < 0 ? scroll.bounds.height / 2 : pillCornerRadius
+        } else {
+            scroll.layer?.backgroundColor = NSColor.clear.cgColor
+        }
         scroll.contentView.layer?.backgroundColor = NSColor.clear.cgColor
         tv.layer?.backgroundColor = NSColor.clear.cgColor
         tv.isEditable = isEditing
