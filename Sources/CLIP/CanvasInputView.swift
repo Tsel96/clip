@@ -49,6 +49,11 @@ final class CanvasInputView: NSView {
     private var resizeNodeID: UUID?
     private var resizeStartFrame: CGRect = .zero    // world coords
     private var moveStartPos: [UUID: CGPoint] = [:] // world coords
+    /// IDs currently being dragged (after an option-duplicate this is the COPIES,
+    /// because the drag retargets onto them). Read by the canvas `apply()` to skip
+    /// the scale-in "pop" on option-drag duplicates — the copy must appear instantly
+    /// under the cursor, not animate in.
+    var draggedNodeIDs: Set<UUID> { Set(moveStartPos.keys) }
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
     private var optionDuplicated = false            // Option-drag already cloned this drag
@@ -672,7 +677,16 @@ final class CanvasInputView: NSView {
     private func reset() {
         if pannedCursorPushed { NSCursor.pop(); pannedCursorPushed = false }
         marqueeLayer.isHidden = true; marqueeLayer.path = nil
-        drawLayer.isHidden = true; drawLayer.path = nil; drawPoints = []
+        // Hide the draw preview on the NEXT runloop, not synchronously: the
+        // committed stroke renders a frame later (via the collection update), so
+        // hiding the preview immediately left a 1-frame gap that read as a blink on
+        // release. One frame of overlap is invisible. Guarded so a brand-new stroke
+        // started within that frame isn't hidden out from under itself.
+        let dl = drawLayer
+        DispatchQueue.main.async { [weak self] in
+            if self?.mode != .draw { dl.isHidden = true; dl.path = nil }
+        }
+        drawPoints = []
         coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
         mode = .idle; resizeGrip = nil; resizeNodeID = nil
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil

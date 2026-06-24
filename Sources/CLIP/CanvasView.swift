@@ -731,7 +731,7 @@ struct CanvasView: View {
                     .buttonStyle(.hover)
                     .help("Back  (Esc)")
                 }
-                .padding(.top, 18)
+                .padding(.top, 52)      // clear the window traffic lights (hidden title bar)
                 .padding(.leading, 18)
             }
         }

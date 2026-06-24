@@ -425,7 +425,11 @@ struct CollectionCanvas: NSViewRepresentable {
                 let drawingIDs = Set(p.nodes.filter {
                     if case .drawing = $0.kind { return true }; return false
                 }.map(\.id))
-                pendingAppearIDs.formUnion(freshIDs.subtracting(drawingIDs))
+                // …and EXCEPT option-drag duplicates: the copy must appear
+                // instantly under the cursor, not scale in. The drag set (after an
+                // option-duplicate, the copies) is the signal.
+                let draggingNow = inputView?.draggedNodeIDs ?? []
+                pendingAppearIDs.formUnion(freshIDs.subtracting(drawingIDs).subtracting(draggingNow))
             }
             seenNodeIDs = currentIDs
             didInitialApply = true
