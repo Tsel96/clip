@@ -1221,34 +1221,14 @@ final class CardItemView: NSView {
         }
         let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
 
-        // TEMP DIAGNOSTIC (#17 grey tint): walk the ENTIRE canvas layer tree and
-        // log every GREYISH TRANSLUCENT layer (the selection fill conforms to node
-        // shape but is NOT in this item — so it's a sibling overlay). Remove once found.
-        if selected, let id = nodeID {
-            var root: NSView = self
-            while let sv = root.superview {
-                root = sv
-                if String(describing: type(of: sv)).contains("CLIPCanvasView") { break }
-            }
-            func isGrey(_ c: CGColor) -> Bool {
-                guard c.alpha > 0.02, c.alpha < 0.9 else { return false }
-                guard let comps = c.components, comps.count >= 3 else { return true } // monochrome
-                let r = comps[0], g = comps[1], b = comps[2]
-                return abs(r - g) < 0.14 && abs(g - b) < 0.14   // greyish / near-neutral
-            }
-            var out = "=== SELECTED \(id) kind=\(String(describing: node?.kind)) root=\(type(of: root)) ===\n"
-            func walk(_ l: CALayer, _ d: Int) {
-                let pad = String(repeating: "·", count: d)
-                if let bg = l.backgroundColor, isGrey(bg) {
-                    out += "\(pad)\(type(of: l)) BG=\(String(describing: bg)) frame=\(l.frame) op=\(l.opacity) hidden=\(l.isHidden)\n"
-                }
-                if let s = l as? CAShapeLayer, let f = s.fillColor, isGrey(f) {
-                    out += "\(pad)\(type(of: l)) FILL=\(String(describing: f)) frame=\(l.frame) op=\(l.opacity) hidden=\(l.isHidden)\n"
-                }
-                for sub in l.sublayers ?? [] { walk(sub, d + 1) }
-            }
-            if let rl = root.layer { walk(rl, 0) }
-            try? out.write(toFile: "/tmp/clip_grey.txt", atomically: true, encoding: .utf8)
+        // TEMP TEST (#17 grey tint): paint the SELECTED item's own backing layer
+        // MAGENTA. If the editing/selected pill area turns magenta → the grey is
+        // this CardItemView backing showing through transparent content (fix = white
+        // backing). If it stays grey → the content (pill) is itself opaque grey.
+        if selected {
+            layer?.backgroundColor = NSColor.magenta.cgColor
+        } else {
+            layer?.backgroundColor = nil
         }
 
         CATransaction.begin(); CATransaction.setDisableActions(true)

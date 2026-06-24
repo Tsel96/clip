@@ -168,28 +168,12 @@ struct StickyRichTextEditor: NSViewRepresentable {
         // `drawsBackground = false` doesn't clear — that greyed the pill while
         // editing. Re-assert it here (layers exist once mounted), both the AppKit
         // colour and the CALayer colour.
-        // TEMP TEST (#17): while EDITING, force the whole editor stack to CYAN via
-        // EVERY background channel (AppKit drawsBackground+backgroundColor AND the
-        // CALayer). If the editing pill turns cyan → the editor IS the grey surface
-        // and backgroundColor controls it (fix = paint the pill colour). If it stays
-        // grey → the editor is NOT it.
-        if isEditing {
-            let test = NSColor.cyan
-            scroll.drawsBackground = true; scroll.backgroundColor = test
-            scroll.contentView.drawsBackground = true; scroll.contentView.backgroundColor = test
-            tv.drawsBackground = true; tv.backgroundColor = test
-            scroll.wantsLayer = true
-            scroll.layer?.backgroundColor = test.cgColor
-            scroll.contentView.layer?.backgroundColor = test.cgColor
-            tv.layer?.backgroundColor = test.cgColor
-        } else {
-            scroll.drawsBackground = false; scroll.backgroundColor = .clear
-            scroll.contentView.drawsBackground = false; scroll.contentView.backgroundColor = .clear
-            scroll.layer?.backgroundColor = NSColor.clear.cgColor
-            scroll.contentView.layer?.backgroundColor = NSColor.clear.cgColor
-            tv.drawsBackground = false; tv.backgroundColor = .clear
-            tv.layer?.backgroundColor = NSColor.clear.cgColor
-        }
+        scroll.drawsBackground = false; scroll.backgroundColor = .clear
+        scroll.contentView.drawsBackground = false; scroll.contentView.backgroundColor = .clear
+        scroll.layer?.backgroundColor = NSColor.clear.cgColor
+        scroll.contentView.layer?.backgroundColor = NSColor.clear.cgColor
+        tv.drawsBackground = false; tv.backgroundColor = .clear
+        tv.layer?.backgroundColor = NSColor.clear.cgColor
         tv.isEditable = isEditing
         tv.isSelectable = isEditing
 
