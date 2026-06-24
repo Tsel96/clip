@@ -37,14 +37,12 @@ struct TextNodeView: View {
         let inset = bd.band + bd.yellow
         ZStack {
             Capsule(style: .continuous).fill(green)                       // green band
-            // Explicit sRGB white (NOT `Color.white`): `Color.white` is an adaptive
-            // color that resolved to gray once a focused NSTextView shifted the
-            // render appearance while editing — that was the "pill greys while
-            // typing" bug. An explicit sRGB white can't drift (same as green/yellow).
-            Capsule(style: .continuous)
-                .fill(Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1))
-                .padding(inset)                                            // white pill
 
+            // The white pill is the EDITOR's `.background` (below), NOT a sibling
+            // Capsule behind it. SwiftUI was compositing a sibling shape behind the
+            // embedded AppKit editor at reduced opacity (the gray canvas showed
+            // through → "pill greys while typing"). As the editor's own backing it
+            // renders opaque.
             StickyRichTextEditor(
                 node: liveNode,
                 isEditing: isEditing,
@@ -66,6 +64,10 @@ struct TextNodeView: View {
                     state.selectedNodeIDs.remove(nodeID)
                 })
                 .padding(inset)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1))
+                )
                 .allowsHitTesting(isEditing)
                 // Empty placeholder (only at rest — text nodes are created focused).
                 .overlay {
