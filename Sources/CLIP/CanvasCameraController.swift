@@ -28,6 +28,11 @@ extension CollectionCanvas.Coordinator {
     /// glide) still apply. This is what stops the drift/zoom-anchor fight.
     func applyCameraIfChanged(_ cam: Camera) {
         guard let scroll else { return }
+        // During a live pinch the scroll view owns the camera; re-applying the
+        // model camera (which lags the gesture) fights it and makes the viewport
+        // visibly jump/drift. Skip — `pushCameraFromScroll` keeps the model in sync,
+        // and the next settled `updateNSView` reconciles any residual difference.
+        if (scroll as? CenterZoomScrollView)?.isMagnifying == true { return }
         let zoom = scroll.magnification
         let visible = scroll.documentVisibleRect
         let curX = -(visible.origin.x + config.worldBounds.minX) * zoom

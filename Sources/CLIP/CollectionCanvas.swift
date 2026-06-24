@@ -30,7 +30,20 @@ final class CenterZoomScrollView: NSScrollView {
     /// → constant on-screen) and the inline label editor track the zoom in real
     /// time (the contentView bounds notification alone lagged the pinch).
     var onZoomChange: (() -> Void)?
+    /// True for the duration of a live pinch gesture. While true the model→scroll
+    /// camera re-apply (`applyCameraIfChanged`) is skipped: during a pinch the
+    /// SCROLL is the source of truth, and re-applying the model camera (which lags
+    /// the live gesture by a few points) scrolled the canvas back toward the stale
+    /// value every tick — the "viewport jumps / moves off a bit while zooming".
+    /// We bypass `super.magnify` (for cursor-anchored zoom), so the standard
+    /// live-magnify notifications don't fire — drive the flag off the event phase.
+    private(set) var isMagnifying = false
     override func magnify(with event: NSEvent) {
+        switch event.phase {
+        case .began, .changed: isMagnifying = true
+        case .ended, .cancelled: isMagnifying = false
+        default: break
+        }
         let target = max(minMagnification,
                          min(maxMagnification, magnification * (1 + event.magnification)))
         let point = documentView?.convert(event.locationInWindow, from: nil)
