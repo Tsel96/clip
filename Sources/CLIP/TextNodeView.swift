@@ -48,6 +48,10 @@ struct TextNodeView: View {
                 alignment: .center,
                 kern: 0,
                 inset: NSSize(width: 4, height: 2),
+                // White pill painted as the editor's own opaque backing subview, so
+                // it stays white while editing (the embedded editor otherwise shows a
+                // grey window-hole). Capsule (pillCornerRadius < 0 ⇒ height/2).
+                pillFill: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1),
                 verticalCenter: true,
                 onTextChange: { state.liveResizeText(id: nodeID, content: $0) },
                 onCommit: { attr in
