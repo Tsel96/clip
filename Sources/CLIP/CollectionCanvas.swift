@@ -1221,22 +1221,33 @@ final class CardItemView: NSView {
         }
         let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
 
-        // TEMP DIAGNOSTIC (#17 grey tint): dump the SELECTED item's full layer +
-        // subview tree so we can see exactly which surface fills the bounding box
-        // grey on select. Remove once found.
+        // TEMP DIAGNOSTIC (#17 grey tint): walk the ENTIRE canvas layer tree and
+        // log every GREYISH TRANSLUCENT layer (the selection fill conforms to node
+        // shape but is NOT in this item — so it's a sibling overlay). Remove once found.
         if selected, let id = nodeID {
-            var out = "=== SELECTED \(id) kind=\(String(describing: node?.kind)) ===\n"
-            out += "CardItemView.layer bg=\(layer?.backgroundColor.map { String(describing: $0) } ?? "nil") opaque=\(layer?.isOpaque ?? false) masksToBounds=\(layer?.masksToBounds ?? false)\n"
-            for (i, l) in (layer?.sublayers ?? []).enumerated() {
-                let fc = (l as? CAShapeLayer)?.fillColor.map { String(describing: $0) } ?? "—"
-                out += "  L[\(i)] \(type(of: l)) bg=\(l.backgroundColor.map { String(describing: $0) } ?? "nil") fill=\(fc) op=\(l.opacity) hidden=\(l.isHidden)\n"
+            var root: NSView = self
+            while let sv = root.superview {
+                root = sv
+                if String(describing: type(of: sv)).contains("CLIPCanvasView") { break }
             }
-            for (i, v) in subviews.enumerated() {
-                out += "  V[\(i)] \(type(of: v)) bg=\(v.layer?.backgroundColor.map { String(describing: $0) } ?? "nil") opaque=\(v.isOpaque) alpha=\(v.alphaValue)\n"
-                for (j, l) in (v.layer?.sublayers ?? []).enumerated() {
-                    out += "      \(i).\(j) \(type(of: l)) bg=\(l.backgroundColor.map { String(describing: $0) } ?? "nil") op=\(l.opacity)\n"
+            func isGrey(_ c: CGColor) -> Bool {
+                guard c.alpha > 0.02, c.alpha < 0.9 else { return false }
+                guard let comps = c.components, comps.count >= 3 else { return true } // monochrome
+                let r = comps[0], g = comps[1], b = comps[2]
+                return abs(r - g) < 0.14 && abs(g - b) < 0.14   // greyish / near-neutral
+            }
+            var out = "=== SELECTED \(id) kind=\(String(describing: node?.kind)) root=\(type(of: root)) ===\n"
+            func walk(_ l: CALayer, _ d: Int) {
+                let pad = String(repeating: "·", count: d)
+                if let bg = l.backgroundColor, isGrey(bg) {
+                    out += "\(pad)\(type(of: l)) BG=\(String(describing: bg)) frame=\(l.frame) op=\(l.opacity) hidden=\(l.isHidden)\n"
                 }
+                if let s = l as? CAShapeLayer, let f = s.fillColor, isGrey(f) {
+                    out += "\(pad)\(type(of: l)) FILL=\(String(describing: f)) frame=\(l.frame) op=\(l.opacity) hidden=\(l.isHidden)\n"
+                }
+                for sub in l.sublayers ?? [] { walk(sub, d + 1) }
             }
+            if let rl = root.layer { walk(rl, 0) }
             try? out.write(toFile: "/tmp/clip_grey.txt", atomically: true, encoding: .utf8)
         }
 
