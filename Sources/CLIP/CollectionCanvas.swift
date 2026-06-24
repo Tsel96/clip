@@ -1225,18 +1225,24 @@ final class CardItemView: NSView {
             wasSelectedForZ = selected
             layer?.zPosition = coordinator?.zFor(id) ?? 0
         }
-        var isDrawing = false, wantsHairline = false, noLift = false
+        var isDrawing = false, wantsHairline = false
         switch node?.kind {
-        case .drawing: isDrawing = true; noLift = true
-        // Text + stickies don't lift-scale: the scale transform on the content layer
-        // (which hosts the embedded native text editor) made the editor composite as
-        // a grey hole over the white pill on select/hover. No lift = no grey.
-        case .stickyNote, .text: wantsHairline = true; noLift = true
-        case .image, .video: wantsHairline = true
+        case .drawing: isDrawing = true
+        case .image, .video, .stickyNote, .text: wantsHairline = true
         default: break
         }
-        let liftS: CGFloat = (lifted && !noLift) ? Self.liftScale : 1.0
+        let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
 
+        // Card-fill backing (text/sticky): while editing/selected the SwiftUI fill
+        // composites grey (the embedded editor punches a hole that reveals the item's
+        // OWN layer background — proven: a magenta layer.backgroundColor showed
+        // through). Paint the node's real fill on THIS layer's background — NO
+        // cornerRadius (that broke the reveal; the magenta test that worked had none).
+        switch node?.kind {
+        case .text:      layer?.backgroundColor = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1).cgColor
+        case .stickyNote: layer?.backgroundColor = Self.stickyFillNS(node?.folderColor).cgColor
+        default:          layer?.backgroundColor = nil
+        }
 
         CATransaction.begin(); CATransaction.setDisableActions(true)
 
@@ -1360,15 +1366,9 @@ final class CardItemView: NSView {
     /// only ANIMATES when the factor changes.
     private func applyLiftScale(_ lifted: Bool, kind: CanvasNode.Kind?, angle: CGFloat) {
         guard bounds.width > 1, bounds.height > 1 else { return }
-        // Text + stickies are excluded from the lift scale (like drawings): the
-        // transform on the content layer made the embedded native editor composite
-        // as a grey hole over the pill. No lift = no grey.
-        var noLift = false
-        switch kind {
-        case .drawing, .text, .stickyNote: noLift = true
-        default: break
-        }
-        let factor: CGFloat = (lifted && !noLift) ? Self.liftScale : 1.0
+        var isDrawing = false
+        if case .drawing = kind { isDrawing = true }
+        let factor: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
         let cx = bounds.width / 2, cy = bounds.height / 2
         // T = translate(c) · scale(factor) · rotate(angle) · translate(-c)
         var t = CATransform3DMakeTranslation(-cx, -cy, 0)
