@@ -79,11 +79,13 @@ struct StickyRichTextEditor: NSViewRepresentable {
         scroll.drawsBackground = false
         scroll.backgroundColor = .clear
         // CRITICAL: `NSScrollView.drawsBackground = false` does NOT stop the
-        // `NSClipView` (contentView) from painting its own background, which is a
-        // gray system color in aqua — that's what greyed the whole text/sticky
-        // card fill while editing. Make the clip view transparent so the pill /
-        // sticky colour behind always shows through.
+        // `NSClipView` (contentView) from painting its own background — a gray
+        // system color in aqua — and in a layer-backed host (NSHostingView) the
+        // backing LAYERS also carry that gray independent of `drawsBackground`.
+        // That's what greyed the whole text/sticky card fill while editing. Clear
+        // every layer: AppKit color + CALayer color, on scroll, clip view, and tv.
         scroll.contentView.drawsBackground = false
+        scroll.contentView.backgroundColor = .clear
         scroll.hasVerticalScroller = false
         scroll.hasHorizontalScroller = false
         scroll.borderType = .noBorder

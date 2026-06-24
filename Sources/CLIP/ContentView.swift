@@ -21,7 +21,11 @@ struct ContentView: View {
         // panel's drop shadow. As a sibling in an HStack with a higher zIndex, our
         // panel is the ONLY one and its real shadow spills over the canvas.
         HStack(spacing: 0) {
-            if state.showSidebar {
+            // Sidebar is hidden in the immersive "detail" modes — folder grid,
+            // stack focus, and the card lightbox — regardless of the persisted
+            // open/closed preference; it returns when you exit back to the board.
+            if state.showSidebar, state.focusedFolderID == nil,
+               state.focusedStackID == nil, state.lightboxCardID == nil {
                 PagesSidebar()
                     .frame(width: 200)
                     .frame(maxHeight: .infinity)
