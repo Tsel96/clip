@@ -136,6 +136,22 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         }
     }
 
+    /// Shared GPU context for the one-time folder-art CI renders below.
+    private static let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+
+    /// Render a CI graph to a bitmap NSImage ONCE. CRITICAL ZOOM FIX: leaving
+    /// folder art as a live `NSCIImageRep` made the image view re-run the entire
+    /// CoreImage filter chain — AND block the main thread on
+    /// `_MTLCommandBuffer waitUntilCompleted` (a GPU sync) — on EVERY magnify
+    /// tick (~36% of the main thread → ~5fps zoom ceiling). A CGImage-backed
+    /// NSImage just gets scaled, so the tint/ring is computed once at load.
+    private static func rasterizeCI(_ ci: CIImage, pointSize: CGSize, extent: CGRect) -> NSImage? {
+        let ext = (extent.isInfinite || extent.isEmpty)
+            ? CGRect(origin: .zero, size: pointSize) : extent
+        guard let cg = ciContext.createCGImage(ci, from: ext) else { return nil }
+        return NSImage(cgImage: cg, size: pointSize)
+    }
+
     /// A thin WHITE ring offset a gap OUTSIDE `image`'s silhouette: dilate the folder
     /// alpha to (gap) and to (gap+line) and keep the difference, so the outline sits
     /// a clear gap off the folder edge (an offset outline, not a hugging border).
@@ -150,9 +166,7 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         let inner = solid.applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 10 * unit]).cropped(to: ext)
         let outer = solid.applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 17.5 * unit]).cropped(to: ext)
         let ring = outer.applyingFilter("CISourceOutCompositing", parameters: [kCIInputBackgroundImageKey: inner]).cropped(to: ext)
-        let result = NSImage(size: image.size)
-        result.addRepresentation(NSCIImageRep(ciImage: ring))
-        return result
+        return rasterizeCI(ring, pointSize: image.size, extent: ext)
     }
 
     /// Parse `#RRGGBB` (sRGB).
@@ -179,9 +193,7 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
             .applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: folder])
         // Multiply colour × shading → a clearly-coloured folder that keeps its depth.
         let out = colorClipped.applyingFilter("CIMultiplyBlendMode", parameters: [kCIInputBackgroundImageKey: mono])
-        let result = NSImage(size: image.size)
-        result.addRepresentation(NSCIImageRep(ciImage: out))
-        return result
+        return rasterizeCI(out, pointSize: image.size, extent: folder.extent) ?? image
     }
 
     override init(frame frameRect: NSRect) {
