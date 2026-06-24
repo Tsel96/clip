@@ -117,42 +117,62 @@ struct MinimapView: View {
     /// Re-renders the Canvas as image thumbnails finish decoding.
     @ObservedObject private var thumbs = MinimapThumbs.shared
 
+    /// Cached bitmap of the minimap drawing. The hosting view rebuilds its
+    /// SwiftUI display list on EVERY display frame while a video plays (the
+    /// window's display cycle drives `NSHostingView.layout`), and a live `Canvas`
+    /// re-runs its `draw` each rebuild — measured at ~50% of the main thread,
+    /// which is what starved the zoom/pan display-link (→ ~1 fps) and ran the
+    /// machine hot. So we render the drawing to a bitmap once per *content*
+    /// change and just blit it each frame.
+    @State private var cachedImage: NSImage? = nil
+    @State private var cachedToken: Int = 0
+
     var body: some View {
         GeometryReader { geo in
-            // The Canvas redraws every node (image/video thumbnails included) —
-            // it was ~50% of the main thread because it ran on EVERY display
-            // frame: a playing video keeps the window's display cycle (and this
-            // hosting view's layout) ticking continuously, and the Canvas
-            // re-rasterized all thumbnails each tick. That per-frame work is what
-            // starved the zoom/pan display-link (→ ~1fps) and ran the machine hot.
-            // Gate it: `Redrawn` is an Equatable wrapper keyed by everything the
-            // drawing depends on (node geometry/kind/selection, thumbnail version,
-            // host size, and — only when the camera is settled — the viewport
-            // rect). With an unchanged key SwiftUI reuses the last render and
-            // never re-runs `draw`, so an idle/auto-playing board costs nothing
-            // and a live pan/zoom doesn't thrash the minimap (the box snaps to
-            // place the instant the gesture ends).
-            Redrawn(key: redrawKey(geo.size)) {
-                Canvas { context, _ in
-                    draw(in: context, canvasSize: geo.size)
+            let token = redrawKey(geo.size)
+            ZStack {
+                if let img = cachedImage {
+                    Image(nsImage: img).resizable().interpolation(.medium)
                 }
             }
-            .equatable()
+            .frame(width: geo.size.width, height: geo.size.height)
+            .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in navigate(to: value.location, canvasSize: geo.size) }
             )
+            // Regenerate the bitmap only when the content signature changes —
+            // node edits, thumbnails landing, host resize, or (on camera settle)
+            // the viewport box. `.task(id:)` re-fires exactly on those changes.
+            .task(id: token) { renderMinimap(size: geo.size, token: token) }
         }
         .help("Click to jump  ·  Drag to pan")
     }
 
-    /// Cheap content signature for `Redrawn` — changes exactly when the minimap's
-    /// drawing would change, so the expensive Canvas only re-runs then. Hashes
-    /// only cheap fields (never image `Data` / stroke points): per-node id,
-    /// frame, selection, and a kind+colour token; plus the thumbnail version and
-    /// host size. The live viewport rect is included ONLY when the camera is
-    /// settled — during a pan/zoom it's omitted so the minimap freezes instead of
-    /// re-rasterizing every frame (it refreshes the instant the gesture ends).
+    /// Render the node drawing to a bitmap, once per content change (NOT per
+    /// frame). Skips redundant work when the token is unchanged.
+    @MainActor private func renderMinimap(size: CGSize, token: Int) {
+        guard size.width > 1, size.height > 1 else { return }
+        if cachedImage != nil, token == cachedToken { return }
+        let drawSize = size
+        let renderer = ImageRenderer(
+            content: Canvas { ctx, _ in draw(in: ctx, canvasSize: drawSize) }
+                .frame(width: drawSize.width, height: drawSize.height)
+        )
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        if let img = renderer.nsImage {
+            cachedImage = img
+            cachedToken = token
+        }
+    }
+
+    /// Cheap content signature — changes exactly when the minimap's drawing would
+    /// change, so the bitmap is only re-rendered then. Hashes only cheap fields
+    /// (never image `Data` / stroke points): per-node id, frame, selection, and a
+    /// kind+colour token; plus the thumbnail version and host size. The live
+    /// viewport rect is included ONLY when the camera is settled — during a
+    /// pan/zoom it's omitted so the minimap freezes instead of re-rendering every
+    /// frame (it refreshes the instant the gesture ends).
     private func redrawKey(_ canvasSize: CGSize) -> Int {
         var h = Hasher()
         for n in state.nodes {
@@ -416,15 +436,3 @@ private func minimapKindToken(_ kind: CanvasNode.Kind, into h: inout Hasher) {
     }
 }
 
-/// Equatable gate: re-renders `content` only when `key` changes. Lets an
-/// expensive child (the minimap Canvas) skip the per-display-frame re-render its
-/// layer-backed host would otherwise force while a video plays. `content` is
-/// rebuilt each time the parent evaluates (cheap — just a Canvas value), but
-/// with an unchanged key SwiftUI reuses the prior render and never invokes its
-/// draw closure.
-private struct Redrawn<Content: View>: View, Equatable {
-    let key: Int
-    @ViewBuilder var content: Content
-    static func == (l: Redrawn, r: Redrawn) -> Bool { l.key == r.key }
-    var body: some View { content }
-}
