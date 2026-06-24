@@ -106,7 +106,15 @@ extension CanvasState {
         //      invisible, so there's nothing to "blink".
         let nodeRect = CGRect(x: node.position.x, y: node.position.y,
                               width: node.width, height: renderedHeight(of: node))
-        guard visibleWorldRect.intersects(nodeRect) else { return false }
+        // Expand the live region by a HALF-VIEWPORT margin on every side, so a
+        // card is already playing BEFORE it pans into view — it scrolls in warm,
+        // no blink. (Liveness is also frozen during a live pan/zoom — see
+        // `cameraMoving` — so nothing flips mid-gesture; the margin covers the
+        // settle.) The size gate below still rests cards that are too small when
+        // zoomed out, even inside this margin.
+        let liveRect = visibleWorldRect.insetBy(dx: -visibleWorldRect.width * 0.2,
+                                                dy: -visibleWorldRect.height * 0.2)
+        guard liveRect.intersects(nodeRect) else { return false }
         //  (b) A card too small on screen (zoomed out) rests as a poster — BUT
         //      we must NOT flip a *visible* card across the breakpoint mid-zoom
         //      (that live↔poster swap, and the WKWebView/player remount it
