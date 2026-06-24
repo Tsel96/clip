@@ -1112,13 +1112,6 @@ final class CardItemView: NSView {
     /// rides this layer's `opacity` (composite-time → no re-raster); only a
     /// lift/resize changes the baked `shadowPath`/radius and re-bakes.
     private let shadowLayer = CALayer()
-    /// Opaque card-fill backing for text/sticky nodes. The native rich-text editor
-    /// (StickyRichTextEditor), while first responder, composites as a transparent
-    /// HOLE — it occludes the SwiftUI fill and reveals whatever is behind the item
-    /// (the grey canvas). This AppKit layer paints the node's real fill colour
-    /// behind the content (immune to that), so the pill/sticky stays its colour
-    /// while editing. Clipped to the node shape so corners stay transparent.
-    private let fillBackingLayer = CALayer()
     /// Tracks the select→deselect edge so we only bump the persistent z ONCE per
     /// selection (not on every chrome refresh).
     private var wasSelectedForZ = false
@@ -1161,15 +1154,6 @@ final class CardItemView: NSView {
         shadowLayer.opacity = 0
         layer?.addSublayer(shadowLayer)
         layer?.shadowOpacity = 0
-
-        // Card-fill backing — behind the content (zPosition just above the shadow),
-        // clipped to its own rounded shape so corners stay transparent. Painted +
-        // shaped per node kind in `updateChrome`; hidden for non-text/sticky.
-        fillBackingLayer.zPosition = -0.5
-        fillBackingLayer.masksToBounds = true
-        fillBackingLayer.cornerCurve = .continuous
-        fillBackingLayer.isHidden = true
-        layer?.addSublayer(fillBackingLayer)
 
         // Section outline — a crisp neutral border so empty section frames read
         // clearly at any zoom (the SwiftUI 1pt border vanished when zoomed out).
@@ -1249,24 +1233,27 @@ final class CardItemView: NSView {
         }
         let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
 
-        // Card-fill backing for text/sticky (see `fillBackingLayer` doc): paint the
-        // node's real fill behind the content + clip to its shape, so the native
-        // editor's transparent "hole" reveals the pill/sticky colour, not the grey
-        // canvas, while editing. Lift-scaled WITH the content (added to `all` below).
+        // Card-fill backing for text/sticky: the native rich-text editor, while
+        // first responder, composites as a transparent HOLE that occludes the
+        // SwiftUI fill and reveals the item's OWN layer background (proven: a magenta
+        // layer.backgroundColor showed through; a sublayer did NOT — subview layers
+        // composite above manual sublayers). So paint the node's real fill on THIS
+        // layer's background. cornerRadius (WITHOUT masksToBounds) rounds the fill to
+        // the card shape so corners stay transparent — and leaves the selection ring
+        // (a sublayer, drawn outside bounds) unclipped.
         if valid {
             switch node?.kind {
             case .text:
-                fillBackingLayer.frame = bounds
-                fillBackingLayer.cornerRadius = bounds.height / 2          // capsule
-                fillBackingLayer.backgroundColor = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1).cgColor
-                fillBackingLayer.isHidden = false
+                layer?.backgroundColor = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1).cgColor
+                layer?.cornerRadius = bounds.height / 2          // capsule
+                layer?.cornerCurve = .continuous
             case .stickyNote:
-                fillBackingLayer.frame = bounds
-                fillBackingLayer.cornerRadius = StickyNodeView.cornerRadius
-                fillBackingLayer.backgroundColor = Self.stickyFillNS(node?.folderColor).cgColor
-                fillBackingLayer.isHidden = false
+                layer?.backgroundColor = Self.stickyFillNS(node?.folderColor).cgColor
+                layer?.cornerRadius = StickyNodeView.cornerRadius
+                layer?.cornerCurve = .continuous
             default:
-                fillBackingLayer.isHidden = true
+                layer?.backgroundColor = nil
+                layer?.cornerRadius = 0
             }
         }
 
@@ -1408,7 +1395,7 @@ final class CardItemView: NSView {
         lastLiftFactor = factor
         lastAngle = angle
         let contentLayers = subviews.compactMap { $0.layer }
-        let all = contentLayers + [fillBackingLayer, outlineLayer, innerHairlineLayer,
+        let all = contentLayers + [outlineLayer, innerHairlineLayer,
                                    sectionLayer, rotateHandleLayer]
         for layer in all {
             if animateLift {
