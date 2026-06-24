@@ -540,7 +540,9 @@ struct CanvasView: View {
                         }
                         .onChange(of: worldBounds) { _ in syncOverlayCamera() }
                         .opacity(cardsOpacity)
-                        .blur(radius: cardsBlur)
+                        // DIAGNOSTIC: blur removed to test if the always-on
+                        // .blur(radius:0) offscreen pass is the GPU zoom cost.
+                        // .blur(radius: cardsBlur)
                         // Interactive in every tool mode — CanvasInputView + the
                         // tool islands resolve per-mode behaviour (select / hand /
                         // draw / connect / text / sticker). Colorform is read-only for
