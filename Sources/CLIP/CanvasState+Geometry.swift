@@ -57,21 +57,14 @@ extension CanvasState {
     /// cheap so a boardful of social/video cards still magnifies smoothly.
     static let livePlaybackMinScreenSide: CGFloat = 120
 
-    /// Hard cap on how many media cards may decode/play at once. Even when many
-    /// pass the viewport + size gates (the measured root cause: a board of 34
-    /// tweet videos at a fit-to-screen zoom had ~25 AVPlayers decoding → ~62% CPU
-    /// at idle → machine hot + no headroom for a smooth zoom), only the N
-    /// most-centred ones stay live; the rest rest as posters. Bounds simultaneous
-    /// decoders to a constant regardless of how dense the board is. No browser
-    /// plays 25 videos at once — neither should the canvas.
-    static let maxConcurrentLiveMedia = 6
-
-    /// IDs of the media nodes currently allowed to decode/play — the
-    /// `maxConcurrentLiveMedia` cards that pass the viewport + size gates and are
-    /// closest to the viewport centre. Memoised and keyed off `mediaGateEpoch`
-    /// (which bumps only on camera SETTLE), so the set is frozen during a live
-    /// pan/zoom — nothing flips live↔poster mid-gesture (no "videos blink while
-    /// zooming"); it re-caps once the camera stops.
+    /// IDs of the media nodes currently allowed to decode/play: EVERY media card
+    /// that intersects the (margin-expanded) viewport AND projects at/above the
+    /// size breakpoint. No concurrency cap — per the product call, any video even
+    /// partly on screen plays; only off-screen and zoomed-out-small cards rest.
+    /// Memoised and keyed off `mediaGateEpoch` (which bumps only on camera
+    /// SETTLE), so the set is frozen during a live pan/zoom — nothing flips
+    /// live↔poster mid-gesture (no churn / no "videos stopped"); it re-evaluates
+    /// once the camera stops.
     var liveMediaIDs: Set<UUID> {
         let key = (mediaGateEpoch, activePageIndex, nodes.count)
         if liveMediaCacheKey == key { return liveMediaCacheIDs }
@@ -81,14 +74,13 @@ extension CanvasState {
         return ids
     }
 
-    /// The top-N most-centred media nodes that intersect the (margin-expanded)
-    /// viewport and project at/above the size breakpoint. Cheap (≤ media-node
-    /// count, which is tiny) — called only on a cache miss.
+    /// All media nodes that intersect the (margin-expanded) viewport and project
+    /// at/above the size breakpoint. Cheap (≤ media-node count) — called only on
+    /// a cache miss.
     private func computeLiveMediaIDs() -> Set<UUID> {
         let vis = visibleWorldRect
         let liveRect = vis.insetBy(dx: -vis.width * 0.2, dy: -vis.height * 0.2)
-        let cx = vis.midX, cy = vis.midY
-        var scored: [(id: UUID, d2: CGFloat)] = []
+        var ids = Set<UUID>()
         for node in nodes {
             switch node.kind {
             case .video, .tweet, .instagram, .youtube, .webclip: break
@@ -98,12 +90,9 @@ extension CanvasState {
             let r = CGRect(x: node.position.x, y: node.position.y, width: node.width, height: h)
             guard liveRect.intersects(r) else { continue }
             guard projectedScreenSide(of: node) >= Self.livePlaybackMinScreenSide else { continue }
-            let dx = r.midX - cx, dy = r.midY - cy
-            scored.append((node.id, dx * dx + dy * dy))
+            ids.insert(node.id)
         }
-        guard scored.count > Self.maxConcurrentLiveMedia else { return Set(scored.map(\.id)) }
-        return Set(scored.sorted { $0.d2 < $1.d2 }
-            .prefix(Self.maxConcurrentLiveMedia).map(\.id))
+        return ids
     }
 
     /// Below this projected on-screen size (pt), a card drops to its
