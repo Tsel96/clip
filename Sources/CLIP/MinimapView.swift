@@ -194,7 +194,14 @@ struct MinimapView: View {
                 // Lens mode: image/video cards draw their real thumbnail,
                 // aspect-filled and clipped to the rounded card — the
                 // reference's "photos under glass" look.
-                if !showsViewport, !coversMap, let thumb = thumbs.thumbnail(for: node) {
+                // While a pan/zoom is live, DON'T rasterize per-node thumbnails
+                // (GraphicsContext.draw(Image) → NSImage CGImageForProposedRect):
+                // the minimap redraws on every camera tick, and ~34 image
+                // rasterizations/frame dropped zoom to 3-5fps. Draw the cheap
+                // colored rects during the gesture; thumbnails return on settle
+                // (mediaGateEpoch bump re-renders the minimap).
+                if !showsViewport, !coversMap, !state.cameraMoving,
+                   let thumb = thumbs.thumbnail(for: node) {
                     let cr = min(8, w * 0.22, h * 0.22)
                     let cardPath = Path(roundedRect: rect, cornerSize: CGSize(width: cr, height: cr))
                     // White base takes the soft shadow from the layer filter.
