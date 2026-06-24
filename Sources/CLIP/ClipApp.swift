@@ -56,6 +56,9 @@ struct ClipApp: App {
                 .environmentObject(state.smartSelection)
                 .frame(minWidth: 800, minHeight: 600)
                 .preferredColorScheme(.light)   // force light mode (dark theme not ready)
+                // Figma-style "Restart & Install / Install Later" prompt when a
+                // verified update has been staged (inert in dev builds).
+                .overlay { UpdateModalHost() }
                 .onAppear {
                     NSApp.activate(ignoringOtherApps: true)
                     // Belt-and-suspenders: pin every window to the light appearance

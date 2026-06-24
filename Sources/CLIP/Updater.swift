@@ -17,8 +17,26 @@ import os
 /// any network / verification / permission failure aborts silently and the
 /// running app is left exactly as-is.
 @MainActor
-final class UpdateChecker {
+final class UpdateChecker: ObservableObject {
     static let shared = UpdateChecker()
+
+    /// A verified update that has been downloaded + unzipped and is ready to
+    /// install. Non-nil drives the in-app update modal (`UpdateModalHost`).
+    struct AvailableUpdate: Equatable {
+        let version: String
+        let build: Int
+        /// The unzipped `CLIP.app` staged in a temp dir, ready to swap in.
+        let preparedApp: URL
+    }
+
+    /// Set when a newer build has been staged. The UI presents a Figma-style
+    /// modal ("Restart & Install" / "Install Later") rather than the app
+    /// swapping itself out from under the user. `@Published` so SwiftUI reacts.
+    @Published var available: AvailableUpdate?
+
+    /// The build we've already staged this session, so repeated polls (and a
+    /// dismissed "Install Later") don't re-download or re-nag. Reset on relaunch.
+    private var stagedBuild = 0
 
     /// How often to poll while running (10 min — matches the kiosk cadence).
     private let interval: TimeInterval = 600
@@ -78,6 +96,9 @@ final class UpdateChecker {
         let m = try JSONDecoder().decode(Manifest.self, from: data)
 
         guard m.build > currentBuild, let zipURL = URL(string: m.url) else { return }
+        // Already staged this build this session (incl. after "Install Later") →
+        // don't re-download or re-nag. A relaunch resets `stagedBuild` to 0.
+        guard stagedBuild != m.build else { return }
 
         // Download the update archive. Read + hash off the main actor —
         // the zip is tens of MB and this class is @MainActor.
@@ -107,7 +128,25 @@ final class UpdateChecker {
         // a Gatekeeper block.
         try? runTool("/usr/bin/xattr", ["-dr", "com.apple.quarantine", newApp.path])
 
-        try swapAndRelaunch(newApp: newApp)
+        // Stage it and surface the modal — do NOT swap silently. The user picks
+        // "Restart & Install" or "Install Later" (`UpdateModalHost`).
+        stagedBuild = m.build
+        available = AvailableUpdate(version: m.version, build: m.build, preparedApp: newApp)
+    }
+
+    // MARK: - Modal actions (driven by UpdateModalHost)
+
+    /// Swap in the staged bundle and relaunch. Wired to "Restart & Install".
+    func installNow() {
+        guard let app = available?.preparedApp else { return }
+        do { try swapAndRelaunch(newApp: app) }
+        catch { Log.updater.error("Update install failed: \(String(describing: error), privacy: .public)") }
+    }
+
+    /// Dismiss the modal but keep the staged build (so it isn't re-downloaded).
+    /// It is re-offered on the next launch. Wired to "Install Later".
+    func installLater() {
+        available = nil
     }
 
     /// Hand off to a detached shell that waits for us to quit, replaces the
