@@ -42,10 +42,6 @@ struct StickyNodeView: View {
                     node: liveNode,
                     isEditing: isEditing,
                     textColor: Self.textNSColor,
-                    // Opaque sticky fill painted as the editor's own backing subview
-                    // (the embedded editor shows a grey window-hole otherwise).
-                    pillFill: CardItemView.stickyFillNS(liveNode.folderColor),
-                    pillCornerRadius: Self.cornerRadius,
                     onCommit: { attr in state.setStickyAttributed(id: node.id, attr) },
                     onEndEditing: {
                         if state.editingTextNodeID == node.id { state.editingTextNodeID = nil }
