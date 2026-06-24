@@ -328,9 +328,10 @@ final class CardDrawingContentView: NSView {
         // `draw(_:)`. The render server re-rasterizes the path at the current
         // magnification, so the marker stays CRISP at any zoom (detailed view) —
         // a cached bitmap blurs when scaled. It's also GPU work, not a per-tick
-        // main-thread re-stroke. `isGeometryFlipped` matches the stroke's top-left
-        // point coords to this flipped view.
-        shape.isGeometryFlipped = true
+        // main-thread re-stroke. NOTE: no `isGeometryFlipped` — AppKit already
+        // flips this layer-backed FLIPPED view's backing layer, so the stroke's
+        // top-left point coords render upright (matching the live preview layer,
+        // which is set up the same way). Setting it added a second, mirroring flip.
         shape.fillColor = NSColor.clear.cgColor
         shape.strokeColor = NSColor(srgbRed: stroke.color.red, green: stroke.color.green,
                                     blue: stroke.color.blue, alpha: stroke.opacity).cgColor

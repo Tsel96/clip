@@ -691,9 +691,11 @@ final class CanvasInputView: NSView {
     private func updateDrawPreview(_ p: CanvasConfig) {
         guard drawPoints.count >= 2 else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        // Same smoothing the committed stroke uses (DrawingNodeView) so the live
-        // preview matches the final result exactly.
-        drawLayer.path = smoothCGPath(through: drawPoints)
+        // Match the COMMITTED stroke exactly: commit runs `PathMath.simplify`
+        // (epsilon 1.5) before smoothing, so the preview must too — otherwise the
+        // curve visibly changes shape the moment you release (commit simplifies,
+        // preview didn't).
+        drawLayer.path = smoothCGPath(through: PathMath.simplify(drawPoints, epsilon: 1.5))
         drawLayer.strokeColor = p.drawColor().cgColor
         drawLayer.lineWidth = p.drawWidth()   // content units → scales with zoom
         drawLayer.isHidden = false

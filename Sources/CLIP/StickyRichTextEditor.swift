@@ -145,6 +145,16 @@ struct StickyRichTextEditor: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let tv = context.coordinator.textView else { return }
         context.coordinator.parent = self
+        // Keep the whole editor stack transparent. In a layer-backed host the
+        // scroll/clip/text BACKING LAYERS can carry a gray system background that
+        // `drawsBackground = false` doesn't clear — that greyed the pill while
+        // editing. Re-assert it here (layers exist once mounted), both the AppKit
+        // colour and the CALayer colour.
+        scroll.drawsBackground = false; scroll.backgroundColor = .clear
+        scroll.contentView.drawsBackground = false; scroll.contentView.backgroundColor = .clear
+        scroll.layer?.backgroundColor = NSColor.clear.cgColor
+        scroll.contentView.layer?.backgroundColor = NSColor.clear.cgColor
+        tv.layer?.backgroundColor = NSColor.clear.cgColor
         tv.isEditable = isEditing
         tv.isSelectable = isEditing
 
