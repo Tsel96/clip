@@ -742,10 +742,15 @@ struct CanvasView: View {
         // frame can extend past the window. Hidden while the floating-
         // window minimap is being shown.
         .overlay(alignment: .bottomTrailing) {
-            if state.canvasMode != .archive, !state.isMinimapDetached, state.focusedFolderID == nil {
+            // TEMP TEST: Liquid Glass minimap disabled — is macOS-27 .glassEffect the zoom cost?
+            if false, state.canvasMode != .archive, !state.isMinimapDetached, state.focusedFolderID == nil {
                 LiquidGlassMinimap()
                     .ignoresSafeArea()
             }
+        }
+        // TEMP: FPS meter for the glass test.
+        .overlay(alignment: .topLeading) {
+            FPSHud().padding(.top, 44).padding(.leading, 12)
         }
         // Bottom-RIGHT: zoom −/NN%/+ pill (Figma 51:12692).
         .overlay(alignment: .bottomTrailing) {
