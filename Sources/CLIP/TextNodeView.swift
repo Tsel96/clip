@@ -37,7 +37,10 @@ struct TextNodeView: View {
         let inset = bd.band + bd.yellow
         ZStack {
             Capsule(style: .continuous).fill(green)                       // green band
-            Capsule(style: .continuous).fill(Color.white).padding(inset)  // white pill
+            // TEMP DIAGNOSTIC (#17): red while editing to localize the grey — if the
+            // pill turns red when you edit, the pill is the surface; if it stays
+            // grey, the grey is a separate layer over it.
+            Capsule(style: .continuous).fill(isEditing ? Color.red : Color.white).padding(inset)  // white pill
 
             StickyRichTextEditor(
                 node: liveNode,

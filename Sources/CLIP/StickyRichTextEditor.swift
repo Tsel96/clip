@@ -158,6 +158,22 @@ struct StickyRichTextEditor: NSViewRepresentable {
         tv.isEditable = isEditing
         tv.isSelectable = isEditing
 
+        // TEMP DIAGNOSTIC (#17): the pill greys while editing despite the editor
+        // being transparent. Dump the editing view's superview chain + each view's
+        // layer background so we can see exactly which view is gray. Remove once found.
+        if isEditing {
+            DispatchQueue.main.async {
+                var out = "=== EDITING node NSView chain (innermost → window) ===\n"
+                var v: NSView? = tv
+                while let cur = v {
+                    let lbg = cur.layer?.backgroundColor.map { String(describing: $0) } ?? "nil"
+                    out += "• \(type(of: cur)) opaque=\(cur.isOpaque) wantsLayer=\(cur.wantsLayer) layerBg=\(lbg) frame=\(NSStringFromRect(cur.frame))\n"
+                    v = cur.superview
+                }
+                try? out.write(toFile: "/tmp/clip_grey.txt", atomically: true, encoding: .utf8)
+            }
+        }
+
         // Re-load from the model only when NOT editing and the plain text drifted
         // (undo / paste / external change) — never clobber a live edit session.
         if !isEditing, !context.coordinator.isCommitting, tv.string != node.plainText {
