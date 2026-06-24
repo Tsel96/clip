@@ -105,22 +105,24 @@ struct TweetCardView: View {
         if tweetID == nil {
             placeholder(symbol: "link.badge.plus", text: "Invalid Twitter / X URL")
         } else if let tweet, let videoURL = tweet.bestVideoURL {
-            if isLive {
-                TweetVideoPlayer(
-                    url: videoURL,
-                    nodeID: nodeID,
-                    isMuted: $isMuted,
-                    isPlaying: .constant(effectivePlaying),
-                    cornerRadius: 1,
-                    timeRange: trimRange
-                )
-            } else {
-                // Below the live breakpoint: tear the AVPlayer down
-                // entirely (the SwiftUI tree diff calls dismantleNSView)
-                // and render a tiny placeholder. If we have the tweet's
-                // poster URL we use it as a static thumbnail — it's a
-                // cheap CALayer image, no decoder threads.
+            ZStack {
+                // PERSISTENT poster behind the player. When the AVPlayer is torn
+                // down (rested for perf / zoomed out), this identical decoded
+                // frame is ALREADY on screen — so the stop is seamless: no black
+                // flash, no reload blink. It also backs the player while it loads
+                // its first frame (the AVPlayerLayer is clear), and stays warm
+                // while the player is live so it's instant the moment it's needed.
                 videoPlaceholder(posterURL: tweet.posterURL)
+                if isLive {
+                    TweetVideoPlayer(
+                        url: videoURL,
+                        nodeID: nodeID,
+                        isMuted: $isMuted,
+                        isPlaying: .constant(effectivePlaying),
+                        cornerRadius: 1,
+                        timeRange: trimRange
+                    )
+                }
             }
         } else if let tweet, tweet.hasPhoto, let posterURL = tweet.posterURL {
             AsyncImage(url: posterURL) { phase in

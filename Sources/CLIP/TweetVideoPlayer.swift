@@ -132,7 +132,13 @@ final class PlayerHostView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layerContentsRedrawPolicy = .duringViewResize
+        // NEVER re-rasterize the backing layer on bounds/scale change. The video
+        // lives in the `playerLayer` SUBLAYER (kept sized by `syncPlayerFrame`),
+        // so the backing layer has nothing to draw — and `.duringViewResize` (the
+        // layer-backed default) made AppKit clear+redraw it every time the card's
+        // bounds/scale changed, which flashed as the "video blinks when zoom
+        // starts/stops". `.never` lets the layer just scale on the GPU.
+        layerContentsRedrawPolicy = .never
         playerLayer.videoGravity = .resizeAspectFill
         // Clear (not black): during a zoom SwiftUI rasterizes the card and the
         // AVPlayerLayer's video frame isn't captured by that snapshot — a black

@@ -323,6 +323,11 @@ final class CardDrawingContentView: NSView {
         self.stroke = stroke
         super.init(frame: .zero)
         wantsLayer = true
+        // The stroke is immutable, so draw it ONCE and let the layer scale on the
+        // GPU during zoom. The layer-backed default (`.duringViewResize`) re-ran
+        // the full quadratic-Bézier `smoothCGPath` stroke on every magnify tick —
+        // ×10 drawings on this page — on the main thread.
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
