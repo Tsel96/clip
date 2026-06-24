@@ -97,27 +97,11 @@ final class MinimapThumbs: ObservableObject {
 ///   • Renders every node as a small rectangle (selected = accent).
 ///   • Renders the current viewport as a dashed accent rectangle.
 ///   • Click / drag to move the camera to that location.
-struct MinimapView: View, Equatable {
-    // Memoized via `.equatable()` at the mount site: the parent (CanvasView)
-    // re-renders on every magnify tick, which re-evaluated this expensive Canvas
-    // (rasterizing every node thumbnail) ~120×/s and dropped zoom to 3-5 fps.
-    // The map's stored inputs never change during a zoom, so `==` returns true
-    // and SwiftUI skips the body on parent re-renders; it still re-renders when
-    // an observed object (`state` — incl. the throttled `minimapCamera` — or
-    // `thumbs`) actually changes.
-    static func == (l: MinimapView, r: MinimapView) -> Bool {
-        l.inset == r.inset && l.showsViewport == r.showsViewport
-    }
-
+struct MinimapView: View {
     @EnvironmentObject var state: CanvasState
-    // NOTE: deliberately NOT observing the live `cameraStore` here. The lens map
-    // is camera-INDEPENDENT (it fits all nodes), so it never needs to redraw on
-    // pan/zoom. Observing the live camera redrew the whole map — rasterizing
-    // every node thumbnail — on every magnify tick. Combined with `.equatable()`
-    // at the mount, this view now re-renders only when `state`/`thumbs` actually
-    // change (selection, node edits, thumbnails landing) — never during a gesture.
-    // (The detached panel's viewport box, `showsViewport == true`, updates on the
-    // next such change rather than live — acceptable for that rare window.)
+    /// Observed so the viewport box re-renders on pan/zoom — `visibleWorldRect`
+    /// derives from the camera.
+    @EnvironmentObject var cameraStore: CameraStore
 
     /// Padding between the projected content and the view edge. The default
     /// suits a rectangular host; circular hosts (the glass lens) pass a
@@ -210,14 +194,7 @@ struct MinimapView: View, Equatable {
                 // Lens mode: image/video cards draw their real thumbnail,
                 // aspect-filled and clipped to the rounded card — the
                 // reference's "photos under glass" look.
-                // While a pan/zoom is live, DON'T rasterize per-node thumbnails
-                // (GraphicsContext.draw(Image) → NSImage CGImageForProposedRect):
-                // the minimap redraws on every camera tick, and ~34 image
-                // rasterizations/frame dropped zoom to 3-5fps. Draw the cheap
-                // colored rects during the gesture; thumbnails return on settle
-                // (mediaGateEpoch bump re-renders the minimap).
-                if !showsViewport, !coversMap, !state.cameraMoving,
-                   let thumb = thumbs.thumbnail(for: node) {
+                if !showsViewport, !coversMap, let thumb = thumbs.thumbnail(for: node) {
                     let cr = min(8, w * 0.22, h * 0.22)
                     let cardPath = Path(roundedRect: rect, cornerSize: CGSize(width: cr, height: cr))
                     // White base takes the soft shadow from the layer filter.

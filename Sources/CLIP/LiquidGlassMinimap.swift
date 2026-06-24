@@ -54,8 +54,6 @@ struct LiquidGlassMinimap: View {
     /// region (worst corner ≈ 0.474·D from center, radius 0.5·D).
     private var minimapContent: some View {
         MinimapView(inset: 6, showsViewport: false)
-            .equatable()   // skip the expensive map redraw on the parent's per-zoom-tick
-                           // re-renders (the .scaleEffect below still updates cheaply)
             .frame(width: diameter * 0.62, height: diameter * 0.54)
             // The map breathes with the canvas: zooming in scales the
             // cards up (bounded, so they stay under the glass — the
