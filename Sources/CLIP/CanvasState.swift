@@ -184,6 +184,8 @@ final class CanvasState: ObservableObject {
             self.pendingRestoredMode = mode
         }
         setupAutoSave()
+        setupCameraSave()
+        setupPeriodicFlush()
         setupPrefsAutoSave()
         setupZoomWatch()
         setupTerminationFlush()
@@ -282,19 +284,53 @@ final class CanvasState: ObservableObject {
     // MARK: - Auto-persistence
 
     private var autoSaveCancellable: AnyCancellable?
+    private var cameraSaveCancellable: AnyCancellable?
+    private var periodicFlushTimer: Timer?
 
-    /// Combine pipeline: any mutation to `pages`, `activePageID`, or the
-    /// live `camera` schedules a debounced (~0.5 s) atomic write to
-    /// `~/Library/Application Support`. Silent, no Save dialog — the
-    /// canvas is restored on the next launch.
+    /// Combine pipeline: any mutation to `pages` or `activePageID` schedules a
+    /// debounced (~0.5 s) atomic write to `~/Library/Application Support`.
+    /// Silent, no Save dialog — the canvas is restored on the next launch.
+    ///
+    /// The live `camera` is deliberately NOT a trigger here (it was, via a
+    /// `CombineLatest3`): camera changes on EVERY pan/zoom tick, which reset the
+    /// 0.5 s debounce so it never settled mid-interaction, then fired one big
+    /// full-document encode on rest. Camera is still captured into the active
+    /// page by `snapshotForDisk`; it's now persisted on its own gentle throttle
+    /// (`setupCameraSave`) plus the periodic flush.
     private func setupAutoSave() {
         autoSaveCancellable = Publishers
-            .CombineLatest3($pages, $activePageID, cameraStore.$camera)
+            .CombineLatest($pages, $activePageID)
             .dropFirst()                              // skip the initial value
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 Task { @MainActor in self?.saveToDisk() }
             }
+    }
+
+    /// Persist camera (pan/zoom) on a gentle throttle, decoupled from the edit
+    /// debounce so a continuous pan/zoom can't starve node saves. Captures the
+    /// LATEST camera at most once per interval.
+    private func setupCameraSave() {
+        cameraSaveCancellable = cameraStore.$camera
+            .dropFirst()
+            .throttle(for: .seconds(2), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.saveToDisk() }
+            }
+    }
+
+    /// Crash-safety net: a clean ⌘Q is caught by `setupTerminationFlush`, but a
+    /// CRASH skips it (and the `.corrupt`/`.empty-backup` files on disk show this
+    /// has cost real data). Write the snapshot every ~15 s (background, via
+    /// `saveAsync` — never blocks the main thread) so a crash loses at most ~15 s.
+    private func setupPeriodicFlush() {
+        periodicFlushTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.saveToDisk() }
+        }
+    }
+
+    deinit {
+        periodicFlushTimer?.invalidate()
     }
 
     /// Watch the camera store; bump `zoomEpoch` only when the *zoom*

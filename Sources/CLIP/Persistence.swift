@@ -109,6 +109,15 @@ enum CanvasStore {
     /// directory if it doesn't exist yet. Auto-save goes through
     /// `saveAsync`; the at-quit flush through `saveSync`.
     static func save(_ snapshot: CanvasSnapshot) throws {
+        // The model invariant is ≥1 page; a zero-page snapshot is corruption,
+        // never a real document. Refuse to write it so a transient bad state
+        // can't clobber the user's canvas (the on-disk `.empty-backup` shows
+        // this has happened). A page with zero NODES is still legitimate
+        // (a fresh / cleared canvas) and is allowed through.
+        guard !snapshot.pages.isEmpty else {
+            Log.persistence.error("Refusing to persist a zero-page snapshot (would clobber good data)")
+            return
+        }
         let url = fileURL
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(
