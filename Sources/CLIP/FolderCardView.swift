@@ -54,10 +54,38 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
     private static let folderRect = CGRect(x: 105, y: 113, width: 953, height: 818)
 
     private static func loadSVG(_ name: String) -> NSImage? {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "svg") else { return nil }
-        let img = NSImage(contentsOf: url)
-        img?.resizingMode = .stretch
-        return img
+        guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
+              let svg = NSImage(contentsOf: url) else { return nil }
+        // CRITICAL ZOOM FIX: rasterize the vector ONCE into a bitmap. An
+        // SVG-backed NSImage re-draws the whole vector document (`_NSSVGImageRep`
+        // → `CGContextDrawSVGDocument` → node enumeration) every time its image
+        // view's layer displays — and the layer displays on EVERY magnify tick
+        // because the folder card scales with the canvas. Measured at ~50% of the
+        // main thread during a pinch (5 folders × several image views), which
+        // pinned the gesture to 0fps. A bitmap rep just gets scaled (cheap), so
+        // zoom stops re-parsing/re-filling vectors. Capped so the shared static
+        // images don't balloon memory; point-`size` is kept at the SVG's natural
+        // size so all the existing `folderRect`/`svgSize` layout math is unchanged.
+        let nat = svg.size
+        guard nat.width > 0, nat.height > 0 else { svg.resizingMode = .stretch; return svg }
+        let maxPixel: CGFloat = 1200
+        let scale = min(1, maxPixel / max(nat.width, nat.height))
+        let pxW = max(1, Int((nat.width  * scale).rounded()))
+        let pxH = max(1, Int((nat.height * scale).rounded()))
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: pxW, pixelsHigh: pxH,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ) else { svg.resizingMode = .stretch; return svg }
+        rep.size = nat
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        svg.draw(in: CGRect(origin: .zero, size: nat), from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        let out = NSImage(size: nat)
+        out.addRepresentation(rep)
+        out.resizingMode = .stretch
+        return out
     }
     private static let restImage      = loadSVG("Folder_Rest")
     private static let oneItemImage   = loadSVG("Folder_1-item")
