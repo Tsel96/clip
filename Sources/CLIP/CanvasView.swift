@@ -743,7 +743,7 @@ struct CanvasView: View {
         // window minimap is being shown.
         .overlay(alignment: .bottomTrailing) {
             // TEMP TEST: Liquid Glass minimap disabled — is macOS-27 .glassEffect the zoom cost?
-            if false, state.canvasMode != .archive, !state.isMinimapDetached, state.focusedFolderID == nil {
+            if state.canvasMode != .archive, !state.isMinimapDetached, state.focusedFolderID == nil {
                 LiquidGlassMinimap()
                     .ignoresSafeArea()
             }
