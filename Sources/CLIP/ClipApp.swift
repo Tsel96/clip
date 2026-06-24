@@ -10,7 +10,6 @@ struct ClipApp: App {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApp.appearance = NSAppearance(named: .aqua)  // force light mode until dark theme is ready
         ClipApp.applyIcon()      // Dock / app-menu icon (SwiftPM has no Info.plist)
-        ClipFont.register()      // make ONY Semimono resolvable via Font.custom
         UpdateChecker.shared.start()   // silent self-update (inert in dev builds)
     }
 

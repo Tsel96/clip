@@ -4,12 +4,6 @@ import SwiftUI
 /// **SF Mono** (Apple's system monospaced face, reached via SwiftUI's
 /// `design: .monospaced`). Using the system mono means no font files to bundle
 /// or register, and it tracks the user's Dynamic Type / weight settings.
-enum ClipFont {
-    /// Kept as a no-op so existing launch code (`ClipApp.init`) still compiles.
-    /// SF Mono is a system face, so there is nothing to register.
-    static func register() {}
-}
-
 extension Font {
     /// SF Mono at `size`. `heavy` selects a bold cut for emphasis (the
     /// references lean on uppercase + tracking more than a weight ramp).

@@ -1,8 +1,9 @@
 #!/bin/bash
 #
 # Wrap the built `swift build` binary into a real CLIP.app bundle: app icon,
-# ONY Semimono fonts, version stamp, the self-update feed URL, an ad-hoc code
-# signature, and (optionally) a distributable .zip.
+# version stamp, the self-update feed URL, an ad-hoc code signature, and
+# (optionally) a distributable .zip. (Typography is SF Mono — a system face —
+# so there are no font files to bundle.)
 #
 # On macOS 26 (Tahoe) the system masks the icon to the squircle and applies
 # the Liquid Glass material automatically to the bundled .icns.
@@ -111,12 +112,6 @@ BNDL
     fi
   done
   rm -f "$BUNDLE_PLIST"
-fi
-
-# Bundle the ONY Semimono fonts so Font.custom resolves them on any machine.
-if [ -d "$ROOT/Fonts" ]; then
-  mkdir -p "$APP/Contents/Resources/Fonts"
-  cp "$ROOT/Fonts/"*.otf "$APP/Contents/Resources/Fonts/" 2>/dev/null || true
 fi
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
