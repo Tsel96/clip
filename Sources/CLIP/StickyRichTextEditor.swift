@@ -142,6 +142,17 @@ struct StickyRichTextEditor: NSViewRepresentable {
         }
         scroll.documentView = tv
 
+        // LAYER-BACK the whole editor stack. A non-layer-backed NSTextView embedded
+        // in SwiftUI (NSHostingView) composites as a WINDOW-LEVEL hole while it's
+        // first responder — it reveals the grey canvas behind everything instead of
+        // the white pill drawn right behind it. (Regression: the milestone used
+        // `NSTextView.scrollableTextView()`, which is layer-backed; this manual stack
+        // wasn't.) Layer-backed + clear = transparent but composited IN-layer, so the
+        // pill behind shows through — no hole, no grey.
+        scroll.wantsLayer = true
+        scroll.contentView.wantsLayer = true
+        tv.wantsLayer = true
+
         context.coordinator.textView = tv
         tv.delegate = context.coordinator
         tv.isRichText = true
