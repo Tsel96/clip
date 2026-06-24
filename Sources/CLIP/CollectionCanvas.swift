@@ -38,52 +38,8 @@ final class CenterZoomScrollView: NSScrollView {
         setMagnification(target, centeredAt: point)   // routes through the override below
     }
     override func setMagnification(_ magnification: CGFloat, centeredAt point: NSPoint) {
-        let t0 = CFAbsoluteTimeGetCurrent()
         super.setMagnification(magnification, centeredAt: point)
-        let superMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        let t1 = CFAbsoluteTimeGetCurrent()
         onZoomChange?()
-        ZoomProbe.record(superMs: superMs, flushMs: (CFAbsoluteTimeGetCurrent() - t1) * 1000)
-    }
-}
-
-/// TEMP zoom profiler — writes a one-line summary every 60 magnify ticks to
-/// /tmp/clip_zoom.log so we can see frame interval (effective fps), the cost of
-/// AppKit's super.setMagnification (layer-tree scale), and the coalesced flush.
-/// Buffered in memory; one file write per ~60 ticks so the probe itself is cheap.
-enum ZoomProbe {
-    private static var last: CFTimeInterval = 0
-    private static var intervals: [Double] = []
-    private static var supers: [Double] = []
-    private static var flushes: [Double] = []
-    private static var sawFirst = false
-    static func record(superMs: Double, flushMs: Double) {
-        if !sawFirst { sawFirst = true; write("[zoom] first magnify tick reached setMagnification\n") }
-        let now = CFAbsoluteTimeGetCurrent()
-        if last != 0 { intervals.append((now - last) * 1000) }
-        last = now
-        supers.append(superMs); flushes.append(flushMs)
-        guard intervals.count >= 20 else { return }
-        let avgI = intervals.reduce(0,+) / Double(intervals.count)
-        let maxI = intervals.max() ?? 0
-        let avgS = supers.reduce(0,+) / Double(max(supers.count,1))
-        let avgF = flushes.reduce(0,+) / Double(max(flushes.count,1))
-        let fps = avgI > 0 ? 1000 / avgI : 0
-        write(String(format: "[zoom] ticks=%d avgInterval=%.1fms (~%.0ffps) maxInterval=%.1fms avgSuperSetMag=%.2fms avgFlush=%.2fms\n",
-                     intervals.count, avgI, fps, maxI, avgS, avgF))
-        intervals.removeAll(keepingCapacity: true)
-        supers.removeAll(keepingCapacity: true)
-        flushes.removeAll(keepingCapacity: true)
-    }
-
-    private static func write(_ line: String) {
-        guard let data = line.data(using: .utf8) else { return }
-        let path = "/tmp/clip_zoom.log"
-        if let h = FileHandle(forWritingAtPath: path) {
-            h.seekToEndOfFile(); h.write(data); h.closeFile()
-        } else {
-            FileManager.default.createFile(atPath: path, contents: data)
-        }
     }
 }
 
