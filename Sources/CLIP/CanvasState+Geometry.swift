@@ -151,35 +151,30 @@ extension CanvasState {
         // true` unconditionally. Restore the gate so only a handful of media
         // cards are ever live:
         //
-        //  (a) OFF-SCREEN media never decodes. This is blink-safe: the card is
-        //      invisible, so there's nothing to "blink".
+        // FROZEN during an active pan/zoom: liveness == the last-SETTLED live set
+        // (`liveMediaIDs`, keyed off `mediaGateEpoch`). We do NOT re-evaluate the
+        // viewport/size gates mid-gesture, so NO card mounts or unmounts while the
+        // camera moves. That mount/unmount swap is exactly "videos blink while
+        // zooming"; and the rapid per-tick churn over many zoom cycles is what
+        // stranded AVPlayers in the reuse cache → "all videos stopped". Liveness
+        // is recomputed the instant the camera settles (the `mediaGateEpoch` bump
+        // in `setupMediaGate`), so cards resume playing on settle.
+        if cameraMoving { return liveMediaIDs.contains(node.id) }
+
+        // CAMERA SETTLED — full level-of-detail gate, then the concurrency cap:
+        //  (a) OFF-SCREEN media never decodes (blink-safe: it's invisible). The
+        //      live region is expanded by a 20% margin so a card is already warm
+        //      before it pans into view.
         let nodeRect = CGRect(x: node.position.x, y: node.position.y,
                               width: node.width, height: renderedHeight(of: node))
-        // Expand the live region by a HALF-VIEWPORT margin on every side, so a
-        // card is already playing BEFORE it pans into view — it scrolls in warm,
-        // no blink. (Liveness is also frozen during a live pan/zoom — see
-        // `cameraMoving` — so nothing flips mid-gesture; the margin covers the
-        // settle.) The size gate below still rests cards that are too small when
-        // zoomed out, even inside this margin.
         let liveRect = visibleWorldRect.insetBy(dx: -visibleWorldRect.width * 0.2,
                                                 dy: -visibleWorldRect.height * 0.2)
         guard liveRect.intersects(nodeRect) else { return false }
-        //  (b) A card too small on screen (zoomed out) rests as a poster — BUT
-        //      we must NOT flip a *visible* card across the breakpoint mid-zoom
-        //      (that live↔poster swap, and the WKWebView/player remount it
-        //      implies, is the "videos blink while zooming" the user flagged).
-        //      So apply the size gate only once the camera has SETTLED; during a
-        //      live pan/zoom a visible card stays live and rides the transform.
-        if !cameraMoving && projectedScreenSide(of: node) < Self.livePlaybackMinScreenSide {
-            return false
-        }
-        //  (c) CONCURRENCY CAP — the real fix for the idle-heat / laggy-zoom root
-        //      cause. A card may be on-screen AND large enough yet still rest if
-        //      too many media cards already qualify: only the N most-centred ones
-        //      (see `liveMediaIDs`) actually decode. This bounds simultaneous
-        //      decoders to a constant so a dense board (34 tweet videos) can't pin
-        //      the CPU. The set is frozen during a gesture, so this never causes a
-        //      mid-zoom blink.
+        //  (b) Too small on screen (zoomed out) rests as a poster.
+        guard projectedScreenSide(of: node) >= Self.livePlaybackMinScreenSide else { return false }
+        //  (c) CONCURRENCY CAP — only the N most-centred qualifying media cards
+        //      actually decode (see `liveMediaIDs`), bounding simultaneous decoders
+        //      to a constant so a dense board (34 tweet videos) can't pin the CPU.
         guard liveMediaIDs.contains(node.id) else { return false }
         return true
     }
