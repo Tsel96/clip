@@ -98,14 +98,29 @@ final class ColorformRenderer: NSObject, MTKViewDelegate {
 
     func attach(to v: MTKView) { view = v; refresh() }
 
+    // No deinit needed: MTKView.delegate is weak and the $colorBulbs sink
+    // captures [weak self], so there's no retain cycle — the renderer frees
+    // when the coordinator is released and its cancellables auto-cancel. The
+    // per-entry cost was the shader recompile, fixed by the cache below.
+
+    /// Compiled pipelines, keyed by device. The Metal shader is compiled from a
+    /// source string (`makeLibrary(source:)`) which is EXPENSIVE (~100-500 ms);
+    /// caching it means we pay that once per process instead of on every Colorform
+    /// tab re-entry (the "Colorform uploads after switching" symptom).
+    private static var cachedPipelines: [ObjectIdentifier: MTLRenderPipelineState] = [:]
+
     private func buildPipeline() {
+        let key = ObjectIdentifier(device)
+        if let cached = Self.cachedPipelines[key] { pipeline = cached; return }
         do {
             let lib = try device.makeLibrary(source: Self.shaderSource, options: nil)
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.makeFunction(name: "cf_vertex")
             d.fragmentFunction = lib.makeFunction(name: "cf_fragment")
             d.colorAttachments[0].pixelFormat = .bgra8Unorm
-            pipeline = try device.makeRenderPipelineState(descriptor: d)
+            let state = try device.makeRenderPipelineState(descriptor: d)
+            Self.cachedPipelines[key] = state
+            pipeline = state
         } catch {
             NSLog("Colorform Metal pipeline error: \(error)")
         }
