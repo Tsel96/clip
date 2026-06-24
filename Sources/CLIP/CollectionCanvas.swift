@@ -1233,17 +1233,6 @@ final class CardItemView: NSView {
         }
         let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
 
-        // Card-fill backing (text/sticky): while editing/selected the SwiftUI fill
-        // composites grey (the embedded editor punches a hole that reveals the item's
-        // OWN layer background — proven: a magenta layer.backgroundColor showed
-        // through). Paint the node's real fill on THIS layer's background — NO
-        // cornerRadius (that broke the reveal; the magenta test that worked had none).
-        switch node?.kind {
-        case .text:      layer?.backgroundColor = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1).cgColor
-        case .stickyNote: layer?.backgroundColor = Self.stickyFillNS(node?.folderColor).cgColor
-        default:          layer?.backgroundColor = nil
-        }
-
         CATransaction.begin(); CATransaction.setDisableActions(true)
 
         // Section outline — always visible (not gated on selection) so empty
