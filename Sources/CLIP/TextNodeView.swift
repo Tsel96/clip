@@ -37,10 +37,13 @@ struct TextNodeView: View {
         let inset = bd.band + bd.yellow
         ZStack {
             Capsule(style: .continuous).fill(green)                       // green band
-            // TEMP DIAGNOSTIC (#17): red while editing to localize the grey — if the
-            // pill turns red when you edit, the pill is the surface; if it stays
-            // grey, the grey is a separate layer over it.
-            Capsule(style: .continuous).fill(isEditing ? Color.red : Color.white).padding(inset)  // white pill
+            // Explicit sRGB white (NOT `Color.white`): `Color.white` is an adaptive
+            // color that resolved to gray once a focused NSTextView shifted the
+            // render appearance while editing — that was the "pill greys while
+            // typing" bug. An explicit sRGB white can't drift (same as green/yellow).
+            Capsule(style: .continuous)
+                .fill(Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1))
+                .padding(inset)                                            // white pill
 
             StickyRichTextEditor(
                 node: liveNode,
