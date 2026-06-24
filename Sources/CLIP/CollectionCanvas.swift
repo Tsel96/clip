@@ -259,7 +259,15 @@ struct CollectionCanvas: NSViewRepresentable {
         coord.config = config
         coord.scroll?.minMagnification = config.minZoom
         coord.scroll?.maxMagnification = config.maxZoom
-        coord.apply(config)
+        // Skip the heavy full re-apply when nothing the canvas renders has
+        // changed. updateNSView fires on every NSHostingView layout pass, and a
+        // playing video makes the scroll view flush a window layout every display
+        // cycle — without this guard apply()+refreshChrome ran 60-120×/s at idle.
+        let sig = coord.contentSignature(config)
+        if sig != coord.lastContentSignature {
+            coord.lastContentSignature = sig
+            coord.apply(config)
+        }
         // Re-enabled programmatic camera: the zoom pill / ⌘± / fit / zoom-to-
         // selection / minimap jumps move the canvas. `applyCameraIfChanged`
         // compares against the scroll view's LIVE state and no-ops echoes of our
@@ -309,6 +317,13 @@ struct CollectionCanvas: NSViewRepresentable {
         // refresh (60 / 120 Hz), then re-pauses to stay power-cheap when idle.
         private var canvasRefreshLink: AnyObject?   // CADisplayLink (macOS 14+), type-erased
         private var pendingCanvasRefresh = false
+        // Content signature of the last `apply(config)`. `updateNSView` is invoked
+        // on EVERY NSHostingView layout pass — and while a video plays the scroll
+        // view's main-thread synchronizer flushes a window layout every display
+        // cycle, so a full `apply()` (node diff + per-card content refresh +
+        // `refreshChrome`) was running 60-120×/s at idle (the heat). Skip it when
+        // the canvas content is unchanged.
+        fileprivate var lastContentSignature: Int?
         // Card appear animation: track which node IDs we've already shown so a
         // genuinely-new card (added after the first load) scales in, while the
         // initial board doesn't animate every card on open.
@@ -344,6 +359,33 @@ struct CollectionCanvas: NSViewRepresentable {
 
         /// Recompute item frames (content coords) + content size from the nodes,
         /// then refresh. Cheap structural compare avoids needless reloads.
+        /// Cheap hash of everything `apply` acts on (structure, per-node content
+        /// identity, selection, connectors). Stable when nothing changed, so
+        /// `updateNSView` can skip the heavy `apply` on the per-display-cycle
+        /// layout passes that a playing video provokes. Does NOT hash image/video
+        /// bytes — media content is identified by the stable node id; in-place
+        /// edits are text/sticky/section/folder, captured by `nativeContentKey`.
+        func contentSignature(_ p: CanvasConfig) -> Int {
+            var h = Hasher()
+            h.combine(p.worldBounds.size.width); h.combine(p.worldBounds.size.height)
+            h.combine(p.nodes.count)
+            for n in p.nodes {
+                h.combine(n.id)
+                h.combine(n.position.x); h.combine(n.position.y)
+                h.combine(n.width); h.combine(n.height ?? -1)
+                h.combine(n.rotation)
+                if let key = nativeContentKey(for: n) { h.combine(key) }
+            }
+            h.combine(p.connectors.count)
+            for c in p.connectors { h.combine(c.id) }
+            h.combine(p.showConnectors)
+            h.combine(p.selectedNodeIDs)
+            h.combine(p.selectedConnectorIDs)
+            if let e = p.editingTextNodeID { h.combine(e) }
+            if let t = p.trimmingNodeID { h.combine(t) }
+            return h.finalize()
+        }
+
         func apply(_ p: CanvasConfig) {
             let minX = p.worldBounds.minX, minY = p.worldBounds.minY
             let frames = p.nodes.map { n in
