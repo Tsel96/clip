@@ -747,6 +747,11 @@ struct CanvasView: View {
                     .ignoresSafeArea()
             }
         }
+        // TEMP: live FPS meter (top-leading) to read the real displayed framerate
+        // during a pinch-zoom. Remove after diagnosing.
+        .overlay(alignment: .topLeading) {
+            FPSHud().padding(.top, 44).padding(.leading, 12)
+        }
         // Bottom-RIGHT: zoom −/NN%/+ pill (Figma 51:12692).
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive, state.focusedFolderID == nil {
