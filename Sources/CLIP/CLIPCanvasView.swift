@@ -56,6 +56,13 @@ final class CLIPCanvasView: NSView {
         // together — connectors pan/zoom with the cards.
         let container = FlippedContainer()
         container.frame = CGRect(origin: .zero, size: config.worldBounds.size)
+        // World-sized layer-backed views default to layerContentsRedrawPolicy
+        // .duringViewResize → every magnification (which changes effective size)
+        // REDRAWS the huge backing store (IOSurface alloc) → 0fps zoom. .never
+        // makes magnify a pure GPU transform of the cached content instead.
+        container.wantsLayer = true
+        container.layerContentsRedrawPolicy = .never
+        collection.layerContentsRedrawPolicy = .never
         collection.frame = container.bounds
         collection.autoresizingMask = [.width, .height]
         container.addSubview(collection)
@@ -66,13 +73,14 @@ final class CLIPCanvasView: NSView {
             rootView: AnyView(config.overlay.allowsHitTesting(false)))
         overlayHost.frame = container.bounds
         overlayHost.autoresizingMask = [.width, .height]
+        overlayHost.layerContentsRedrawPolicy = .never
         container.addSubview(overlayHost, positioned: .above, relativeTo: collection)
-        overlayHost.isHidden = true   // TEMP CONFIRM: is the world-sized overlay the zoom-killer?
 
         // The single input owner, layered ABOVE everything in the document so no
         // other view competes for clicks (Spatial's CanvasContentView model).
         let input = CanvasInputView(frame: container.bounds)
         input.autoresizingMask = [.width, .height]
+        input.layerContentsRedrawPolicy = .never
         input.coordinator = coordinator
         container.addSubview(input, positioned: .above, relativeTo: overlayHost)
         coordinator.inputView = input
