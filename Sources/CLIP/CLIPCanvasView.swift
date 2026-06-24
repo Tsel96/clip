@@ -40,6 +40,13 @@ final class CLIPCanvasView: NSView {
 
         let scroll = CenterZoomScrollView()
         scroll.drawsBackground = false
+        // `scroll.drawsBackground = false` does NOT stop the scroll's NSClipView
+        // (contentView) from painting its own GREY system background — and that grey
+        // sat between the (transparent) cards and the dot-grid mounted BEHIND the
+        // scroll, so transparent card content (marker drawings) and the text editor's
+        // hole showed grey instead of the canvas. Clear the clip view too.
+        scroll.contentView.drawsBackground = false
+        scroll.contentView.backgroundColor = .clear
         scroll.hasVerticalScroller = false
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
