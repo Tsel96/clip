@@ -137,9 +137,13 @@ struct MinimapView: View {
                 // LIVE viewport box — drawn OUTSIDE the cached bitmap so it tracks
                 // the camera in real time (re-renders per tick on a camera change,
                 // which is cheap — one rounded rect) without re-rasterizing the
-                // expensive dots + thumbnails content.
-                Canvas { ctx, _ in drawViewportBox(in: ctx, canvasSize: geo.size) }
-                    .allowsHitTesting(false)
+                // expensive dots + thumbnails content. Only for the DETACHED
+                // (rectangular) minimap; the round glass lens draws its box at the
+                // dome level (`LiquidGlassMinimap`) so it clips to the circle.
+                if showsViewport {
+                    Canvas { ctx, _ in drawViewportBox(in: ctx, canvasSize: geo.size) }
+                        .allowsHitTesting(false)
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .contentShape(Rectangle())
@@ -441,5 +445,35 @@ private func minimapKindToken(_ kind: CanvasNode.Kind, into h: inout Hasher) {
     case .stickyNote(_, let c):  h.combine(9); h.combine(c)
     case .folder:                h.combine(10)
     }
+}
+
+/// The minimap LENS projection (showsViewport = false): world → content-canvas
+/// pixels, IDENTICAL to `MinimapView.makeProjection`'s lens path. Standalone so
+/// `LiquidGlassMinimap` can place the live viewport box in dome-space using the
+/// exact same mapping as the cards (keeping the box aligned with them).
+func minimapLensProjection(nodes: [CanvasNode], canvasSize: CGSize,
+                           inset: CGFloat) -> (scale: CGFloat, offset: CGPoint) {
+    var minX: CGFloat = -500, minY: CGFloat = -500, maxX: CGFloat = 500, maxY: CGFloat = 500
+    if let first = nodes.first {
+        minX = first.position.x; minY = first.position.y
+        maxX = first.position.x + first.width
+        maxY = first.position.y + (first.height ?? 200)
+        for n in nodes.dropFirst() {
+            minX = min(minX, n.position.x); minY = min(minY, n.position.y)
+            maxX = max(maxX, n.position.x + n.width)
+            maxY = max(maxY, n.position.y + (n.height ?? 200))
+        }
+    }
+    let pad: CGFloat = 0.02
+    let pX = (maxX - minX) * pad, pY = (maxY - minY) * pad
+    let bounds = CGRect(x: minX - pX, y: minY - pY,
+                        width: max(1, maxX - minX + pX * 2),
+                        height: max(1, maxY - minY + pY * 2))
+    let innerW = max(1, canvasSize.width - inset * 2)
+    let innerH = max(1, canvasSize.height - inset * 2)
+    let s = max(0.0001, min(innerW / bounds.width, innerH / bounds.height))
+    let offset = CGPoint(x: (canvasSize.width - bounds.width * s) / 2 - bounds.minX * s,
+                         y: (canvasSize.height - bounds.height * s) / 2 - bounds.minY * s)
+    return (s, offset)
 }
 

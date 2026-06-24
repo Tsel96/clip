@@ -65,6 +65,38 @@ struct LiquidGlassMinimap: View {
             .padding(.top, diameter * 0.15)
     }
 
+    /// The live camera-preview box in DOME coordinates. Maps the visible world
+    /// rect → content pixels (the same lens projection as the cards) → dome pixels
+    /// via the content's placement (scale-about-centre by `k` + the leading/top
+    /// padding). Re-renders per camera tick (cheap — one rounded rect) so it
+    /// tracks live; the dome's `.clipShape(Circle())` trims it to the lens curve.
+    private var viewportBox: some View {
+        Canvas { ctx, _ in
+            let W = diameter * 0.62, H = diameter * 0.54
+            let k = 1.0 + 0.5 * zoomT
+            let padL = diameter * 0.12, padT = diameter * 0.15
+            let proj = minimapLensProjection(nodes: state.nodes,
+                                             canvasSize: CGSize(width: W, height: H), inset: 6)
+            let vp = state.visibleWorldRect
+            let cx = vp.minX * proj.scale + proj.offset.x
+            let cy = vp.minY * proj.scale + proj.offset.y
+            let cw = vp.width * proj.scale, ch = vp.height * proj.scale
+            func dome(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(x: padL + W / 2 + k * (x - W / 2),
+                        y: padT + H / 2 + k * (y - H / 2))
+            }
+            let tl = dome(cx, cy), br = dome(cx + cw, cy + ch)
+            let rect = CGRect(x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y)
+            let path = Path(roundedRect: rect,
+                            cornerSize: CGSize(width: 6 * k, height: 6 * k), style: .continuous)
+            ctx.fill(path, with: .color(.gray.opacity(0.07)))
+            ctx.stroke(path, with: .color(.gray.opacity(0.5)),
+                       style: StrokeStyle(lineWidth: 1.2 * k))
+        }
+        .frame(width: diameter, height: diameter)
+        .allowsHitTesting(false)
+    }
+
     /// One uniform screen-space dot grid across the whole disc — the
     /// reference shows the canvas grid sweeping the full lens, not a
     /// fenced map block.
@@ -105,6 +137,12 @@ struct LiquidGlassMinimap: View {
                 .allowsHitTesting(false)
             lensDotGrid
             minimapContent
+            // LIVE camera-preview box, drawn in DOME space so the circle clip
+            // below trims it to the lens curve (not the content's rectangular
+            // sub-frame). Uses the same lens projection + the content placement
+            // transform (scale-about-centre + padding) as `minimapContent`, so it
+            // stays aligned with the cards and tracks the camera in real time.
+            viewportBox
         }
         // Pin the disc to its exact size — the glass circle must never
         // inflate to a sibling-derived union size.

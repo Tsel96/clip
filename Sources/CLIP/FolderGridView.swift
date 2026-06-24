@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Full-screen folder view (Spatial-style): a SOLID background tinted to the
 /// folder's colour, with the folder's child cards laid out in a scrollable grid.
@@ -37,6 +38,16 @@ struct FolderGridView: View {
     var body: some View {
         ZStack {
             background.ignoresSafeArea()
+                // The folder grid has no CanvasInputView, so clicking the backdrop
+                // never ended a text edit — the folder-title field / a text card
+                // stayed focused. Resign the window's first responder (commits +
+                // unfocuses any NSTextField/NSTextView) and clear the model's
+                // editing id.
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if state.editingTextNodeID != nil { state.editingTextNodeID = nil }
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                }
 
             if children.isEmpty {
                 VStack(spacing: 10) {
