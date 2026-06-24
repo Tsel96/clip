@@ -119,15 +119,57 @@ struct MinimapView: View {
 
     var body: some View {
         GeometryReader { geo in
-            Canvas { context, _ in
-                draw(in: context, canvasSize: geo.size)
+            // The Canvas redraws every node (image/video thumbnails included) —
+            // it was ~50% of the main thread because it ran on EVERY display
+            // frame: a playing video keeps the window's display cycle (and this
+            // hosting view's layout) ticking continuously, and the Canvas
+            // re-rasterized all thumbnails each tick. That per-frame work is what
+            // starved the zoom/pan display-link (→ ~1fps) and ran the machine hot.
+            // Gate it: `Redrawn` is an Equatable wrapper keyed by everything the
+            // drawing depends on (node geometry/kind/selection, thumbnail version,
+            // host size, and — only when the camera is settled — the viewport
+            // rect). With an unchanged key SwiftUI reuses the last render and
+            // never re-runs `draw`, so an idle/auto-playing board costs nothing
+            // and a live pan/zoom doesn't thrash the minimap (the box snaps to
+            // place the instant the gesture ends).
+            Redrawn(key: redrawKey(geo.size)) {
+                Canvas { context, _ in
+                    draw(in: context, canvasSize: geo.size)
+                }
             }
+            .equatable()
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in navigate(to: value.location, canvasSize: geo.size) }
             )
         }
         .help("Click to jump  ·  Drag to pan")
+    }
+
+    /// Cheap content signature for `Redrawn` — changes exactly when the minimap's
+    /// drawing would change, so the expensive Canvas only re-runs then. Hashes
+    /// only cheap fields (never image `Data` / stroke points): per-node id,
+    /// frame, selection, and a kind+colour token; plus the thumbnail version and
+    /// host size. The live viewport rect is included ONLY when the camera is
+    /// settled — during a pan/zoom it's omitted so the minimap freezes instead of
+    /// re-rasterizing every frame (it refreshes the instant the gesture ends).
+    private func redrawKey(_ canvasSize: CGSize) -> Int {
+        var h = Hasher()
+        for n in state.nodes {
+            h.combine(n.id)
+            h.combine(n.position.x); h.combine(n.position.y)
+            h.combine(n.width); h.combine(n.height ?? -1)
+            h.combine(state.selectedNodeIDs.contains(n.id))
+            minimapKindToken(n.kind, into: &h)
+        }
+        h.combine(thumbs.version)
+        h.combine(canvasSize.width.rounded()); h.combine(canvasSize.height.rounded())
+        if !state.cameraMoving {
+            let vp = state.visibleWorldRect
+            h.combine(vp.minX.rounded()); h.combine(vp.minY.rounded())
+            h.combine(vp.width.rounded()); h.combine(vp.height.rounded())
+        }
+        return h.finalize()
     }
 
     // MARK: - Drawing
@@ -352,4 +394,37 @@ struct MinimapView: View {
         let world = makeProjection(canvasSize: canvasSize).unproject(point)
         state.centerCamera(on: world)
     }
+}
+
+/// Hash token for a node's kind + colour, used by the minimap's redraw key.
+/// Deliberately avoids hashing heavy associated values (image `Data`, stroke
+/// point arrays, URLs) — only the discriminator and any tint affect the
+/// minimap's tiny rendering, so this stays cheap to recompute every frame.
+private func minimapKindToken(_ kind: CanvasNode.Kind, into h: inout Hasher) {
+    switch kind {
+    case .tweet:                 h.combine(0)
+    case .instagram:             h.combine(1)
+    case .youtube:               h.combine(2)
+    case .webclip:               h.combine(3)
+    case .text:                  h.combine(4)
+    case .drawing(let s):        h.combine(5); h.combine(s.color)
+    case .image:                 h.combine(6)
+    case .video:                 h.combine(7)
+    case .section(_, let c):     h.combine(8); h.combine(c)
+    case .stickyNote(_, let c):  h.combine(9); h.combine(c)
+    case .folder:                h.combine(10)
+    }
+}
+
+/// Equatable gate: re-renders `content` only when `key` changes. Lets an
+/// expensive child (the minimap Canvas) skip the per-display-frame re-render its
+/// layer-backed host would otherwise force while a video plays. `content` is
+/// rebuilt each time the parent evaluates (cheap — just a Canvas value), but
+/// with an unchanged key SwiftUI reuses the prior render and never invokes its
+/// draw closure.
+private struct Redrawn<Content: View>: View, Equatable {
+    let key: Int
+    @ViewBuilder var content: Content
+    static func == (l: Redrawn, r: Redrawn) -> Bool { l.key == r.key }
+    var body: some View { content }
 }
