@@ -369,6 +369,14 @@ final class CanvasState: ObservableObject {
     private(set) var cameraMoving = false
     private var mediaGateCancellable: AnyCancellable?
     private var mediaGateSettle: DispatchWorkItem?
+    /// Memo for `liveMediaIDs` (the concurrency cap on simultaneous media
+    /// decoders — see `CanvasState+Geometry`). Recomputed only when the camera
+    /// settles (`mediaGateEpoch`), the page changes, or nodes are added/removed,
+    /// so the live set is frozen during a gesture (no mid-zoom flips) and a dense
+    /// board can't keep dozens of AVPlayers decoding. `internal` so the
+    /// `+Geometry` extension (a separate file) can read/write it.
+    var liveMediaCacheKey: (epoch: Int, page: Int, count: Int) = (-1, -1, -1)
+    var liveMediaCacheIDs: Set<UUID> = []
 
 
     /// Drive the media LOD gate off the LIVE camera (reliable on the native
@@ -465,6 +473,9 @@ final class CanvasState: ObservableObject {
             guard pages.indices.contains(activePageIndex) else { return }
             pages[activePageIndex].nodes = newValue
             nodeByID = Dictionary(uniqueKeysWithValues: newValue.map { ($0.id, $0) })
+            // Adding/removing a media card changes which cards compete for the
+            // decoder budget → drop the live-media memo so it recomputes.
+            liveMediaCacheKey = (-1, -1, -1)
             // Keep Archive's per-day cache fresh whenever the doc
             // mutates while the user is viewing the calendar.
             if canvasMode == .archive {
