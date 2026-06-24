@@ -74,9 +74,20 @@ extension CanvasState {
     /// there's nothing to gate (text, sticky, section, drawing all render
     /// cheaply at any size).
     func isLive(_ node: CanvasNode) -> Bool {
+        // Lightbox open → every canvas card rests as a poster (nothing
+        // composites behind the hero animation).
+        if lightboxCardID != nil { return false }
         // The card being trimmed hands playback to the trim overlay's own
         // seekable player, so tear down its background loop player.
         if trimmingCardID == node.id { return false }
+        // Only HEAVY media (video players / WKWebViews) is gated; text, sticky,
+        // section, drawing, image render cheaply at any size → always live.
+        switch node.kind {
+        case .video, .tweet, .instagram, .youtube, .webclip:
+            break
+        default:
+            return true
+        }
         // "Show video previews only" — a user TOGGLE (not LOD) that forces
         // every video-bearing kind to its resting poster.
         if videosShowPreviewOnly {
@@ -85,14 +96,26 @@ extension CanvasState {
             default: break
             }
         }
-        // ALL media stays LIVE — through zoom, pan, and at rest. Swapping a card to
-        // a poster mid-zoom is what produced the "social-media videos blink while
-        // zooming" the user flagged as the single worst issue; the swap (and the
-        // WKWebView remount it implies) is the blink. Cards ride the scroll's
-        // magnify transform as live layers instead, so nothing blinks. (If a
-        // boardful of WKWebViews makes the magnify itself heavy, the next step is
-        // a fresh snapshot taken AT zoom-start — seamless because it matches the
-        // live frame — not a stale poster swap.)
+        // LEVEL OF DETAIL — the fix for the idle-heat root cause: a boardful of
+        // tweet/video cards was decoding ALL of them at once (measured: ~13
+        // AVPlayers, machine pinned + hot) because this method used to `return
+        // true` unconditionally. Restore the gate so only a handful of media
+        // cards are ever live:
+        //
+        //  (a) OFF-SCREEN media never decodes. This is blink-safe: the card is
+        //      invisible, so there's nothing to "blink".
+        let nodeRect = CGRect(x: node.position.x, y: node.position.y,
+                              width: node.width, height: renderedHeight(of: node))
+        guard visibleWorldRect.intersects(nodeRect) else { return false }
+        //  (b) A card too small on screen (zoomed out) rests as a poster — BUT
+        //      we must NOT flip a *visible* card across the breakpoint mid-zoom
+        //      (that live↔poster swap, and the WKWebView/player remount it
+        //      implies, is the "videos blink while zooming" the user flagged).
+        //      So apply the size gate only once the camera has SETTLED; during a
+        //      live pan/zoom a visible card stays live and rides the transform.
+        if !cameraMoving && projectedScreenSide(of: node) < Self.livePlaybackMinScreenSide {
+            return false
+        }
         return true
     }
 }

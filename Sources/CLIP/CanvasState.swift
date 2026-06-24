@@ -188,6 +188,7 @@ final class CanvasState: ObservableObject {
         setupPeriodicFlush()
         setupPrefsAutoSave()
         setupZoomWatch()
+        setupMediaGate()
         setupTerminationFlush()
         // Wire the Smart Selection controller after everything else so
         // its Combine subscriptions on `$selectedNodeIDs` / `$pages` /
@@ -331,6 +332,7 @@ final class CanvasState: ObservableObject {
 
     deinit {
         periodicFlushTimer?.invalidate()
+        mediaGateSettle?.cancel()
     }
 
     /// Watch the camera store; bump `zoomEpoch` only when the *zoom*
@@ -351,6 +353,42 @@ final class CanvasState: ObservableObject {
                 guard let self, cam.zoom != self.lastObservedZoom else { return }
                 self.lastObservedZoom = cam.zoom
                 if !self.suppressZoomEpoch { self.zoomEpoch &+= 1 }
+            }
+    }
+
+    // MARK: - Media LOD gate (re-evaluate `isLive` on camera settle)
+
+    /// Bumped when the camera SETTLES after a pan/zoom, so media cards re-run
+    /// `isLive` (start/stop decoding as they enter/leave the viewport or cross
+    /// the size breakpoint). NOT bumped during the gesture → nothing flips
+    /// mid-zoom → no "videos blink while zooming".
+    @Published private(set) var mediaGateEpoch = 0
+    /// True while a pan/zoom is actively moving the camera; `isLive` freezes its
+    /// size gate during this window so a visible card never swaps to a poster
+    /// mid-zoom.
+    private(set) var cameraMoving = false
+    private var mediaGateCancellable: AnyCancellable?
+    private var mediaGateSettle: DispatchWorkItem?
+
+    /// Drive the media LOD gate off the LIVE camera (reliable on the native
+    /// canvas, which writes `cameraStore` directly — `isZoomInteracting` is
+    /// not, it hangs off the dead `zoomDidTick`). Hold `cameraMoving` true while
+    /// the camera changes; ~0.2 s after it stops, clear it and bump
+    /// `mediaGateEpoch` so every card re-evaluates `isLive` at rest.
+    private func setupMediaGate() {
+        mediaGateCancellable = cameraStore.$camera
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.cameraMoving = true
+                self.mediaGateSettle?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.cameraMoving = false
+                    self.mediaGateEpoch &+= 1
+                }
+                self.mediaGateSettle = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
             }
     }
 
