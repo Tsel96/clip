@@ -117,16 +117,15 @@ struct StickyRichTextEditor: NSViewRepresentable {
             context.coordinator.pillBacking = backing
         }
 
-        // Explicit text stack so we can use a logging/selectable subclass and
-        // guarantee the text view fills its width (clicks anywhere select text).
-        let container = NSTextContainer(containerSize:
-            NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-        container.widthTracksTextView = true
-        let layout = NSLayoutManager()
-        layout.addTextContainer(container)
-        let storage = NSTextStorage()
-        storage.addLayoutManager(layout)
-        let tv = StickyTextView(frame: .zero, textContainer: container)
+        // Use the DEFAULT text system (like `NSTextView.scrollableTextView()`, which
+        // the milestone build used) rather than a hand-built TextKit-1 stack — the
+        // manual stack is what turned the editor into a grey window-hole while
+        // editing. `StickyTextView(frame:)` (the convenience init) sets up the
+        // standard text system; we just opt the container into width-tracking.
+        let tv = StickyTextView(frame: .zero)
+        tv.textContainer?.widthTracksTextView = true
+        tv.textContainer?.size = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        tv.textContainer?.lineFragmentPadding = 0
         tv.minSize = NSSize(width: 0, height: 0)
         tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                             height: CGFloat.greatestFiniteMagnitude)
