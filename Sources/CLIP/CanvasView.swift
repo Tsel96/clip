@@ -747,6 +747,10 @@ struct CanvasView: View {
                     .ignoresSafeArea()
             }
         }
+        // TEMP: live FPS meter (top-leading) for the zoom-fix confirm experiment.
+        .overlay(alignment: .topLeading) {
+            FPSHud().padding(.top, 44).padding(.leading, 12)
+        }
         // Bottom-RIGHT: zoom −/NN%/+ pill (Figma 51:12692).
         .overlay(alignment: .bottomTrailing) {
             if state.canvasMode != .archive, state.focusedFolderID == nil {

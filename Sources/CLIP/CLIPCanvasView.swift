@@ -67,6 +67,7 @@ final class CLIPCanvasView: NSView {
         overlayHost.frame = container.bounds
         overlayHost.autoresizingMask = [.width, .height]
         container.addSubview(overlayHost, positioned: .above, relativeTo: collection)
+        overlayHost.isHidden = true   // TEMP CONFIRM: is the world-sized overlay the zoom-killer?
 
         // The single input owner, layered ABOVE everything in the document so no
         // other view competes for clicks (Spatial's CanvasContentView model).
