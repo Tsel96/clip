@@ -20,8 +20,10 @@ import os
 final class UpdateChecker {
     static let shared = UpdateChecker()
 
-    /// How often to poll while running (10 min — matches the kiosk cadence).
-    private let interval: TimeInterval = 600
+    /// How often to poll while running. 4 hours: CI publishes very frequently
+    /// (auto-snapshot every few minutes), so a short interval made installs
+    /// self-update + relaunch constantly. A check still runs once on launch.
+    private let interval: TimeInterval = 4 * 60 * 60   // 4 hours
 
     private var timer: Timer?
     private var inFlight = false
