@@ -212,11 +212,11 @@ final class ConnectorOverlayController {
                 ? gappedLinePath(p0: p0, p1: c1, p2: c2, p3: p3, labelCenter: labelCenter,
                                  labelW: lblBox.w, labelH: lblBox.h)
                 : fullPath
-            // Thicker when zoomed IN: a content-constant width (scales with the
-            // canvas) floored to a visible screen minimum when zoomed out — so the
-            // line reads proportional to the cards instead of a fixed hairline.
+            // Thicker when zoomed IN: a content-scaling width (≈1.8× content-
+            // constant, so it grows clearly with the canvas) floored to a visible
+            // screen minimum when zoomed out.
             let baseW = isSel ? Self.selectedLineWidth : Self.screenLineWidth
-            b.line.lineWidth = max(baseW, baseW * 0.8 / mag)
+            b.line.lineWidth = max(baseW * 1.8, baseW / mag)
             b.line.strokeColor = color
 
             b.arrow.path = arrowPath(tip: route.arrowTip, from: route.arrowFrom, mag: mag)
@@ -277,7 +277,7 @@ final class ConnectorOverlayController {
                                             standoff: ConnectorPathMath.standoffDistance / mag)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         previewLine?.path = route.path
-        previewLine?.lineWidth = max(Self.screenLineWidth, Self.screenLineWidth * 0.8 / mag)
+        previewLine?.lineWidth = max(Self.screenLineWidth * 1.8, Self.screenLineWidth / mag)
         previewLine?.lineDashPattern = [NSNumber(value: 5 / mag), NSNumber(value: 4 / mag)]
         previewArrow?.path = arrowPath(tip: route.arrowTip, from: route.arrowFrom, mag: mag)
         CATransaction.commit()
@@ -406,7 +406,7 @@ final class ConnectorOverlayController {
         let ux = dx / len, uy = dy / len
         // Arrowhead grows with zoom-in to match the (now zoom-scaling) line,
         // floored to its base on-screen size when zoomed out.
-        let arrowContent = max(Self.arrowLen, Self.arrowLen * 0.8 / mag)
+        let arrowContent = max(Self.arrowLen * 1.4, Self.arrowLen / mag)
         let scale = arrowContent / Self.arrowTemplateHeight
         let theta = atan2(uy, ux) + .pi / 2          // maps the template "up" (0,−1) → (ux,uy)
         var tf = CGAffineTransform(translationX: tip.x, y: tip.y)

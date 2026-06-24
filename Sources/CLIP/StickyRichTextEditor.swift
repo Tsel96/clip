@@ -77,6 +77,13 @@ struct StickyRichTextEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
         scroll.drawsBackground = false
+        scroll.backgroundColor = .clear
+        // CRITICAL: `NSScrollView.drawsBackground = false` does NOT stop the
+        // `NSClipView` (contentView) from painting its own background, which is a
+        // gray system color in aqua — that's what greyed the whole text/sticky
+        // card fill while editing. Make the clip view transparent so the pill /
+        // sticky colour behind always shows through.
+        scroll.contentView.drawsBackground = false
         scroll.hasVerticalScroller = false
         scroll.hasHorizontalScroller = false
         scroll.borderType = .noBorder
