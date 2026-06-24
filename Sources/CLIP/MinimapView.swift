@@ -134,6 +134,12 @@ struct MinimapView: View {
                 if let img = cachedImage {
                     Image(nsImage: img).resizable().interpolation(.medium)
                 }
+                // LIVE viewport box — drawn OUTSIDE the cached bitmap so it tracks
+                // the camera in real time (re-renders per tick on a camera change,
+                // which is cheap — one rounded rect) without re-rasterizing the
+                // expensive dots + thumbnails content.
+                Canvas { ctx, _ in drawViewportBox(in: ctx, canvasSize: geo.size) }
+                    .allowsHitTesting(false)
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .contentShape(Rectangle())
@@ -141,9 +147,10 @@ struct MinimapView: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in navigate(to: value.location, canvasSize: geo.size) }
             )
-            // Regenerate the bitmap only when the content signature changes —
-            // node edits, thumbnails landing, host resize, or (on camera settle)
-            // the viewport box. `.task(id:)` re-fires exactly on those changes.
+            // Regenerate the bitmap only when the CONTENT signature changes —
+            // node edits, thumbnails landing, or host resize. The viewport box is
+            // no longer part of it (it's the live overlay above), so a pan/zoom
+            // never re-renders the bitmap. `.task(id:)` re-fires on content change.
             .task(id: token) { renderMinimap(size: geo.size, token: token) }
         }
         .help("Click to jump  ·  Drag to pan")
@@ -166,13 +173,12 @@ struct MinimapView: View {
         }
     }
 
-    /// Cheap content signature — changes exactly when the minimap's drawing would
-    /// change, so the bitmap is only re-rendered then. Hashes only cheap fields
-    /// (never image `Data` / stroke points): per-node id, frame, selection, and a
-    /// kind+colour token; plus the thumbnail version and host size. The live
-    /// viewport rect is included ONLY when the camera is settled — during a
-    /// pan/zoom it's omitted so the minimap freezes instead of re-rendering every
-    /// frame (it refreshes the instant the gesture ends).
+    /// Cheap CONTENT signature — changes exactly when the cached bitmap (dots +
+    /// cards) would change, so it's only re-rendered then. Hashes only cheap
+    /// fields (never image `Data` / stroke points): per-node id, frame, selection,
+    /// a kind+colour token, plus the thumbnail version and host size. It does NOT
+    /// include the camera/viewport rect — the viewport box is a live overlay now,
+    /// so panning/zooming never re-renders this bitmap.
     private func redrawKey(_ canvasSize: CGSize) -> Int {
         var h = Hasher()
         for n in state.nodes {
@@ -184,11 +190,6 @@ struct MinimapView: View {
         }
         h.combine(thumbs.version)
         h.combine(canvasSize.width.rounded()); h.combine(canvasSize.height.rounded())
-        if !state.cameraMoving {
-            let vp = state.visibleWorldRect
-            h.combine(vp.minX.rounded()); h.combine(vp.minY.rounded())
-            h.combine(vp.width.rounded()); h.combine(vp.height.rounded())
-        }
         return h.finalize()
     }
 
@@ -321,9 +322,15 @@ struct MinimapView: View {
             }
         }
 
-        // Current viewport. Rectangular hosts get the classic dashed box;
-        // the lens gets a soft rounded indication in the map's own style —
-        // quiet fill, hairline edge, continuous corners.
+    }
+
+    /// LIVE viewport box (the camera preview). Drawn in its own overlay Canvas —
+    /// NOT baked into the cached content bitmap — so it tracks the camera in real
+    /// time while a pan/zoom is in flight, with no re-rasterization of the
+    /// dots+cards. Uses the SAME `makeProjection` as the content so it stays
+    /// aligned with the cards.
+    private func drawViewportBox(in ctx: GraphicsContext, canvasSize: CGSize) {
+        let projection = makeProjection(canvasSize: canvasSize)
         let vp = state.visibleWorldRect
         let vpTopLeft = projection.project(CGPoint(x: vp.minX, y: vp.minY))
         let vRect = CGRect(
