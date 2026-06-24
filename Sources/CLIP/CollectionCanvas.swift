@@ -1221,6 +1221,25 @@ final class CardItemView: NSView {
         }
         let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
 
+        // TEMP DIAGNOSTIC (#17 grey tint): dump the SELECTED item's full layer +
+        // subview tree so we can see exactly which surface fills the bounding box
+        // grey on select. Remove once found.
+        if selected, let id = nodeID {
+            var out = "=== SELECTED \(id) kind=\(String(describing: node?.kind)) ===\n"
+            out += "CardItemView.layer bg=\(layer?.backgroundColor.map { String(describing: $0) } ?? "nil") opaque=\(layer?.isOpaque ?? false) masksToBounds=\(layer?.masksToBounds ?? false)\n"
+            for (i, l) in (layer?.sublayers ?? []).enumerated() {
+                let fc = (l as? CAShapeLayer)?.fillColor.map { String(describing: $0) } ?? "—"
+                out += "  L[\(i)] \(type(of: l)) bg=\(l.backgroundColor.map { String(describing: $0) } ?? "nil") fill=\(fc) op=\(l.opacity) hidden=\(l.isHidden)\n"
+            }
+            for (i, v) in subviews.enumerated() {
+                out += "  V[\(i)] \(type(of: v)) bg=\(v.layer?.backgroundColor.map { String(describing: $0) } ?? "nil") opaque=\(v.isOpaque) alpha=\(v.alphaValue)\n"
+                for (j, l) in (v.layer?.sublayers ?? []).enumerated() {
+                    out += "      \(i).\(j) \(type(of: l)) bg=\(l.backgroundColor.map { String(describing: $0) } ?? "nil") op=\(l.opacity)\n"
+                }
+            }
+            try? out.write(toFile: "/tmp/clip_grey.txt", atomically: true, encoding: .utf8)
+        }
+
         CATransaction.begin(); CATransaction.setDisableActions(true)
 
         // Section outline — always visible (not gated on selection) so empty
