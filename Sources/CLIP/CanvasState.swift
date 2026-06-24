@@ -189,6 +189,7 @@ final class CanvasState: ObservableObject {
         setupPrefsAutoSave()
         setupZoomWatch()
         setupMediaGate()
+        setupMinimapCamera()
         setupTerminationFlush()
         // Wire the Smart Selection controller after everything else so
         // its Combine subscriptions on `$selectedNodeIDs` / `$pages` /
@@ -370,6 +371,15 @@ final class CanvasState: ObservableObject {
     private var mediaGateCancellable: AnyCancellable?
     private var mediaGateSettle: DispatchWorkItem?
 
+    /// A THROTTLED (~10 fps) mirror of the live camera, for the minimap. The
+    /// minimap's content is camera-independent (it fits ALL nodes); it observed
+    /// the live `cameraStore` only so its viewport box tracked pan/zoom — but
+    /// that redrew the whole map (rasterizing every node thumbnail) on every
+    /// magnify tick (~120 fps), which dropped zoom to 3-5 fps. Driving the
+    /// minimap off this throttled value caps its redraws to ~10 fps.
+    @Published private(set) var minimapCamera = Camera()
+    private var minimapCameraCancellable: AnyCancellable?
+
     /// Drive the media LOD gate off the LIVE camera (reliable on the native
     /// canvas, which writes `cameraStore` directly — `isZoomInteracting` is
     /// not, it hangs off the dead `zoomDidTick`). Hold `cameraMoving` true while
@@ -390,6 +400,13 @@ final class CanvasState: ObservableObject {
                 self.mediaGateSettle = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
             }
+    }
+
+    private func setupMinimapCamera() {
+        minimapCamera = cameraStore.camera
+        minimapCameraCancellable = cameraStore.$camera
+            .throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] cam in self?.minimapCamera = cam }
     }
 
     /// The native NSCollectionView canvas can't drive `isZoomInteracting` through

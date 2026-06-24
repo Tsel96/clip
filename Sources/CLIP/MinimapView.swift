@@ -99,9 +99,11 @@ final class MinimapThumbs: ObservableObject {
 ///   • Click / drag to move the camera to that location.
 struct MinimapView: View {
     @EnvironmentObject var state: CanvasState
-    /// Observed only so the viewport box re-renders on pan/zoom —
-    /// `visibleWorldRect` derives from the camera.
-    @EnvironmentObject var cameraStore: CameraStore
+    // NOTE: deliberately NOT observing the live `cameraStore` here. The map is
+    // camera-independent (it fits all nodes); observing the live camera redrew
+    // the whole map — rasterizing every node thumbnail — on every magnify tick
+    // (~120 fps), which dropped zoom to 3-5 fps. We re-render off `state`'s
+    // THROTTLED `minimapCamera` (~10 fps) instead; the viewport box reads it.
 
     /// Padding between the projected content and the view edge. The default
     /// suits a rectangular host; circular hosts (the glass lens) pass a
