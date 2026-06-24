@@ -110,11 +110,14 @@ struct MinimapView: View, Equatable {
     }
 
     @EnvironmentObject var state: CanvasState
-    // NOTE: deliberately NOT observing the live `cameraStore` here. The map is
-    // camera-independent (it fits all nodes); observing the live camera redrew
-    // the whole map — rasterizing every node thumbnail — on every magnify tick
-    // (~120 fps), which dropped zoom to 3-5 fps. We re-render off `state`'s
-    // THROTTLED `minimapCamera` (~10 fps) instead; the viewport box reads it.
+    // NOTE: deliberately NOT observing the live `cameraStore` here. The lens map
+    // is camera-INDEPENDENT (it fits all nodes), so it never needs to redraw on
+    // pan/zoom. Observing the live camera redrew the whole map — rasterizing
+    // every node thumbnail — on every magnify tick. Combined with `.equatable()`
+    // at the mount, this view now re-renders only when `state`/`thumbs` actually
+    // change (selection, node edits, thumbnails landing) — never during a gesture.
+    // (The detached panel's viewport box, `showsViewport == true`, updates on the
+    // next such change rather than live — acceptable for that rare window.)
 
     /// Padding between the projected content and the view edge. The default
     /// suits a rectangular host; circular hosts (the glass lens) pass a
