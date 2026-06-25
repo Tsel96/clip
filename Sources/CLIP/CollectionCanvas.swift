@@ -1233,6 +1233,27 @@ final class CardItemView: NSView {
         }
         let liftS: CGFloat = (lifted && !isDrawing) ? Self.liftScale : 1.0
 
+        // Card-fill BACKDROP for text/sticky on the item's own layer. While a text
+        // field is first responder its region composites transparent, revealing
+        // what's behind the SwiftUI content — without this it's the grey #EDF0F1
+        // canvas (the "greys while editing" regression). Paint the node's real fill
+        // here so that region shows white (text) / the sticky tint instead.
+        // cornerRadius (NO masksToBounds) rounds the fill to the card shape so corners
+        // stay transparent and the selection ring (a sublayer outside bounds) isn't clipped.
+        switch node?.kind {
+        case .text:
+            layer?.backgroundColor = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1).cgColor
+            layer?.cornerRadius = bounds.height / 2
+            layer?.cornerCurve = .continuous
+        case .stickyNote:
+            layer?.backgroundColor = Self.stickyFillNS(node?.folderColor).cgColor
+            layer?.cornerRadius = StickyNodeView.cornerRadius
+            layer?.cornerCurve = .continuous
+        default:
+            layer?.backgroundColor = nil
+            layer?.cornerRadius = 0
+        }
+
         CATransaction.begin(); CATransaction.setDisableActions(true)
 
         // Section outline — always visible (not gated on selection) so empty
