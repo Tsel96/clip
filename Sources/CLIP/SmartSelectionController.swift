@@ -88,13 +88,19 @@ final class SmartSelectionController: ObservableObject {
         // The 16ms debounce coalesces multi-publish bursts in the same
         // run-loop tick (e.g. a selection change + a position update fire
         // both `$selectedNodeIDs` and `$pages` back-to-back).
-        Publishers.CombineLatest3(
+        Publishers.CombineLatest4(
             state.$selectedNodeIDs,
             state.$pages,
-            state.$canvasMode
+            state.$canvasMode,
+            state.$activeDragID
         )
         .debounce(for: .milliseconds(16), scheduler: DispatchQueue.main)
-        .sink { [weak self] _, _, _ in
+        .sink { [weak self] _, _, _, dragID in
+            // Suspended while a drag is in flight: per-tick position writes
+            // fire `$pages` continuously, so classifying every tick is pure
+            // churn. `endDrag()` clears `activeDragID`, which re-fires this
+            // pipeline for the single post-drag recompute.
+            guard dragID == nil else { return }
             self?.recompute()
         }
         .store(in: &cancellables)

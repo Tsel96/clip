@@ -55,6 +55,8 @@ final class CanvasInputView: NSView {
     /// under the cursor, not animate in.
     var draggedNodeIDs: Set<UUID> { Set(moveStartPos.keys) }
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
+    /// Non-dragging node rects for alignment snapping, snapshotted at move-begin.
+    private var moveOtherRects: [CGRect] = []
     private var primaryMoveID: UUID?
     private var optionDuplicated = false            // Option-drag already cloned this drag
     private var rotateNodeID: UUID?                 // node being rotated by the handle
@@ -106,7 +108,10 @@ final class CanvasInputView: NSView {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let t = hoverTracking { removeTrackingArea(t) }
+        // `.inVisibleRect` + rect: .zero means the ONE area auto-tracks the
+        // visible portion forever — recreating it here (this is called on every
+        // layout/scroll pass) was pure churn. Create once.
+        guard hoverTracking == nil else { return }
         // `.inVisibleRect` keeps the area pinned to the visible portion of this
         // (world-sized) view as it scrolls/zooms, so we never track the whole
         // canvas. `.mouseMoved` resolves which card is under the cursor.
@@ -506,6 +511,14 @@ final class CanvasInputView: NSView {
                 }
                 mode = .move
                 beginIfNeeded(p, primary: primaryMoveID)
+                // Snapshot the NON-dragging rects for alignment snapping ONCE
+                // per gesture (after any option-duplicate remap) — they can't
+                // move mid-drag, and rebuilding them on every mouseDragged
+                // tick was a per-tick O(N) cost.
+                moveOtherRects = p.nodes.filter { moveStartPos[$0.id] == nil }.map {
+                    CGRect(x: $0.position.x, y: $0.position.y,
+                           width: $0.width, height: $0.height ?? 120)
+                }
             }
             // Figma-style alignment snapping — previously MISSING on the native
             // canvas (the engine was only wired into the SwiftUI DraggableNode
@@ -519,10 +532,7 @@ final class CanvasInputView: NSView {
                let pn = p.nodes.first(where: { $0.id == pid }) {
                 let rect = CGRect(x: sp.x + dx, y: sp.y + dy,
                                   width: pn.width, height: pn.height ?? 120)
-                let others = p.nodes.filter { moveStartPos[$0.id] == nil }.map {
-                    CGRect(x: $0.position.x, y: $0.position.y,
-                           width: $0.width, height: $0.height ?? 120)
-                }
+                let others = moveOtherRects   // snapshotted at gesture start
                 let result = AlignmentEngine.snap(draggingRect: rect, otherRects: others,
                                                   zoom: mag, snapToGrid: false)
                 // Equal-spacing pass — on the alignment-snapped rect, only on an

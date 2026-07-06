@@ -15,13 +15,22 @@ extension CanvasNode {
 
     /// The archived RTF rich text, decoded — `nil` when the node has no
     /// formatting yet (render the plain string with default attributes).
+    /// Decodes are cached by the RTF bytes: this is hit on every sticky body
+    /// evaluation, and RTF unarchiving is far more expensive than a lookup.
     var richText: NSAttributedString? {
         guard let data = attributedContent else { return nil }
-        return try? NSAttributedString(
+        let key = data as NSData
+        if let cached = Self.rtfDecodeCache.object(forKey: key) { return cached }
+        guard let decoded = try? NSAttributedString(
             data: data,
             options: [.documentType: NSAttributedString.DocumentType.rtf],
-            documentAttributes: nil)
+            documentAttributes: nil) else { return nil }
+        Self.rtfDecodeCache.setObject(decoded, forKey: key)
+        return decoded
     }
+
+    /// RTF-bytes → decoded string. NSCache: thread-safe, evicts under pressure.
+    private static let rtfDecodeCache = NSCache<NSData, NSAttributedString>()
 }
 
 // MARK: - StickyRichTextEditor
@@ -40,15 +49,6 @@ struct StickyRichTextEditor: NSViewRepresentable {
     var alignment: NSTextAlignment = .left
     var kern: CGFloat = -0.17
     var inset: NSSize = NSSize(width: 22, height: 24)
-    /// When set, the editor paints an OPAQUE rounded fill of this colour on its OWN
-    /// layer (AppKit/Core Animation). This is the card's pill/sticky background.
-    /// It must be painted here — NOT as a SwiftUI sibling shape behind the editor —
-    /// because SwiftUI composites content placed directly behind an embedded
-    /// `NSViewRepresentable` at reduced opacity, so the gray canvas bled through and
-    /// the pill "greyed while editing". An AppKit layer fill can't be under-opacitied.
-    var pillFill: NSColor? = nil
-    /// Corner radius for `pillFill`. Negative ⇒ capsule (recomputed to height/2 on layout).
-    var pillCornerRadius: CGFloat = -1
     /// Vertically centre the text in the view (text nodes — single-line pills).
     /// Off for stickies (top-aligned, multi-line, scrollable).
     var verticalCenter: Bool = false
@@ -100,22 +100,6 @@ struct StickyRichTextEditor: NSViewRepresentable {
         scroll.borderType = .noBorder
         scroll.verticalScrollElasticity = .none
         scroll.autohidesScrollers = true
-
-        // Opaque card fill as a REAL subview behind the text (NOT a background
-        // colour — that doesn't render in the embedded editor, which composites as a
-        // window-hole while first responder; an opaque view does). cornerRadius +
-        // masksToBounds shape it to the pill/sticky; updated in updateNSView.
-        if let pillFill {
-            let backing = NSView()
-            backing.wantsLayer = true
-            backing.layer?.backgroundColor = pillFill.cgColor
-            backing.layer?.cornerCurve = .continuous
-            backing.layer?.masksToBounds = true
-            backing.frame = scroll.bounds
-            backing.autoresizingMask = [.width, .height]
-            scroll.addSubview(backing, positioned: .below, relativeTo: scroll.contentView)
-            context.coordinator.pillBacking = backing
-        }
 
         // Use the DEFAULT text system (like `NSTextView.scrollableTextView()`, which
         // the milestone build used) rather than a hand-built TextKit-1 stack — the
@@ -191,12 +175,6 @@ struct StickyRichTextEditor: NSViewRepresentable {
         scroll.contentView.layer?.backgroundColor = NSColor.clear.cgColor
         tv.drawsBackground = false; tv.backgroundColor = .clear
         tv.layer?.backgroundColor = NSColor.clear.cgColor
-        // Opaque pill/sticky fill (real subview, see makeNSView) — keep its colour +
-        // capsule radius in sync with the (auto-sizing) editor bounds.
-        if let pillFill, let backing = context.coordinator.pillBacking {
-            backing.layer?.backgroundColor = pillFill.cgColor
-            backing.layer?.cornerRadius = pillCornerRadius < 0 ? backing.bounds.height / 2 : pillCornerRadius
-        }
         tv.isEditable = isEditing
         tv.isSelectable = isEditing
 
@@ -228,10 +206,6 @@ struct StickyRichTextEditor: NSViewRepresentable {
         var parent: StickyRichTextEditor
         weak var textView: NSTextView?
         var isCommitting = false
-        /// Opaque pill/sticky fill, painted as a real subview behind the text — a
-        /// background COLOR doesn't render in the embedded editor (it composites as a
-        /// window-hole while first responder), but an opaque view does.
-        weak var pillBacking: NSView?
 
         init(_ p: StickyRichTextEditor) { parent = p }
 

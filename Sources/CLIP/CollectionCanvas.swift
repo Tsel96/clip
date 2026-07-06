@@ -1144,18 +1144,6 @@ final class CardItemView: NSView {
     /// drawings (user spec). Same factor for hover and select (not compounded).
     static let liftScale: CGFloat = 1.02
 
-    /// Sticky card fill as NSColor (matches `StickyNodeView.fill`): the node's
-    /// `folderColor` hex, else the default light card `#F3F4F5`.
-    static func stickyFillNS(_ hex: String?) -> NSColor {
-        let fallback = NSColor(srgbRed: 0xF3/255.0, green: 0xF4/255.0, blue: 0xF5/255.0, alpha: 1)
-        guard var s = hex else { return fallback }
-        if s.hasPrefix("#") { s.removeFirst() }
-        guard s.count >= 6, let v = UInt32(s.prefix(6), radix: 16) else { return fallback }
-        return NSColor(srgbRed: CGFloat((v >> 16) & 0xFF) / 255.0,
-                       green: CGFloat((v >> 8) & 0xFF) / 255.0,
-                       blue:  CGFloat(v & 0xFF) / 255.0, alpha: 1)
-    }
-
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true

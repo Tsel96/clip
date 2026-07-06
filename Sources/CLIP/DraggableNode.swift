@@ -42,6 +42,9 @@ struct DraggableNode: View {
     /// Drag math always adds `value.translation` to these snapshots — never
     /// to the live mutating positions.
     @State private var startPositions: [UUID: CGPoint] = [:]
+    /// Rects of every NON-dragging node, snapshotted at drag start for the
+    /// alignment snapper — static for the gesture, so no per-tick rebuild.
+    @State private var dragOtherRects: [CGRect] = []
 
     /// Set of node ids being moved. Equal to either {node.id} (single drag)
     /// or to the entire current selection (multi drag), or to a freshly
@@ -934,6 +937,14 @@ struct DraggableNode: View {
         for n in state.nodes where draggingIDs.contains(n.id) {
             startPositions[n.id] = n.position
         }
+        // 5b. Snapshot the NON-dragging rects for alignment snapping once —
+        // they can't move during this gesture, and rebuilding them from
+        // `state.nodes` on every drag tick was a per-tick O(N) cost.
+        dragOtherRects = state.nodes.compactMap { n in
+            guard !draggingIDs.contains(n.id) else { return nil }
+            return CGRect(x: n.position.x, y: n.position.y,
+                          width: n.width, height: state.renderedHeight(of: n))
+        }
         dragInProgress = true
 
         // Broadcast that this node is the active drag representative,
@@ -968,14 +979,9 @@ struct DraggableNode: View {
                 width: node.width, height: h
             )
 
-            // "Other rects" = every non-dragging node on the page.
-            let others: [CGRect] = state.nodes.compactMap { n in
-                guard !draggingIDs.contains(n.id) else { return nil }
-                return CGRect(
-                    x: n.position.x, y: n.position.y,
-                    width: n.width, height: state.renderedHeight(of: n)
-                )
-            }
+            // "Other rects" = every non-dragging node on the page —
+            // snapshotted once in `initDrag` (they can't move mid-gesture).
+            let others = dragOtherRects
 
             let result = AlignmentEngine.snap(
                 draggingRect: prospective,
