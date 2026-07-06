@@ -27,6 +27,9 @@ extension CanvasState {
     }
 
     func updatePosition(of id: UUID, to position: CGPoint) {
+        // Drag ticks re-send the current position (e.g. axis-locked or snapped
+        // moves) — skip the `$pages` fire + index patch when nothing changed.
+        guard nodeByID[id]?.position != position else { return }
         mutateNode(id) { $0.position = position }
     }
 

@@ -870,11 +870,18 @@ struct CanvasBehindOverlays: View {
     @EnvironmentObject var state: CanvasState
     @EnvironmentObject var cameraStore: CameraStore
     @EnvironmentObject var pointerStore: CanvasPointerStore
+    /// Camera captured at magnify-start. The full-screen DotGrid Canvas would
+    /// otherwise re-rasterize on EVERY magnify tick — the dominant §Z3 zoom
+    /// cost even on an empty page. Frozen for the gesture, released on settle
+    /// (the grid snaps to the new zoom). Pan keeps the live camera: the grid
+    /// must track a pan, and panning it is cheap.
+    @State private var zoomFrozenCamera: Camera? = nil
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             if state.showGrid, state.canvasMode != .archive {
-                DotGrid(camera: cameraStore.camera, pointer: pointerStore.location)
+                DotGrid(camera: zoomFrozenCamera ?? cameraStore.camera,
+                        pointer: pointerStore.location)
                     .allowsHitTesting(false)
             }
             if state.nodes.isEmpty {
@@ -882,6 +889,9 @@ struct CanvasBehindOverlays: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(false)
             }
+        }
+        .onChange(of: state.isZoomInteracting) { zooming in
+            zoomFrozenCamera = zooming ? cameraStore.camera : nil
         }
     }
 }
@@ -892,7 +902,11 @@ struct CanvasBehindOverlays: View {
 /// scroll) that passes clicks through to `CanvasInputView` in select mode.
 struct CanvasAboveOverlays: View {
     @EnvironmentObject var state: CanvasState
-    @EnvironmentObject var cameraStore: CameraStore
+    // NB: deliberately NO `cameraStore` property — this island's body never
+    // reads the camera, and an `@EnvironmentObject` subscribes to EVERY
+    // `objectWillChange`, which re-evaluated the whole island on every
+    // camera tick (120 Hz during pan/zoom). Children that need the camera
+    // observe it themselves through the environment.
     @EnvironmentObject var smartSelection: SmartSelectionController
 
     var body: some View {

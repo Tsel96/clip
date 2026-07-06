@@ -151,11 +151,15 @@ final class CLIPCanvasView: NSView {
             // never suppresses/blinks media.
             coordinator?.setNeedsCanvasRefresh()
         }
-        // Live MAGNIFY ticks: update connector stroke widths + the inline label
-        // editor. NO media suppression — all cards stay live through the magnify
-        // (the suppression swap is the "social-media videos blink on zoom" bug).
-        // Coalesced via the same per-frame flush as the bounds path above.
+        // Live MAGNIFY ticks. Media stays live through the magnify (the media
+        // gate settles separately off `cameraStore.$camera`; suppressing here is
+        // the "social-media videos blink on zoom" bug). `zoomDidTick` marks the
+        // gesture active so the DotGrid island freezes and connector rebuilds
+        // defer to its settle — the content-space layers ride the scroll view's
+        // own magnify transform, so mid-gesture rebuilds are pure waste (§Z3.1).
+        // Refresh coalesced via the same per-frame flush as the bounds path above.
         scroll.onZoomChange = { [weak coordinator] in
+            coordinator?.zoomDidTick()
             coordinator?.setNeedsCanvasRefresh()
         }
 

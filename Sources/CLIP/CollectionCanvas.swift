@@ -592,11 +592,13 @@ struct CollectionCanvas: NSViewRepresentable {
 
         // MARK: - Zoom interaction (suppress live media during a magnify only)
 
-        /// True while a ZOOM is actively changing — the native-video gate reads it
-        /// to pause an AVPlayer for the duration of the magnify (the one expensive
-        /// op). NOT set on a pan, so panning never pauses / blinks a video. The
-        /// debounced settle clears it and re-runs the gate so the video resumes the
-        /// instant the zoom comes to rest.
+        /// True while a ZOOM is actively changing (NOT set on a pan). While true,
+        /// connector rebuilds are skipped — the content-space CAShapeLayers ride
+        /// the scroll view's magnify transform, so per-tick rebuilds are pure
+        /// waste (§Z3.1); the settle does one full rebuild. `onZoomInteracting`
+        /// drives `state.isZoomInteracting`, which the DotGrid island reads to
+        /// freeze its full-screen Canvas for the gesture. Media is NOT gated
+        /// here — the media LOD settles separately off `cameraStore.$camera`.
         private(set) var zoomMoving = false
         private var zoomSettle: DispatchWorkItem?
 
@@ -604,13 +606,13 @@ struct CollectionCanvas: NSViewRepresentable {
         /// the pan/bounds path). Marks the zoom active + (re)arms a settle; each
         /// tick cancels the previous, so the settle fires once the magnify stops.
         func zoomDidTick() {
-            if !zoomMoving { zoomMoving = true; config.onZoomInteracting(true) }  // SwiftUI media → poster
+            if !zoomMoving { zoomMoving = true; config.onZoomInteracting(true) }  // freeze DotGrid island
             zoomSettle?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 self.zoomMoving = false
-                self.config.onZoomInteracting(false)   // SwiftUI media → live again
-                self.refreshChrome()                   // native video resumes at rest
+                self.config.onZoomInteracting(false)   // DotGrid snaps to the new zoom
+                self.refreshChrome()                   // full connector rebuild at rest
             }
             zoomSettle = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
@@ -636,7 +638,11 @@ struct CollectionCanvas: NSViewRepresentable {
                     card.updateShadow()      // fade the float shadow with zoom
                 }
             }
-            refreshConnectors()
+            // Connectors are content-space layers: a live magnify scales them with
+            // the document, so mid-gesture rebuilds only fight the transform. Skip
+            // them while zooming; `zoomDidTick`'s settle runs the full rebuild
+            // (screen-constant widths/ports/labels snap to the new zoom there).
+            if !zoomMoving { refreshConnectors() }
             // Keep the inline label editor matched to the live zoom/pan.
             if let cid = editingConnectorID { positionEditor(at: cid) }
         }
@@ -666,9 +672,28 @@ struct CollectionCanvas: NSViewRepresentable {
                 frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
                                       width: max(1, n.width), height: max(1, n.height ?? 120))
             }
+            // VIEWPORT CULLING (connectors): the per-connector route/label/arrow
+            // rebuild is the expensive part, so only pass connectors whose
+            // endpoint-UNION rect could touch the viewport — the union (not
+            // per-endpoint) test keeps a line that SPANS the view between two
+            // off-screen cards. Selected + label-editing connectors are always
+            // kept so their chrome/editor stay positioned. Item frames and
+            // `frames` share the collection view's coordinate space, so
+            // `visibleRect` compares directly (it's magnification-aware).
+            var connectors = config.connectors
+            if let cv = collection {
+                let vis = cv.visibleRect
+                let near = vis.insetBy(dx: -vis.width * 0.35, dy: -vis.height * 0.35)
+                connectors = connectors.filter { c in
+                    guard let s = frames[c.sourceID], let t = frames[c.targetID] else { return false }
+                    return near.intersects(s.union(t))
+                        || c.id == editingConnectorID
+                        || config.selectedConnectorIDs.contains(c.id)
+                }
+            }
             // Committed frames only; live drag offsets live in the controller
             // (`setLiveDragOffsets`) and are re-applied on every redraw.
-            cc.update(connectors: config.connectors, nodeFrames: frames,
+            cc.update(connectors: connectors, nodeFrames: frames,
                       selected: config.selectedConnectorIDs,
                       magnification: scroll?.magnification ?? 1)
         }

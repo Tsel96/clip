@@ -105,10 +105,18 @@ enum CanvasStore {
         }
     }
 
+    /// The last snapshot successfully written. Both entry points run on
+    /// `saveQueue`, so access is serialized without a lock.
+    private static var lastSaved: CanvasSnapshot?
+
     /// Atomically write the snapshot to disk, creating the support
     /// directory if it doesn't exist yet. Auto-save goes through
     /// `saveAsync`; the at-quit flush through `saveSync`.
     static func save(_ snapshot: CanvasSnapshot) throws {
+        // Skip identical writes: the ~15 s crash-flush and the camera
+        // throttle re-save unchanged documents — the disk already has
+        // these bytes, and the compare is cheaper than encode + write.
+        guard snapshot != lastSaved else { return }
         // The model invariant is ≥1 page; a zero-page snapshot is corruption,
         // never a real document. Refuse to write it so a transient bad state
         // can't clobber the user's canvas (the on-disk `.empty-backup` shows
@@ -127,5 +135,6 @@ enum CanvasStore {
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(snapshot)
         try data.write(to: url, options: .atomic)
+        lastSaved = snapshot
     }
 }

@@ -230,18 +230,29 @@ extension CanvasState {
 
     /// Background-extract dominant colors for every node on the active
     /// page. Falls back to a content-derived hue on failure (see
-    /// `ColorExtraction.extract`).
+    /// `ColorExtraction.extract`). Served from `colorformColorCache` where
+    /// possible — only nodes never extracted this session pay the cost, so
+    /// the first Colorform entry does the full pass and re-entries are
+    /// near-instant (the "tab uploads again" complaint).
     func refreshDominantColors() async {
         let snapshot = nodes
         var results: [UUID: RGB] = [:]
-        await withTaskGroup(of: (UUID, RGB).self) { group in
-            for node in snapshot {
-                group.addTask { (node.id, await ColorExtraction.extract(for: node)) }
+        var missing: [CanvasNode] = []
+        for node in snapshot {
+            if let cached = colorformColorCache[node.id] { results[node.id] = cached }
+            else { missing.append(node) }
+        }
+        if !missing.isEmpty {
+            await withTaskGroup(of: (UUID, RGB).self) { group in
+                for node in missing {
+                    group.addTask { (node.id, await ColorExtraction.extract(for: node)) }
+                }
+                for await pair in group { results[pair.0] = pair.1 }
             }
-            for await pair in group { results[pair.0] = pair.1 }
         }
         // Only adopt results if the user is still in Colorform on the same page.
         guard canvasMode == .colorform else { return }
+        for node in missing { if let c = results[node.id] { colorformColorCache[node.id] = c } }
         dominantColors = results
     }
 }
