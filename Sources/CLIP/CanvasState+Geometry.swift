@@ -161,9 +161,11 @@ extension CanvasState {
         guard liveRect.intersects(nodeRect) else { return false }
         //  (b) Too small on screen (zoomed out) rests as a poster.
         guard projectedScreenSide(of: node) >= Self.livePlaybackMinScreenSide else { return false }
-        //  (c) CONCURRENCY CAP — only the N most-centred qualifying media cards
-        //      actually decode (see `liveMediaIDs`), bounding simultaneous decoders
-        //      to a constant so a dense board (34 tweet videos) can't pin the CPU.
+        //  (c) The SETTLED gate set — `liveMediaIDs` is memoised on
+        //      `mediaGateEpoch` (bumps only at camera rest), so liveness is
+        //      frozen during a gesture. NB: there is deliberately NO
+        //      concurrency cap — per the product call, any media card even
+        //      partly on screen at size plays.
         guard liveMediaIDs.contains(node.id) else { return false }
         return true
     }

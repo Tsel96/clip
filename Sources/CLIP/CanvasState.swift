@@ -1424,13 +1424,20 @@ final class CanvasState: ObservableObject {
             let hidden = allFolderChildIDs
             base = hidden.isEmpty ? nodes : nodes.filter { !hidden.contains($0.id) }
         }
+        // Non-head stack members are invisible (the head renders the pile) —
+        // don't hand the native canvas an item view per hidden card. The bento
+        // path already filters these (`bentoVisibleNodes`); the native path
+        // instantiated a full DraggableNode for every hidden member.
+        let visible = base.contains { isHiddenByStack($0.id) }
+            ? base.filter { !isHiddenByStack($0.id) }
+            : base
         // Colorform re-lays the cards into colour clusters (each cluster's cards
         // sit on a grid centred on its bulb), so zooming into a colour lands on
         // its cards. The native canvas positions by `node.position`, so swap in
         // the computed colorform position here. Non-destructive (the model
         // positions are untouched; restored on exit).
-        guard canvasMode == .colorform, !colorformPositions.isEmpty else { return base }
-        return base.map { node in
+        guard canvasMode == .colorform, !colorformPositions.isEmpty else { return visible }
+        return visible.map { node in
             guard let p = colorformPositions[node.id] else { return node }
             var n = node
             n.position = p

@@ -773,7 +773,12 @@ final class RevealAnimator: ObservableObject {
                 if p >= 1 { break }
                 try? await Task.sleep(nanoseconds: 16_000_000)   // ~60 fps
             }
+            // Reset BEFORE completing so `onComplete` (or a later state change)
+            // can re-trigger a reveal — `running` was never cleared, which both
+            // blocked re-triggers and pinned the final CGImage forever.
+            running = false
             onComplete()
+            frame = nil   // the view swapped to the plain image; release the bitmap
         }
     }
 }
@@ -901,7 +906,10 @@ func renderOffscreen<V: View>(_ view: V, width: CGFloat, fixedHeight: CGFloat?,
     win.setFrameOrigin(NSPoint(x: -30000, y: -30000))   // and off-screen
     win.contentView = host
     win.orderFrontRegardless()                           // rendered → async content loads
-    defer { win.orderOut(nil) }
+    // Tear the window down fully on exit: `orderOut` alone (with
+    // `isReleasedWhenClosed = false`) left the NSWindow + its hosting view
+    // alive after every reveal — one leaked window per animated card.
+    defer { win.orderOut(nil); win.contentView = nil; win.close() }
     try? await Task.sleep(nanoseconds: settleNanos)
     host.layoutSubtreeIfNeeded()
     var h = fixedHeight ?? host.fittingSize.height       // media-aspect height for tweets

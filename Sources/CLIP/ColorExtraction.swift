@@ -4,6 +4,7 @@ import AVFoundation
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
+import ImageIO
 
 // MARK: - RGB
 
@@ -76,6 +77,20 @@ enum ColorExtraction {
     static func extract(for node: CanvasNode) async -> RGB {
         switch node.kind {
         case .image(let data, _):
+            // Thumbnail decode (≤256 px): `dominantColor` histograms a 64×64
+            // draw, so full-res decoding a 12 MP photo here was pure waste —
+            // this path runs for EVERY image node on Colorform entry. NSImage
+            // fallback covers non-bitmap data ImageIO won't thumbnail.
+            let thumbOpts: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: 256,
+                kCGImageSourceCreateThumbnailWithTransform: true
+            ]
+            if let src = CGImageSourceCreateWithData(data as CFData, nil),
+               let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, thumbOpts as CFDictionary),
+               let rgb = dominantColor(from: cg) {
+                return rgb
+            }
             if let img = NSImage(data: data),
                let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil),
                let rgb = dominantColor(from: cg) {

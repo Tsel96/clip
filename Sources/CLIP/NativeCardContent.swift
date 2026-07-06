@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import ImageIO
 
 /// Native (AppKit) card content — the start of replacing the SwiftUI-hosted
 /// cards with native views per type, mirroring Spatial's `CanvasItemView` /
@@ -368,8 +369,23 @@ final class CardImageContentView: NSView {
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         imageLayer.contentsGravity = .resizeAspectFill
         imageLayer.masksToBounds = true
-        if let img = NSImage(data: data),
-           let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        // Downsampled decode (ImageIO thumbnail): canvas cards render at most
+        // ~1000 pt wide, so cap the bitmap at 2048 px — a full-res 12 MP decode
+        // held ~50 MB per card and re-sampled every zoom. The lightbox decodes
+        // its own full-res copy, so detail view is unaffected. NSImage fallback
+        // covers non-bitmap data (e.g. pasted PDF) that ImageIO won't thumbnail.
+        // ponytail: fixed cap, not card-size-aware — thread the card size in if
+        // giant cards ever look soft.
+        let thumbOpts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 2048,
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
+        if let src = CGImageSourceCreateWithData(data as CFData, nil),
+           let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, thumbOpts as CFDictionary) {
+            imageLayer.contents = cg
+        } else if let img = NSImage(data: data),
+                  let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             imageLayer.contents = cg
         }
         layer?.addSublayer(imageLayer)

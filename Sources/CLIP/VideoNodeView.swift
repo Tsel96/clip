@@ -188,13 +188,15 @@ struct VideoCircleButton: View {
 /// mode both pull from here, so a card never shows a black box once warm.
 @MainActor
 enum VideoPosterStore {
-    private static var cache: [URL: NSImage] = [:]
+    /// NSCache (not a Dictionary) so decoded posters — ~1 MB each — are
+    /// evicted under memory pressure instead of accumulating unbounded.
+    private static let cache = NSCache<NSURL, NSImage>()
 
     /// Cached poster for `url`, decoding + caching on first request.
     static func poster(for url: URL) async -> NSImage? {
-        if let hit = cache[url] { return hit }
+        if let hit = cache.object(forKey: url as NSURL) { return hit }
         let image = await decodeFirstFrame(url)
-        if let image { cache[url] = image }
+        if let image { cache.setObject(image, forKey: url as NSURL) }
         return image
     }
 
@@ -204,7 +206,7 @@ enum VideoPosterStore {
     /// thumbnail in the same frame the ghost appears, with no flash of
     /// the placeholder fallback.
     static func cachedPoster(for url: URL) -> NSImage? {
-        cache[url]
+        cache.object(forKey: url as NSURL)
     }
 
     /// Proactively decode posters for any of `urls` not already cached. Called
@@ -212,7 +214,7 @@ enum VideoPosterStore {
     /// the camera-move poster cover (`VideoNodeView`) falls back to black on a
     /// cold cache, which is the "videos go black while zooming" symptom.
     static func warm(_ urls: [URL]) {
-        for url in urls where cache[url] == nil {
+        for url in urls where cache.object(forKey: url as NSURL) == nil {
             Task { _ = await poster(for: url) }
         }
     }
