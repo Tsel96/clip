@@ -759,10 +759,10 @@ final class CanvasState: ObservableObject {
     @Published var dominantColors: [UUID: RGB] = [:]
     /// Session-lifetime extraction cache behind `dominantColors`, so re-entering
     /// Colorform doesn't re-extract every node (the "tab uploads again" feel —
-    /// 5-15 s on a media-heavy page). Keyed by node id; survives mode exits.
-    /// ponytail: colors cache for the app session — invalidate per-node on a
-    /// content edit if stale colors ever matter.
-    var colorformColorCache: [UUID: RGB] = [:]
+    /// 5-15 s on a media-heavy page). Keyed by id + content signature (see
+    /// `colorformColorKey`), so recolours/edits re-extract; survives mode exits.
+    /// Network-failure fallbacks are never cached (retry next entry).
+    var colorformColorCache: [String: RGB] = [:]
     /// Spatial override applied to nodes in `.colorform` mode — keys missing
     /// fall through to the node's persisted `position`. Cleared on exit,
     /// so the underlying canvas layout is never touched.

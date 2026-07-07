@@ -672,28 +672,17 @@ struct CollectionCanvas: NSViewRepresentable {
                 frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
                                       width: max(1, n.width), height: max(1, n.height ?? 120))
             }
-            // VIEWPORT CULLING (connectors): the per-connector route/label/arrow
-            // rebuild is the expensive part, so only pass connectors whose
-            // endpoint-UNION rect could touch the viewport — the union (not
-            // per-endpoint) test keeps a line that SPANS the view between two
-            // off-screen cards. Selected + label-editing connectors are always
-            // kept so their chrome/editor stay positioned. Item frames and
-            // `frames` share the collection view's coordinate space, so
-            // `visibleRect` compares directly (it's magnification-aware).
-            var connectors = config.connectors
-            if let cv = collection {
-                let vis = cv.visibleRect
-                let near = vis.insetBy(dx: -vis.width * 0.35, dy: -vis.height * 0.35)
-                connectors = connectors.filter { c in
-                    guard let s = frames[c.sourceID], let t = frames[c.targetID] else { return false }
-                    return near.intersects(s.union(t))
-                        || c.id == editingConnectorID
-                        || config.selectedConnectorIDs.contains(c.id)
-                }
-            }
+            // NB: deliberately NO viewport cull here. A culled connector's
+            // layers get destroyed (redraw's stale-bundle sweep), which made
+            // lines vanish mid-pinch-zoom-out / mid-drag; and no cheap rect
+            // test contains the real geometry — the bezier's bow (arm =
+            // dist·0.5, uncapped) and a dragged label both escape the
+            // endpoint-union rect. The zoom cost is covered by skipping this
+            // entire rebuild while `zoomMoving` (layers ride the magnify
+            // transform); pan-time rebuild cost is O(connectors), small.
             // Committed frames only; live drag offsets live in the controller
             // (`setLiveDragOffsets`) and are re-applied on every redraw.
-            cc.update(connectors: connectors, nodeFrames: frames,
+            cc.update(connectors: config.connectors, nodeFrames: frames,
                       selected: config.selectedConnectorIDs,
                       magnification: scroll?.magnification ?? 1)
         }
@@ -744,6 +733,11 @@ struct CollectionCanvas: NSViewRepresentable {
 
         deinit {
             if #available(macOS 14.0, *) { (canvasRefreshLink as? CADisplayLink)?.invalidate() }
+            // If the canvas dies mid-pinch (mode switch during a gesture) the
+            // armed settle would never run its [weak self] body — release the
+            // zoom-interacting latch so the DotGrid island can't stay frozen.
+            zoomSettle?.cancel()
+            if zoomMoving { config.onZoomInteracting(false) }
         }
 
         /// Move the dragged items' VIEWS directly during a drag — bypassing the

@@ -774,11 +774,12 @@ final class RevealAnimator: ObservableObject {
                 try? await Task.sleep(nanoseconds: 16_000_000)   // ~60 fps
             }
             // Reset BEFORE completing so `onComplete` (or a later state change)
-            // can re-trigger a reveal — `running` was never cleared, which both
-            // blocked re-triggers and pinned the final CGImage forever.
+            // can re-trigger a reveal — `running` was never cleared, which
+            // blocked re-triggers. (`frame` is deliberately NOT nilled: the
+            // view may still composite it this frame; one retained bitmap per
+            // animator is cheaper than a completion blink.)
             running = false
             onComplete()
-            frame = nil   // the view swapped to the plain image; release the bitmap
         }
     }
 }

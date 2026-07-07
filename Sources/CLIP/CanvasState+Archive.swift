@@ -239,20 +239,37 @@ extension CanvasState {
         var results: [UUID: RGB] = [:]
         var missing: [CanvasNode] = []
         for node in snapshot {
-            if let cached = colorformColorCache[node.id] { results[node.id] = cached }
+            if let cached = colorformColorCache[colorformColorKey(node)] { results[node.id] = cached }
             else { missing.append(node) }
         }
+        var cacheable = Set<UUID>()
         if !missing.isEmpty {
-            await withTaskGroup(of: (UUID, RGB).self) { group in
+            await withTaskGroup(of: (UUID, RGB, Bool).self) { group in
                 for node in missing {
-                    group.addTask { (node.id, await ColorExtraction.extract(for: node)) }
+                    group.addTask {
+                        let r = await ColorExtraction.extract(for: node)
+                        return (node.id, r.rgb, r.cacheable)
+                    }
                 }
-                for await pair in group { results[pair.0] = pair.1 }
+                for await (id, rgb, ok) in group {
+                    results[id] = rgb
+                    if ok { cacheable.insert(id) }
+                }
             }
         }
         // Only adopt results if the user is still in Colorform on the same page.
         guard canvasMode == .colorform else { return }
-        for node in missing { if let c = results[node.id] { colorformColorCache[node.id] = c } }
+        for node in missing where cacheable.contains(node.id) {
+            if let c = results[node.id] { colorformColorCache[colorformColorKey(node)] = c }
+        }
         dominantColors = results
+    }
+
+    /// Cache key for `colorformColorCache`: node id + the content signature
+    /// `nativeContentKey` tracks (sticky/section recolours, text edits) — an
+    /// edit changes the key, so the node re-extracts instead of serving a
+    /// stale colour. Media payloads are immutable, so id alone suffices there.
+    private func colorformColorKey(_ node: CanvasNode) -> String {
+        "\(node.id.uuidString)|\(nativeContentKey(for: node) ?? "")"
     }
 }

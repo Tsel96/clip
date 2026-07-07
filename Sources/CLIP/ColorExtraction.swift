@@ -74,7 +74,11 @@ enum ColorExtraction {
 
     /// Best-effort dominant color for a single node. Never throws; falls
     /// back to a content-derived hue when extraction can't complete.
-    static func extract(for node: CanvasNode) async -> RGB {
+    /// `cacheable` is false only when a NETWORK fetch failed — a retry on
+    /// the next Colorform entry could succeed, so that fallback must not be
+    /// pinned in the session cache. Local/deterministic results (including
+    /// deterministic seed fallbacks) are always cacheable.
+    static func extract(for node: CanvasNode) async -> (rgb: RGB, cacheable: Bool) {
         switch node.kind {
         case .image(let data, _):
             // Thumbnail decode (≤256 px): `dominantColor` histograms a 64×64
@@ -89,47 +93,47 @@ enum ColorExtraction {
             if let src = CGImageSourceCreateWithData(data as CFData, nil),
                let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, thumbOpts as CFDictionary),
                let rgb = dominantColor(from: cg) {
-                return rgb
+                return (rgb, true)
             }
             if let img = NSImage(data: data),
                let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil),
                let rgb = dominantColor(from: cg) {
-                return rgb
+                return (rgb, true)
             }
-            return fallback(for: node)
+            return (fallback(for: node), true)   // local data — failure is deterministic
 
         case .video(let fileURL, _):
-            return await dominantColorForVideo(at: fileURL) ?? fallback(for: node)
+            return (await dominantColorForVideo(at: fileURL) ?? fallback(for: node), true)
 
         case .drawing(let stroke):
-            return RGB(r: stroke.color.red, g: stroke.color.green, b: stroke.color.blue)
+            return (RGB(r: stroke.color.red, g: stroke.color.green, b: stroke.color.blue), true)
 
         case .tweet(let url):
-            return await dominantColorForTweet(url: url) ?? fallback(for: node)
+            if let rgb = await dominantColorForTweet(url: url) { return (rgb, true) }
+            return (fallback(for: node), false)   // network failed — retry next entry
 
         case .instagram(let url):
-            return await dominantColorForInstagram(url: url) ?? fallback(for: node)
+            if let rgb = await dominantColorForInstagram(url: url) { return (rgb, true) }
+            return (fallback(for: node), false)   // network failed — retry next entry
 
         case .youtube:
             // No cheap local pixels for an embed; seed a stable hue.
-            return fallback(for: node)
+            return (fallback(for: node), true)
 
         case .webclip:
             // No cheap local pixels for arbitrary websites; seed a stable hue.
-            return fallback(for: node)
+            return (fallback(for: node), true)
 
         case .text(let content, _):
-            return fallback(seed: content.isEmpty ? node.id.uuidString : content)
+            return (fallback(seed: content.isEmpty ? node.id.uuidString : content), true)
 
         case .section(_, let color):
-            let c = color.swiftUIColor
-            return rgb(from: c, seed: node.id.uuidString)
+            return (rgb(from: color.swiftUIColor, seed: node.id.uuidString), true)
 
         case .stickyNote(_, let color):
-            let c = color.swiftUIColor
-            return rgb(from: c, seed: node.id.uuidString)
+            return (rgb(from: color.swiftUIColor, seed: node.id.uuidString), true)
         case .folder:
-            return fallback(for: node)
+            return (fallback(for: node), true)
         }
     }
 
