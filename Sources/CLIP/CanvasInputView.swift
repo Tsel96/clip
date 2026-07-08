@@ -62,6 +62,11 @@ final class CanvasInputView: NSView {
     private var rotateNodeID: UUID?                 // node being rotated by the handle
     private var lastRotateSnap: CGFloat?            // cardinal we're currently snapped to (haptic edge)
     private var lastSnapClaim = (x: false, y: false) // move-snap axes currently claimed (haptic edge)
+    // R11 edge auto-scroll during a card drag.
+    private var autoScrollTicker: DisplayLinkTicker?
+    private var autoScrollStep: CGPoint = .zero      // content-coords per frame
+    private var lastDragWindowPoint: NSPoint?
+    private var lastDragModifiers: NSEvent.ModifierFlags = []
     private var lastRotateAngle: CGFloat = 0        // committed to the model on mouse-up
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
@@ -521,49 +526,13 @@ final class CanvasInputView: NSView {
                            width: $0.width, height: $0.height ?? 120)
                 }
             }
-            // Figma-style alignment snapping — previously MISSING on the native
-            // canvas (the engine was only wired into the SwiftUI DraggableNode
-            // drag). Snap the PRIMARY node's prospective world frame to other
-            // nodes' edges/centres, then apply the same delta to the whole group.
-            // ⌘ frees it. Only the delta is adjusted — no `@Published` write — so
-            // it can't trigger a card re-render mid-drag.
-            var sdx = dx, sdy = dy
-            if !event.modifierFlags.contains(.command),
-               let pid = primaryMoveID, let sp = moveStartPos[pid],
-               let pn = p.nodes.first(where: { $0.id == pid }) {
-                let rect = CGRect(x: sp.x + dx, y: sp.y + dy,
-                                  width: pn.width, height: pn.height ?? 120)
-                let others = moveOtherRects   // snapshotted at gesture start
-                let result = AlignmentEngine.snap(draggingRect: rect, otherRects: others,
-                                                  zoom: mag, snapToGrid: false)
-                // Equal-spacing pass — on the alignment-snapped rect, only on an
-                // axis alignment left free (so the two never fight a coordinate).
-                let claimedX = result.guides.contains { $0.axis == .vertical }
-                let claimedY = result.guides.contains { $0.axis == .horizontal }
-                let spacing = AlignmentEngine.equalSpacing(draggingRect: result.rect,
-                    otherRects: others, zoom: mag, allowX: !claimedX, allowY: !claimedY)
-                sdx = spacing.rect.minX - sp.x
-                sdy = spacing.rect.minY - sp.y
-                coordinator?.guideController?.update(result.guides, spacing: spacing.indicators,
-                    worldMin: CGPoint(x: p.worldBounds.minX, y: p.worldBounds.minY),
-                    magnification: mag)
-                // Restrained tap when a guide NEWLY claims an axis with a real
-                // correction (>1pt world) — the "magnetic latch" moment. Edge-
-                // triggered per axis, so riding along a guide stays silent. (R17)
-                let corrected = max(abs(result.rect.minX - rect.minX),
-                                    abs(result.rect.minY - rect.minY)) > 1
-                if corrected, (claimedX && !lastSnapClaim.x) || (claimedY && !lastSnapClaim.y) {
-                    Haptics.tap()
-                }
-                lastSnapClaim = (claimedX, claimedY)
-            } else {
-                lastSnapClaim = (false, false)
-                coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
-            }
-            // Drive the move VISUALLY only (no per-tick model mutation). The model
-            // is committed once on mouse-up.
-            moveDelta = CGPoint(x: sdx, y: sdy)
-            coordinator?.liveReposition(moveStartPos, dx: sdx, dy: sdy)   // live preview
+            driveMove(pt: pt, modifiers: event.modifierFlags, p: p)
+            // R11: cursor held near the viewport edge auto-scrolls the canvas
+            // (a drag used to dead-stop at the edge). The ticker re-drives the
+            // move each frame as the content slides under the still cursor.
+            lastDragWindowPoint = event.locationInWindow
+            lastDragModifiers = event.modifierFlags
+            updateEdgeAutoScroll()
         case .pendingMarquee, .marquee:
             if mode == .pendingMarquee {
                 // Don't start a marquee on trackpad click-jitter — a sub-threshold
@@ -715,6 +684,105 @@ final class CanvasInputView: NSView {
         rotateNodeID = nil
         lastRotateSnap = nil
         lastSnapClaim = (false, false)
+    }
+
+    /// One tick of a live MOVE drag: alignment/spacing snap the primary node,
+    /// apply the (possibly corrected) delta to the whole group visually.
+    /// Figma-style alignment snapping — previously MISSING on the native
+    /// canvas. ⌘ frees the snap. Only the delta is adjusted — no `@Published`
+    /// write — so it can't re-render a card mid-drag. Called from
+    /// `mouseDragged` AND per edge-auto-scroll frame (content moves under a
+    /// stationary cursor, so the delta keeps growing).
+    private func driveMove(pt: NSPoint, modifiers: NSEvent.ModifierFlags, p: CanvasConfig) {
+        let dx = pt.x - startPt.x, dy = pt.y - startPt.y
+        var sdx = dx, sdy = dy
+        if !modifiers.contains(.command),
+           let pid = primaryMoveID, let sp = moveStartPos[pid],
+           let pn = p.nodes.first(where: { $0.id == pid }) {
+            let rect = CGRect(x: sp.x + dx, y: sp.y + dy,
+                              width: pn.width, height: pn.height ?? 120)
+            let others = moveOtherRects   // snapshotted at gesture start
+            let result = AlignmentEngine.snap(draggingRect: rect, otherRects: others,
+                                              zoom: mag, snapToGrid: false)
+            // Equal-spacing pass — on the alignment-snapped rect, only on an
+            // axis alignment left free (so the two never fight a coordinate).
+            let claimedX = result.guides.contains { $0.axis == .vertical }
+            let claimedY = result.guides.contains { $0.axis == .horizontal }
+            let spacing = AlignmentEngine.equalSpacing(draggingRect: result.rect,
+                otherRects: others, zoom: mag, allowX: !claimedX, allowY: !claimedY)
+            sdx = spacing.rect.minX - sp.x
+            sdy = spacing.rect.minY - sp.y
+            coordinator?.guideController?.update(result.guides, spacing: spacing.indicators,
+                worldMin: CGPoint(x: p.worldBounds.minX, y: p.worldBounds.minY),
+                magnification: mag)
+            // Restrained tap when a guide NEWLY claims an axis with a real
+            // correction (>1pt world) — the "magnetic latch" moment. Edge-
+            // triggered per axis, so riding along a guide stays silent. (R17)
+            let corrected = max(abs(result.rect.minX - rect.minX),
+                                abs(result.rect.minY - rect.minY)) > 1
+            if corrected, (claimedX && !lastSnapClaim.x) || (claimedY && !lastSnapClaim.y) {
+                Haptics.tap()
+            }
+            lastSnapClaim = (claimedX, claimedY)
+        } else {
+            lastSnapClaim = (false, false)
+            coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
+        }
+        // Drive the move VISUALLY only (no per-tick model mutation). The model
+        // is committed once on mouse-up.
+        moveDelta = CGPoint(x: sdx, y: sdy)
+        coordinator?.liveReposition(moveStartPos, dx: sdx, dy: sdy)   // live preview
+    }
+
+    // MARK: - R11 edge auto-scroll (drag near the viewport edge pans the canvas)
+
+    /// (Re)compute the per-frame scroll step from how deep the cursor sits in
+    /// the 24-screen-pt edge margin; arm or stop the ticker accordingly.
+    private func updateEdgeAutoScroll() {
+        guard mode == .move, let scroll = enclosingScrollView,
+              let wp = lastDragWindowPoint else { stopEdgeAutoScroll(); return }
+        let clip = scroll.contentView
+        let ptC = clip.convert(wp, from: nil)
+        let b = clip.bounds                      // content coords (÷ magnification)
+        let m = 24 / mag                         // 24 screen pt margin
+        let maxStep = 14 / mag                   // ≤14 screen pt per frame
+        var step = CGPoint.zero
+        if ptC.x < b.minX + m      { step.x = -maxStep * min(1, (b.minX + m - ptC.x) / m) }
+        else if ptC.x > b.maxX - m { step.x =  maxStep * min(1, (ptC.x - (b.maxX - m)) / m) }
+        if ptC.y < b.minY + m      { step.y = -maxStep * min(1, (b.minY + m - ptC.y) / m) }
+        else if ptC.y > b.maxY - m { step.y =  maxStep * min(1, (ptC.y - (b.maxY - m)) / m) }
+        guard step != .zero else { stopEdgeAutoScroll(); return }
+        autoScrollStep = step
+        if autoScrollTicker == nil {
+            autoScrollTicker = DisplayLinkTicker(view: self) { [weak self] _ in
+                self?.edgeAutoScrollTick()
+            }
+        }
+        if autoScrollTicker?.isRunning != true {
+            coordinator?.cancelCameraGlide()     // the drag owns the camera now
+            autoScrollTicker?.start()
+        }
+    }
+
+    private func stopEdgeAutoScroll() {
+        autoScrollTicker?.stop()
+    }
+
+    /// One auto-scroll frame: nudge the clip origin (clamped by AppKit at the
+    /// document edge), then re-drive the move from the stationary cursor. The
+    /// bounds change rides the existing coalesced camera-push/refresh path.
+    private func edgeAutoScrollTick() {
+        guard mode == .move, let scroll = enclosingScrollView,
+              let wp = lastDragWindowPoint, let p = config else {
+            stopEdgeAutoScroll(); return
+        }
+        let clip = scroll.contentView
+        var origin = clip.bounds.origin
+        origin.x += autoScrollStep.x
+        origin.y += autoScrollStep.y
+        clip.scroll(to: origin)
+        scroll.reflectScrolledClipView(clip)
+        driveMove(pt: convert(wp, from: nil), modifiers: lastDragModifiers, p: p)
     }
 
     private func beginIfNeeded(_ p: CanvasConfig, primary: UUID?) {

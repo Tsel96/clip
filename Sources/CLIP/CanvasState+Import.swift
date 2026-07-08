@@ -145,6 +145,27 @@ extension CanvasState {
     ///     `maxImagePixelDim` (4096 px) on either axis.
     /// Caps the on-canvas width/height at 600pt while preserving aspect ratio.
     func addImage(data: Data, filename: String, at worldPoint: CGPoint? = nil) {
+        // R18: animated gif/webp play as looping video — the image path
+        // freezes them on frame 0. Convert off-main, then ride the existing
+        // video pipeline (looper + poster + LOD gate). Falls back to the
+        // static path if the conversion fails.
+        let ext = (filename as NSString).pathExtension.lowercased()
+        if ["gif", "webp"].contains(ext), AnimatedImageConverter.isAnimated(data) {
+            Task { [weak self] in
+                let url = await Task.detached { try? AnimatedImageConverter.mp4(from: data) }.value
+                guard let self else { return }
+                if let url {
+                    self.addVideo(fileURL: url, at: worldPoint)
+                } else {
+                    self.addStaticImage(data: data, filename: filename, at: worldPoint)
+                }
+            }
+            return
+        }
+        addStaticImage(data: data, filename: filename, at: worldPoint)
+    }
+
+    private func addStaticImage(data: Data, filename: String, at worldPoint: CGPoint? = nil) {
         guard data.count <= Self.maxImageBytes else {
             alert = AlertContent(
                 title: "Image too large",
@@ -240,11 +261,16 @@ extension CanvasState {
                 )
                 return
             }
+            // R10: own the bytes — a card referencing the original dropped
+            // path breaks silently when the user moves/deletes that file.
+            // Content-addressed copy (streamed hash, off-main); falls back
+            // to the original URL on any storage failure.
+            let storedURL = await Task.detached { MediaStore.importFile(fileURL) }.value
             let position = CGPoint(
                 x: centre.x - cardSize.width  / 2,
                 y: centre.y - cardSize.height / 2
             )
-            self.appendNode(.video(fileURL: fileURL,
+            self.appendNode(.video(fileURL: storedURL,
                                    filename: fileURL.lastPathComponent,
                                    position: position,
                                    size: cardSize),

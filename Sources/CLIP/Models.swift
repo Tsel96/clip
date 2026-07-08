@@ -722,6 +722,7 @@ extension CanvasNode.Kind: Codable {
     private enum CodingKeys: String, CodingKey {
         case type, url, content, fontSize, stroke, data, filename, fileURL
         case title, color, icon, childIDs
+        case mediaFile   // R10: content-addressed file name in MediaStore
     }
 
     init(from decoder: Decoder) throws {
@@ -744,10 +745,19 @@ extension CanvasNode.Kind: Codable {
         case "drawing":
             self = .drawing(stroke: try c.decode(DrawingStroke.self, forKey: .stroke))
         case "image":
-            self = .image(
-                data: try c.decode(Data.self, forKey: .data),
-                filename: try c.decode(String.self, forKey: .filename)
-            )
+            let filename = try c.decode(String.self, forKey: .filename)
+            if let name = try c.decodeIfPresent(String.self, forKey: .mediaFile) {
+                // R10 format: bytes live in the media store. A missing file
+                // decodes as an empty (blank) card rather than nuking the
+                // whole canvas load.
+                self = .image(data: MediaStore.read(name) ?? Data(), filename: filename)
+            } else {
+                // Legacy base64-embedded bytes — externalized on next save;
+                // flag it so that save backs up canvas.json first.
+                CanvasStore.noteLegacyEmbeddedMedia()
+                self = .image(data: try c.decode(Data.self, forKey: .data),
+                              filename: filename)
+            }
         case "video":
             self = .video(
                 fileURL: try c.decode(URL.self, forKey: .fileURL),
@@ -801,7 +811,14 @@ extension CanvasNode.Kind: Codable {
             try c.encode(stroke, forKey: .stroke)
         case .image(let data, let filename):
             try c.encode("image", forKey: .type)
-            try c.encode(data, forKey: .data)
+            // R10: bytes go to the content-addressed media store; the JSON
+            // holds only the reference (kills whole-board base64 per save).
+            // Falls back to embedding if the store write fails.
+            if let name = try? MediaStore.store(data, ext: (filename as NSString).pathExtension) {
+                try c.encode(name, forKey: .mediaFile)
+            } else {
+                try c.encode(data, forKey: .data)
+            }
             try c.encode(filename, forKey: .filename)
         case .video(let fileURL, let filename):
             try c.encode("video", forKey: .type)

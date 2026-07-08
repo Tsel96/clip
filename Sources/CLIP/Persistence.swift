@@ -109,6 +109,13 @@ enum CanvasStore {
     /// `saveQueue`, so access is serialized without a lock.
     private static var lastSaved: CanvasSnapshot?
 
+    /// Set during decode when legacy base64-embedded image bytes were seen
+    /// (R10 migration): the next save rewrites the document in the
+    /// externalized-media format, so it backs up canvas.json first, once.
+    /// (Written on the load path at launch, read later on `saveQueue`.)
+    private static var legacyEmbeddedMediaSeen = false
+    static func noteLegacyEmbeddedMedia() { legacyEmbeddedMediaSeen = true }
+
     /// Atomically write the snapshot to disk, creating the support
     /// directory if it doesn't exist yet. Auto-save goes through
     /// `saveAsync`; the at-quit flush through `saveSync`.
@@ -131,6 +138,16 @@ enum CanvasStore {
         try FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: true
         )
+        // One-time R10 migration backup: this save externalizes the legacy
+        // embedded image bytes, so keep the pre-migration document around.
+        if legacyEmbeddedMediaSeen {
+            legacyEmbeddedMediaSeen = false
+            let backup = url.appendingPathExtension("pre-media-backup")
+            if FileManager.default.fileExists(atPath: url.path),
+               !FileManager.default.fileExists(atPath: backup.path) {
+                try? FileManager.default.copyItem(at: url, to: backup)
+            }
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(snapshot)
