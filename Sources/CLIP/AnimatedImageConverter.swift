@@ -49,9 +49,16 @@ enum AnimatedImageConverter {
         writer.startSession(atSourceTime: .zero)
 
         var t = 0.0
+        // Don't let ImageIO cache every decoded frame — a 500-frame gif would
+        // pin them all in memory; we touch each frame exactly once.
+        let frameOpts = [kCGImageSourceShouldCache: false] as CFDictionary
         for i in 0..<count {
-            guard let cg = CGImageSourceCreateImageAtIndex(src, i, nil) else { continue }
+            guard let cg = CGImageSourceCreateImageAtIndex(src, i, frameOpts) else { continue }
             while !input.isReadyForMoreMediaData { usleep(2000) }
+            // The pool appears asynchronously after startSession — wait for it
+            // like the input, instead of failing the whole conversion.
+            var poolWait = 0
+            while adaptor.pixelBufferPool == nil, poolWait < 500 { usleep(2000); poolWait += 1 }
             guard let pool = adaptor.pixelBufferPool else { throw Err.writer }
             var pb: CVPixelBuffer?
             CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb)
