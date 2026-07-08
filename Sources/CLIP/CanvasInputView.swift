@@ -199,6 +199,8 @@ final class CanvasInputView: NSView {
     private var config: CanvasConfig? { coordinator?.config }
     private var mag: CGFloat { max(enclosingScrollView?.magnification ?? 1, 0.0001) }
 
+    deinit { autoScrollTicker?.invalidate() }
+
     private func contentFrame(_ n: CanvasNode, _ p: CanvasConfig) -> CGRect {
         CGRect(x: n.position.x - p.worldBounds.minX, y: n.position.y - p.worldBounds.minY,
                width: n.width, height: n.height ?? 120)
@@ -684,6 +686,8 @@ final class CanvasInputView: NSView {
         rotateNodeID = nil
         lastRotateSnap = nil
         lastSnapClaim = (false, false)
+        stopEdgeAutoScroll()
+        lastDragWindowPoint = nil
     }
 
     /// One tick of a live MOVE drag: alignment/spacing snap the primary node,
