@@ -48,7 +48,9 @@ enum Haptics {
     private static func perform(_ pattern: NSHapticFeedbackManager.FeedbackPattern) {
         NSHapticFeedbackManager.defaultPerformer.perform(
             pattern,
-            performanceTime: .now
+            // Synced to the next frame commit so the tap lands WITH the visual
+            // (snap/settle), not a beat before it. (R17)
+            performanceTime: .drawCompleted
         )
     }
 }

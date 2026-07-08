@@ -529,7 +529,17 @@ struct CanvasView: View {
                                     state.setSectionColor(id: id,
                                         to: RadialColorPicker.nearestSectionColor(to: nsColor))
                                 }
-                            }
+                            },
+                            cameraGlideGeneration: state.cameraGlideGeneration,
+                            mediaGateKey: {
+                                var h = Hasher()
+                                h.combine(state.mediaGateEpoch)
+                                h.combine(state.lightboxCardID)
+                                h.combine(state.trimmingCardID)
+                                h.combine(state.videosShowPreviewOnly)
+                                return h.finalize()
+                            }(),
+                            isNodeLive: { state.isLive($0) }
                         ))
                         .onAppear {
                             syncOverlayCamera()

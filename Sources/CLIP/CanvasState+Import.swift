@@ -172,7 +172,7 @@ extension CanvasState {
             return
         }
 
-        let cardSize = fitInto(maxDim: 600, naturalSize: image.size)
+        let cardSize = Self.fitInto(maxDim: 600, naturalSize: image.size)
         let centre = worldPoint ?? screenToWorld(point: viewportCentre)
         let position = CGPoint(
             x: centre.x - cardSize.width  / 2,
@@ -203,40 +203,51 @@ extension CanvasState {
             return
         }
 
+        // R16: metadata loads are ASYNC — the old sync `.duration`/`.tracks`
+        // reads parsed the whole moov atom on the main thread (beachball on a
+        // big drop). The card is sized from the video's natural aspect (fit
+        // into 600 pt) instead of a hardcoded 480×270.
         let asset = AVURLAsset(url: fileURL)
-        let duration = CMTimeGetSeconds(asset.duration)
-        if duration.isFinite, duration > Self.maxVideoDurationSeconds {
-            alert = AlertContent(
-                title: "Video too long",
-                message: "Videos can be up to \(Int(Self.maxVideoDurationSeconds / 60)) minutes."
-            )
-            return
-        }
-
-        if let track = asset.tracks(withMediaType: .video).first {
-            let raw = track.naturalSize.applying(track.preferredTransform)
-            let w = abs(raw.width), h = abs(raw.height)
-            if w > Self.maxVideoPixelDim || h > Self.maxVideoPixelDim {
-                alert = AlertContent(
+        Task { [weak self] in
+            let duration = (try? await asset.load(.duration)).map(CMTimeGetSeconds) ?? 0
+            var cardSize = CGSize(width: 480, height: 270)
+            var tooBig = false
+            if let track = try? await asset.loadTracks(withMediaType: .video).first,
+               let props = try? await track.load(.naturalSize, .preferredTransform) {
+                let raw = props.0.applying(props.1)
+                let w = abs(raw.width), h = abs(raw.height)
+                if w > Self.maxVideoPixelDim || h > Self.maxVideoPixelDim {
+                    tooBig = true
+                } else if w > 0, h > 0 {
+                    cardSize = Self.fitInto(maxDim: 600, naturalSize: CGSize(width: w, height: h))
+                }
+            }
+            guard let self else { return }
+            if duration.isFinite, duration > Self.maxVideoDurationSeconds {
+                self.alert = AlertContent(
+                    title: "Video too long",
+                    message: "Videos can be up to \(Int(Self.maxVideoDurationSeconds / 60)) minutes."
+                )
+                return
+            }
+            if tooBig {
+                self.alert = AlertContent(
                     title: "Video resolution too high",
                     message: "Videos can be up to \(Int(Self.maxVideoPixelDim)) × \(Int(Self.maxVideoPixelDim)) px."
                 )
                 return
             }
-        }
-
-        let cardWidth: CGFloat = 480
-        let cardHeight: CGFloat = 270
-        let centre = worldPoint ?? screenToWorld(point: viewportCentre)
-        let position = CGPoint(
-            x: centre.x - cardWidth  / 2,
-            y: centre.y - cardHeight / 2
-        )
-        withUndoable {
-            nodes.append(.video(fileURL: fileURL,
-                                filename: fileURL.lastPathComponent,
-                                position: position,
-                                size: CGSize(width: cardWidth, height: cardHeight)))
+            let centre = worldPoint ?? self.screenToWorld(point: self.viewportCentre)
+            let position = CGPoint(
+                x: centre.x - cardSize.width  / 2,
+                y: centre.y - cardSize.height / 2
+            )
+            self.withUndoable {
+                self.nodes.append(.video(fileURL: fileURL,
+                                         filename: fileURL.lastPathComponent,
+                                         position: position,
+                                         size: cardSize))
+            }
         }
     }
 
@@ -244,7 +255,7 @@ extension CanvasState {
         ByteCountFormatter.string(fromByteCount: b, countStyle: .file)
     }
 
-    private func fitInto(maxDim: CGFloat, naturalSize: CGSize) -> CGSize {
+    private static func fitInto(maxDim: CGFloat, naturalSize: CGSize) -> CGSize {
         let w = naturalSize.width, h = naturalSize.height
         let scale = min(1, min(maxDim / w, maxDim / h))
         return CGSize(width: w * scale, height: h * scale)
@@ -285,7 +296,7 @@ extension CanvasState {
         case .instagram(let url): return (360, InstagramService.defaultCardHeight(for: url))
         case .youtube:            return (360, YouTubeService.defaultCardHeight(forWidth: 360))
         case .image:
-            let s = fitInto(maxDim: 600, naturalSize: CGSize(width: curW, height: curH))
+            let s = Self.fitInto(maxDim: 600, naturalSize: CGSize(width: curW, height: curH))
             return (s.width, s.height)
         case .video:              return (480, 480 * aspect)
         case .folder:             return (437, node.height.map { _ in 437 * aspect })

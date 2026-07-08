@@ -124,6 +124,7 @@ final class CardSectionContentView: NSView, NativeCardUpdatable {
         self.title = title; self.color = color
         super.init(frame: .zero)
         wantsLayer = true
+        layer?.drawsAsynchronously = true   // CG-drawn card body off the main path (R14)
         icon.image = NSImage(systemSymbolName: "rectangle.dashed", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
         addSubview(icon)
@@ -193,6 +194,7 @@ final class CardStickyContentView: NSView, NativeCardUpdatable {
         self.content = content; self.color = color
         super.init(frame: .zero)
         wantsLayer = true
+        layer?.drawsAsynchronously = true   // CG-drawn card body off the main path (R14)
         textField.font = roundedSystemFont(ofSize: 16, weight: .medium)
         textField.isEditable = false
         textField.isSelectable = false
@@ -368,7 +370,9 @@ final class CardImageContentView: NSView {
         layer?.masksToBounds = true
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         imageLayer.contentsGravity = .resizeAspectFill
-        imageLayer.masksToBounds = true
+        // No sublayer mask — the container layer above already clips the
+        // aspect-fill overflow AND rounds the corners; double-masking made
+        // every media card two clip ops per frame. (R15)
         // Downsampled decode (ImageIO thumbnail): canvas cards render at most
         // ~1000 pt wide, so cap the bitmap at 2048 px — a full-res 12 MP decode
         // held ~50 MB per card and re-sampled every zoom. The lightbox decodes
@@ -404,10 +408,11 @@ final class CardImageContentView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// Native local-video card: an `AVPlayerLayer` (loop, muted, autoplay) over a
-/// decoded first-frame poster, clipped to the rounded corners. Mirrors Spatial's
-/// `CanvasVideoItem` (AVPlayer / AVPlayerLayer / AVPlayerLooper). Always-live to
-/// match the current decoupled cards; semantic-zoom unload is a later pass.
+/// Native local-video card: an `AVPlayerLayer` (loop, muted) over a decoded
+/// first-frame poster, clipped to the rounded corners. Mirrors Spatial's
+/// `CanvasVideoItem` (AVPlayer / AVPlayerLayer / AVPlayerLooper). Mounts as
+/// its POSTER; the media LOD gate's first `setPlaybackActive(true)` builds the
+/// player — so a zoomed-out board mounts zero decoders. (R1)
 final class CardVideoContentView: NSView {
     override var isFlipped: Bool { true }
     private let host = PlayerHostView()
@@ -434,7 +439,9 @@ final class CardVideoContentView: NSView {
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         posterLayer.contentsGravity = .resizeAspectFill
-        posterLayer.masksToBounds = true
+        // No sublayer/player masks — the container layer clips + rounds the
+        // whole subtree once; triple-masking cost every video card three clip
+        // ops per frame. (R15)
         layer?.addSublayer(posterLayer)
         if let poster = VideoPosterStore.cachedPoster(for: fileURL) {
             posterLayer.contents = poster.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -447,8 +454,6 @@ final class CardVideoContentView: NSView {
         }
 
         host.translatesAutoresizingMaskIntoConstraints = false
-        host.playerLayer.cornerRadius = CardChrome.cornerRadius
-        host.playerLayer.masksToBounds = true
         addSubview(host)
         NSLayoutConstraint.activate([
             host.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -456,10 +461,16 @@ final class CardVideoContentView: NSView {
             host.topAnchor.constraint(equalTo: topAnchor),
             host.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+        // R1: NO player yet — the card rests as its poster until the media LOD
+        // gate first activates it (`setPlaybackActive(true)` → `makePlayer`).
+        host.isHidden = true
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-        // A fresh looping player. The whole VIEW is reused across the select/move
-        // `reloadData` (NativeVideoCache, keyed by node id), so this init runs only
-        // once per node — the player persists, so the video never reloads or blinks.
+    /// Build the looping player on first activation. The whole VIEW is reused
+    /// across the select/move `reloadData` (NativeVideoCache, keyed by node
+    /// id), so this runs once per node — the player persists, no reload/blink.
+    private func makePlayer() {
         let item = AVPlayerItem(url: fileURL)
         let p = AVQueuePlayer()
         if let range = timeRange {
@@ -471,9 +482,7 @@ final class CardVideoContentView: NSView {
         p.isMuted = true
         player = p
         host.attach(player: p)
-        p.play()
     }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     override func layout() {
         super.layout()
@@ -489,14 +498,16 @@ final class CardVideoContentView: NSView {
     /// Node id this view is cached under (for NativeVideoCache.park on detach).
     var cacheNodeID: UUID? { nodeID }
 
-    /// LOD gate: when inactive (zoomed out small / camera moving), PAUSE the
-    /// player and hide its layer so only the static poster shows — an
-    /// AVPlayerLayer compositing during a magnify is what made zoom-out lag.
-    /// Plays again when the card is large + the camera is settled.
-    private var playbackActive = true
+    /// LOD gate: when inactive (zoomed out small / off-screen / lightbox),
+    /// PAUSE the player and hide its layer so only the static poster shows —
+    /// an AVPlayerLayer compositing during a magnify is what made zoom-out
+    /// lag. Plays (lazily building the player on first call) when the card is
+    /// large + the camera is settled.
+    private var playbackActive = false
     func setPlaybackActive(_ active: Bool) {
         guard active != playbackActive else { return }
         playbackActive = active
+        if active, player == nil { makePlayer() }    // deferred first decode (R1)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         host.isHidden = !active                      // poster (behind) shows when paused
         CATransaction.commit()

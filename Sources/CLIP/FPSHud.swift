@@ -52,6 +52,8 @@ private struct FPSProbe: NSViewRepresentable {
             guard window != nil else { return }
             if #available(macOS 14.0, *) {
                 let l = displayLink(target: self, selector: #selector(step))
+                l.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120,
+                                                             preferred: 120)
                 l.add(to: .main, forMode: .common)
                 link = l
             }

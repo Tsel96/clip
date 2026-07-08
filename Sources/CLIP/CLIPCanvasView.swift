@@ -162,6 +162,11 @@ final class CLIPCanvasView: NSView {
             coordinator?.zoomDidTick()
             coordinator?.setNeedsCanvasRefresh()
         }
+        // Any user wheel input (two-finger pan or ⌘-zoom) cancels a running
+        // navigation glide — direct input always seizes the camera mid-flight.
+        scroll.onUserScrollWheel = { [weak coordinator] in
+            coordinator?.cancelCameraGlide()
+        }
 
         // Escape deselects (keyboard path, always available — no race).
         coordinator.escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in

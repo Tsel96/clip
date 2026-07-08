@@ -67,4 +67,82 @@ extension CollectionCanvas.Coordinator {
         refreshConnectors()
         if let cid = editingConnectorID { positionEditor(at: cid) }
     }
+
+    // MARK: - Navigation glide (R2 — spring animator driving the scroll directly)
+    //
+    // Per-frame writes go STRAIGHT to the scroll view (`applyCamera` inside a
+    // disabled-actions transaction) — never through a `@Published` (the old
+    // Timer glide's per-tick publish tripped AppKit's depth-16 layout recursion
+    // on macOS 26). The coalesced bounds-notification refresh publishes the
+    // intermediate camera exactly like a user pan, so the minimap / zoom
+    // readout track the glide live; the settle does one final apply + push.
+
+    /// Spring-glide the viewport to `target`. Retargeting mid-flight keeps the
+    /// current velocity, so chained ⌘+ presses read as one accelerating move.
+    /// Pre–macOS 14 (no `NSView.displayLink`) falls back to the old snap.
+    func animateCamera(to target: Camera) {
+        guard let scroll, target.zoom > 0 else { return }
+        guard #available(macOS 14.0, *) else {
+            applyCamera(target); pushCameraFromScroll(); return
+        }
+        if glideTicker == nil {
+            glideTicker = DisplayLinkTicker(view: scroll) { [weak self] dt in
+                self?.glideTick(dt)
+            }
+        }
+        if glideTicker?.isRunning != true {
+            // Fresh glide: start from the scroll view's LIVE state, at rest.
+            glideCurrent = liveCamera()
+            glideVelocity = (0, 0, 0)
+        }
+        glideTarget = target
+        glideTicker?.start()
+    }
+
+    /// Direct input (pinch tick, scroll wheel) seizes the camera mid-glide.
+    func cancelCameraGlide() {
+        guard glideTarget != nil || glideTicker?.isRunning == true else { return }
+        glideTarget = nil
+        glideTicker?.stop()
+    }
+
+    /// The camera implied by the scroll view's CURRENT state (same derivation
+    /// as `pushCameraFromScroll`, without the publish).
+    private func liveCamera() -> Camera {
+        guard let scroll else { return glideCurrent }
+        let zoom = scroll.magnification
+        let visible = scroll.documentVisibleRect
+        return Camera(x: -(visible.origin.x + config.worldBounds.minX) * zoom,
+                      y: -(visible.origin.y + config.worldBounds.minY) * zoom,
+                      zoom: zoom)
+    }
+
+    private func glideTick(_ dt: CFTimeInterval) {
+        guard let target = glideTarget else { glideTicker?.stop(); return }
+        let omega = 2 * CGFloat.pi / Motion.glideResponse
+        let zeta = Motion.glideDampingRatio
+        let step = CGFloat(dt)
+        func integrate(_ x: inout CGFloat, _ v: inout CGFloat, to t: CGFloat) {
+            v += step * (-(omega * omega) * (x - t) - 2 * zeta * omega * v)
+            x += step * v
+        }
+        integrate(&glideCurrent.x, &glideVelocity.x, to: target.x)
+        integrate(&glideCurrent.y, &glideVelocity.y, to: target.y)
+        integrate(&glideCurrent.zoom, &glideVelocity.zoom, to: target.zoom)
+        let settled = abs(glideCurrent.x - target.x) < 0.5, restX = abs(glideVelocity.x) < 0.5
+        let settledY = abs(glideCurrent.y - target.y) < 0.5, restY = abs(glideVelocity.y) < 0.5
+        let settledZ = abs(glideCurrent.zoom - target.zoom) < 0.0005,
+            restZ = abs(glideVelocity.zoom) < 0.005
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        if settled, restX, settledY, restY, settledZ, restZ {
+            glideTarget = nil
+            glideTicker?.stop()
+            applyCamera(target)
+            CATransaction.commit()
+            pushCameraFromScroll()   // one settled publish — media gate keys off this
+        } else {
+            applyCamera(glideCurrent)
+            CATransaction.commit()
+        }
+    }
 }

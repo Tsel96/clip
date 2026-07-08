@@ -61,6 +61,7 @@ final class CanvasInputView: NSView {
     private var optionDuplicated = false            // Option-drag already cloned this drag
     private var rotateNodeID: UUID?                 // node being rotated by the handle
     private var lastRotateSnap: CGFloat?            // cardinal we're currently snapped to (haptic edge)
+    private var lastSnapClaim = (x: false, y: false) // move-snap axes currently claimed (haptic edge)
     private var lastRotateAngle: CGFloat = 0        // committed to the model on mouse-up
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
@@ -546,7 +547,17 @@ final class CanvasInputView: NSView {
                 coordinator?.guideController?.update(result.guides, spacing: spacing.indicators,
                     worldMin: CGPoint(x: p.worldBounds.minX, y: p.worldBounds.minY),
                     magnification: mag)
+                // Restrained tap when a guide NEWLY claims an axis with a real
+                // correction (>1pt world) — the "magnetic latch" moment. Edge-
+                // triggered per axis, so riding along a guide stays silent. (R17)
+                let corrected = max(abs(result.rect.minX - rect.minX),
+                                    abs(result.rect.minY - rect.minY)) > 1
+                if corrected, (claimedX && !lastSnapClaim.x) || (claimedY && !lastSnapClaim.y) {
+                    Haptics.tap()
+                }
+                lastSnapClaim = (claimedX, claimedY)
             } else {
+                lastSnapClaim = (false, false)
                 coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
             }
             // Drive the move VISUALLY only (no per-tick model mutation). The model

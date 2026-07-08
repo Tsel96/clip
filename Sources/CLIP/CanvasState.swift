@@ -1576,16 +1576,24 @@ final class CanvasState: ObservableObject {
     private var glideTarget: Camera?
     private var glideVelocity: (x: CGFloat, y: CGFloat, zoom: CGFloat) = (0, 0, 0)
 
+    /// Monotonic token riding the camera publish: a bump tells the native
+    /// canvas the new camera is a NAVIGATION move to spring-glide toward
+    /// (zoom buttons / fit / minimap jump); unchanged means snap (page
+    /// restore). Not `@Published` — the `camera` write right after it
+    /// triggers the re-render that carries it into `CanvasConfig`.
+    private(set) var cameraGlideGeneration = 0
+
     func glideCamera(to target: Camera) {
-        // macOS 26/27 beta (26A5353q): the 60 Hz Timer this method used to
-        // schedule mutated the @Published `camera` every tick, and that
-        // per-tick write re-entered AppKit's constraint-based layout until
-        // it tripped the depth-16 recursion guard (EXC_BREAKPOINT in
-        // -[NSView _layoutSubtreeWithOldSize:]). Any continuous camera
-        // animation is therefore unsafe on this OS, so navigation jumps
-        // straight to the target — exactly the pre-motion-system behavior
-        // (and what Reduce Motion already did). No autonomous layout loop.
+        // History: a 60 Hz Timer here mutated the @Published `camera` every
+        // tick and tripped AppKit's depth-16 layout recursion guard on
+        // macOS 26 (EXC_BREAKPOINT in -[NSView _layoutSubtreeWithOldSize:]).
+        // The glide now runs INSIDE the native canvas
+        // (CanvasCameraController.animateCamera): per-frame writes go straight
+        // to the scroll view; the model publishes via the coalesced per-frame
+        // refresh, exactly like a user pan. The MODEL camera jumps to the
+        // target immediately, so chained navigation reads a stable value.
         cancelPanInertia()
+        cameraGlideGeneration &+= 1
         camera = target
     }
 

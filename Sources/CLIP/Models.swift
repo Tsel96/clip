@@ -829,10 +829,14 @@ extension TweetData {
         guard let media = mediaDetails?.first,
               media.type == "video" || media.type == "animated_gif",
               let variants = media.videoInfo?.variants else { return nil }
-        let mp4s = variants
-            .filter { $0.contentType == "video/mp4" }
-            .sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }
-        return mp4s.first.flatMap { URL(string: $0.url) }
+        // Canvas cards render small — the LOWEST rendition ≥ ~832 kbps looks
+        // identical there and decodes far cheaper than the max-bitrate variant
+        // (Spatial picks the same tier). Fall back to the best available.
+        let mp4s = variants.filter { $0.contentType == "video/mp4" }
+        let pick = mp4s.filter { ($0.bitrate ?? 0) >= 832_000 }
+            .min { ($0.bitrate ?? 0) < ($1.bitrate ?? 0) }
+            ?? mp4s.max { ($0.bitrate ?? 0) < ($1.bitrate ?? 0) }
+        return pick.flatMap { URL(string: $0.url) }
     }
 
     var posterURL: URL? {
