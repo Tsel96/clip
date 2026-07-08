@@ -290,6 +290,10 @@ struct CanvasConfig {
     /// carries a NAVIGATION move that should spring-glide instead of snap
     /// (zoom buttons / fit / minimap jump). Page restores leave it unchanged.
     let cameraGlideGeneration: Int
+    /// Bumped by `CanvasState.cancelCameraGlide` (page switch, stack focus,
+    /// direct camera seize) — cancels a running glide so the accompanying
+    /// camera write applies as a snap instead of being dropped mid-flight.
+    let cameraSnapGeneration: Int
     /// Media-LOD trigger: changes whenever the live-media gate inputs settle
     /// or flip (camera rest epoch, lightbox, trim, previews-only toggle) —
     /// prompts the coordinator to re-gate native video playback.
@@ -333,6 +337,13 @@ struct CollectionCanvas: NSViewRepresentable {
         // else goes through `applyCameraIfChanged`, which compares against the
         // scroll view's LIVE state and no-ops echoes of our own pinch/scroll,
         // so the round-trip can't fight the cursor-anchored `magnify`.
+        // A bumped snap generation (page switch / stack focus / any direct
+        // camera seize) cancels the glide FIRST, so the camera below applies
+        // as a snap instead of being dropped by the mid-glide guard.
+        if config.cameraSnapGeneration != coord.lastSnapGeneration {
+            coord.lastSnapGeneration = config.cameraSnapGeneration
+            coord.cancelCameraGlide()
+        }
         if config.cameraGlideGeneration != coord.lastGlideGeneration {
             coord.lastGlideGeneration = config.cameraGlideGeneration
             coord.animateCamera(to: config.camera)
@@ -370,6 +381,7 @@ struct CollectionCanvas: NSViewRepresentable {
         var glideCurrent = Camera()
         var glideVelocity: (x: CGFloat, y: CGFloat, zoom: CGFloat) = (0, 0, 0)
         var lastGlideGeneration = 0
+        var lastSnapGeneration = 0
         // Media LOD gate (native video playback).
         var lastMediaGateKey = Int.min
         var escMonitor: Any?
@@ -414,7 +426,15 @@ struct CollectionCanvas: NSViewRepresentable {
         /// `CardItemView.updateChrome`. `nil` = nothing hovered.
         var hoveredNodeID: UUID?
 
-        init(_ config: CanvasConfig) { self.config = config }
+        init(_ config: CanvasConfig) {
+            self.config = config
+            // Seed the camera tokens from the mounting config: the state-side
+            // generations are monotonic and survive a canvas remount (Archive
+            // round-trip / window reopen) — starting from 0 would misread the
+            // restored camera as a fresh navigation and glide in from origin.
+            lastGlideGeneration = config.cameraGlideGeneration
+            lastSnapGeneration = config.cameraSnapGeneration
+        }
 
         func detach() {
             glideTicker?.invalidate()
@@ -543,6 +563,16 @@ struct CollectionCanvas: NSViewRepresentable {
             // batch (count-safe), and the folder survivor's count refreshes via the
             // content pass below. `reloadData` stays the fallback for REORDERS only.
             let oldIDset = Set(oldOrderedIDs)
+            // Items removed this apply get no `setContent` swap → park their
+            // cached video views here so the deferred teardown stops the
+            // decoder (folder-fill / page switch left it looping invisibly).
+            // `park` no-ops for ids without a cached video; a reclaim within
+            // its ~1.2 s window (e.g. opening the folder) cancels it.
+            if FeatureFlags.useWebViewCache {
+                for id in oldIDset.subtracting(currentIDs) {
+                    NativeVideoCache.shared.park(id)
+                }
+            }
             let newIDs = p.nodes.map(\.id)
             let orderPreserved = oldOrderedIDs.filter { currentIDs.contains($0) }
                                == newIDs.filter { oldIDset.contains($0) }

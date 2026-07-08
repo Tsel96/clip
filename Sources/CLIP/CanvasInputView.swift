@@ -714,6 +714,7 @@ final class CanvasInputView: NSView {
         optionDuplicated = false
         rotateNodeID = nil
         lastRotateSnap = nil
+        lastSnapClaim = (false, false)
     }
 
     private func beginIfNeeded(_ p: CanvasConfig, primary: UUID?) {

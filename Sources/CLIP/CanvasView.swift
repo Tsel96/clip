@@ -531,6 +531,7 @@ struct CanvasView: View {
                                 }
                             },
                             cameraGlideGeneration: state.cameraGlideGeneration,
+                            cameraSnapGeneration: state.cameraSnapGeneration,
                             mediaGateKey: {
                                 var h = Hasher()
                                 h.combine(state.mediaGateEpoch)

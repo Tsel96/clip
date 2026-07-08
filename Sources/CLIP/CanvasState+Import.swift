@@ -206,8 +206,11 @@ extension CanvasState {
         // R16: metadata loads are ASYNC — the old sync `.duration`/`.tracks`
         // reads parsed the whole moov atom on the main thread (beachball on a
         // big drop). The card is sized from the video's natural aspect (fit
-        // into 600 pt) instead of a hardcoded 480×270.
+        // into 600 pt) instead of a hardcoded 480×270. Page + drop point are
+        // pinned NOW — the user may switch pages/pan before the parse ends.
         let asset = AVURLAsset(url: fileURL)
+        let pageID = activePageID
+        let centre = worldPoint ?? screenToWorld(point: viewportCentre)
         Task { [weak self] in
             let duration = (try? await asset.load(.duration)).map(CMTimeGetSeconds) ?? 0
             var cardSize = CGSize(width: 480, height: 270)
@@ -237,17 +240,15 @@ extension CanvasState {
                 )
                 return
             }
-            let centre = worldPoint ?? self.screenToWorld(point: self.viewportCentre)
             let position = CGPoint(
                 x: centre.x - cardSize.width  / 2,
                 y: centre.y - cardSize.height / 2
             )
-            self.withUndoable {
-                self.nodes.append(.video(fileURL: fileURL,
-                                         filename: fileURL.lastPathComponent,
-                                         position: position,
-                                         size: cardSize))
-            }
+            self.appendNode(.video(fileURL: fileURL,
+                                   filename: fileURL.lastPathComponent,
+                                   position: position,
+                                   size: cardSize),
+                            toPage: pageID)
         }
     }
 

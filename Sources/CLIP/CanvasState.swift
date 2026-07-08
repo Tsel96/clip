@@ -581,6 +581,10 @@ final class CanvasState: ObservableObject {
     /// restored when the user comes back.
     func switchTo(pageID: UUID) {
         guard pages.contains(where: { $0.id == pageID }) else { return }
+        // A page switch is a direct navigation act: kill any running glide /
+        // coast so the restored camera applies as a snap (a glide left running
+        // would fly to the OLD page's target and corrupt per-page cameras).
+        cancelPanInertia()
         if canvasMode == .colorform { exitColorform() }
         // Persist outgoing page's live camera (if the page still exists —
         // `deletePage` calls switchTo after removing the page, so we look
@@ -635,6 +639,23 @@ final class CanvasState: ObservableObject {
         guard before != after else { return }
         deletedPageBackup = nil
         undoStacks[activePageID, default: UndoStack()].push(before)
+    }
+
+    /// Append a node to the page it was DROPPED on, which may no longer be
+    /// the active page (async imports finish after a possible page switch).
+    /// Active page → the normal undoable path; another page → direct append
+    /// with the undo entry pushed onto THAT page's stack (`nodeByID` is
+    /// rebuilt from the page on switch, so a background append is safe);
+    /// page deleted meanwhile → the import is dropped.
+    func appendNode(_ node: CanvasNode, toPage pageID: UUID) {
+        if pageID == activePageID {
+            withUndoable { nodes.append(node) }
+            return
+        }
+        guard let idx = pages.firstIndex(where: { $0.id == pageID }) else { return }
+        let before = PageSnapshot(nodes: pages[idx].nodes, connectors: pages[idx].connectors)
+        pages[idx].nodes.append(node)
+        undoStacks[pageID, default: UndoStack()].push(before)
     }
 
     /// Explicit snapshot for multi-tick interactions (e.g. drag): capture
@@ -1572,16 +1593,16 @@ final class CanvasState: ObservableObject {
     // move), and any direct gesture cancels the glide and takes over —
     // motion never blocks input.
 
-    private var cameraGlideTimer: Timer?
-    private var glideTarget: Camera?
-    private var glideVelocity: (x: CGFloat, y: CGFloat, zoom: CGFloat) = (0, 0, 0)
-
     /// Monotonic token riding the camera publish: a bump tells the native
     /// canvas the new camera is a NAVIGATION move to spring-glide toward
     /// (zoom buttons / fit / minimap jump); unchanged means snap (page
     /// restore). Not `@Published` — the `camera` write right after it
     /// triggers the re-render that carries it into `CanvasConfig`.
     private(set) var cameraGlideGeneration = 0
+    /// Companion token: a bump tells the native canvas to CANCEL any running
+    /// glide so the accompanying camera write applies as a snap (page switch,
+    /// stack focus, any direct camera seize). Bumped via `cancelCameraGlide`.
+    private(set) var cameraSnapGeneration = 0
 
     func glideCamera(to target: Camera) {
         // History: a 60 Hz Timer here mutated the @Published `camera` every
@@ -1592,16 +1613,15 @@ final class CanvasState: ObservableObject {
         // to the scroll view; the model publishes via the coalesced per-frame
         // refresh, exactly like a user pan. The MODEL camera jumps to the
         // target immediately, so chained navigation reads a stable value.
-        cancelPanInertia()
+        // NB: inertia teardown only — a full cancelPanInertia would bump the
+        // snap token and kill the running glide, losing retarget chaining.
+        cancelInertiaOnly()
         cameraGlideGeneration &+= 1
         camera = target
     }
 
     func cancelCameraGlide() {
-        cameraGlideTimer?.invalidate()
-        cameraGlideTimer = nil
-        glideTarget = nil
-        glideVelocity = (0, 0, 0)
+        cameraSnapGeneration &+= 1
     }
 
     // MARK: - Pan-with-inertia (trackpad / mouse-wheel scroll)
