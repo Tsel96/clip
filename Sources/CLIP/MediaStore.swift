@@ -58,7 +58,11 @@ enum MediaStore {
             do {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 try FileManager.default.copyItem(at: src, to: dst)
-            } catch { return src }
+            } catch {
+                // A concurrent import of the same content may have won the
+                // copy — content-addressing makes its file just as good.
+                return FileManager.default.fileExists(atPath: dst.path) ? dst : src
+            }
         }
         return dst
     }
