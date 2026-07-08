@@ -33,6 +33,11 @@ extension CollectionCanvas.Coordinator {
         // visibly jump/drift. Skip — `pushCameraFromScroll` keeps the model in sync,
         // and the next settled `updateNSView` reconciles any residual difference.
         if (scroll as? CenterZoomScrollView)?.isMagnifying == true { return }
+        // ⌘-wheel zoom has no gesture phases, so `isMagnifying` misses it —
+        // `zoomMoving` (set by zoomDidTick on EVERY setMagnification, with a
+        // 0.18 s settle) covers both; without this a stale camera echo snaps
+        // the viewport back one tick during continuous wheel-zoom.
+        if zoomMoving { return }
         // Same story mid-glide: the animator owns the camera until it settles
         // (its settle does the final apply + publish); re-applying the model
         // value here would snap the view to the glide TARGET mid-flight.

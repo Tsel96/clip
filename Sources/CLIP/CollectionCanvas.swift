@@ -72,7 +72,13 @@ final class CenterZoomScrollView: NSScrollView {
     /// wheels send line deltas through a soft knee (tanh) so one aggressive
     /// notch can't jump a whole zoom level.
     override func scrollWheel(with event: NSEvent) {
-        onUserScrollWheel?()
+        // Only DELIBERATE input seizes a glide: momentum-tail events (fingers
+        // off the glass — ⌘±/fit pressed right after a fling must win) and
+        // zero-delta phase bookkeeping (mayBegin from resting fingers) don't.
+        if event.momentumPhase == [],
+           event.scrollingDeltaX != 0 || event.scrollingDeltaY != 0 {
+            onUserScrollWheel?()
+        }
         guard event.modifierFlags.contains(.command) else {
             return super.scrollWheel(with: event)
         }
