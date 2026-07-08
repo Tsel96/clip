@@ -51,6 +51,13 @@ struct ClipApp: App {
     var body: some Scene {
         WindowGroup(windowTitle) {
             ContentView()
+                // Perf meter, off by default. Enable with:
+                //   defaults write com.clip.app fpsHud -bool YES   (then relaunch)
+                .overlay(alignment: .topTrailing) {
+                    if UserDefaults.standard.bool(forKey: "fpsHud") {
+                        FPSHud().padding(.top, 14).padding(.trailing, 14)
+                    }
+                }
                 .environmentObject(state)
                 .environmentObject(state.cameraStore)
                 .environmentObject(state.smartSelection)
