@@ -33,6 +33,10 @@ extension CollectionCanvas.Coordinator {
         // visibly jump/drift. Skip — `pushCameraFromScroll` keeps the model in sync,
         // and the next settled `updateNSView` reconciles any residual difference.
         if (scroll as? CenterZoomScrollView)?.isMagnifying == true { return }
+        // Same story mid-glide: the animator owns the camera until it settles
+        // (its settle does the final apply + publish); re-applying the model
+        // value here would snap the view to the glide TARGET mid-flight.
+        if glideTicker?.isRunning == true { return }
         let zoom = scroll.magnification
         let visible = scroll.documentVisibleRect
         let curX = -(visible.origin.x + config.worldBounds.minX) * zoom

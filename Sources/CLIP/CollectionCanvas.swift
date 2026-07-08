@@ -38,21 +38,51 @@ final class CenterZoomScrollView: NSScrollView {
     /// We bypass `super.magnify` (for cursor-anchored zoom), so the standard
     /// live-magnify notifications don't fire — drive the flag off the event phase.
     private(set) var isMagnifying = false
+    /// Fired on any user scroll-wheel event (pan or ⌘-zoom) so autonomous
+    /// camera motion (the navigation glide) yields to direct input at once.
+    var onUserScrollWheel: (() -> Void)?
+    /// The zoom anchor, FROZEN at gesture start in documentView coords.
+    /// Re-deriving it per tick let natural finger drift pan the canvas
+    /// mid-pinch; a fixed anchor keeps the start point under the fingers.
+    private var pinchAnchor: NSPoint?
     override func magnify(with event: NSEvent) {
         switch event.phase {
-        case .began, .changed: isMagnifying = true
-        case .ended, .cancelled: isMagnifying = false
+        case .began:
+            isMagnifying = true
+            pinchAnchor = anchorPoint(for: event)
+        case .changed: isMagnifying = true
+        case .ended, .cancelled: isMagnifying = false; pinchAnchor = nil
         default: break
         }
         let target = max(minMagnification,
                          min(maxMagnification, magnification * (1 + event.magnification)))
-        let point = documentView?.convert(event.locationInWindow, from: nil)
-            ?? convert(event.locationInWindow, from: nil)
+        let point = pinchAnchor ?? anchorPoint(for: event)
         setMagnification(target, centeredAt: point)   // routes through the override below
+    }
+    private func anchorPoint(for event: NSEvent) -> NSPoint {
+        documentView?.convert(event.locationInWindow, from: nil)
+            ?? convert(event.locationInWindow, from: nil)
     }
     override func setMagnification(_ magnification: CGFloat, centeredAt point: NSPoint) {
         super.setMagnification(magnification, centeredAt: point)
         onZoomChange?()
+    }
+    /// ⌘ + scroll wheel zooms toward the cursor, so physical-mouse users can
+    /// zoom at all. Trackpads send precise pixel deltas (small gain); notchy
+    /// wheels send line deltas through a soft knee (tanh) so one aggressive
+    /// notch can't jump a whole zoom level.
+    override func scrollWheel(with event: NSEvent) {
+        onUserScrollWheel?()
+        guard event.modifierFlags.contains(.command) else {
+            return super.scrollWheel(with: event)
+        }
+        let raw = event.scrollingDeltaY
+        let dy: CGFloat = event.hasPreciseScrollingDeltas
+            ? raw * 0.015
+            : 3 * tanh(raw / 3) * 0.12
+        let target = max(minMagnification,
+                         min(maxMagnification, magnification * (1 + dy)))
+        setMagnification(target, centeredAt: anchorPoint(for: event))
     }
 }
 
@@ -250,6 +280,16 @@ struct CanvasConfig {
     /// Recolor a node from the radial picker (CanvasView maps the NSColor to the
     /// node's color model, e.g. nearest SectionColor).
     let onRecolorNode: (UUID, NSColor) -> Void
+    /// Bumped by `CanvasState.glideCamera` — a changed value means `camera`
+    /// carries a NAVIGATION move that should spring-glide instead of snap
+    /// (zoom buttons / fit / minimap jump). Page restores leave it unchanged.
+    let cameraGlideGeneration: Int
+    /// Media-LOD trigger: changes whenever the live-media gate inputs settle
+    /// or flip (camera rest epoch, lightbox, trim, previews-only toggle) —
+    /// prompts the coordinator to re-gate native video playback.
+    let mediaGateKey: Int
+    /// Whether a node's heavy media should play right now (`state.isLive`).
+    let isNodeLive: (CanvasNode) -> Bool
 }
 
 /// The SwiftUI bridge: mounts the native canvas engine and feeds it a
@@ -282,11 +322,23 @@ struct CollectionCanvas: NSViewRepresentable {
             coord.apply(config)
         }
         // Re-enabled programmatic camera: the zoom pill / ⌘± / fit / zoom-to-
-        // selection / minimap jumps move the canvas. `applyCameraIfChanged`
-        // compares against the scroll view's LIVE state and no-ops echoes of our
-        // own pinch/scroll, so the round-trip can't fight the cursor-anchored
-        // `magnify`.
-        coord.applyCameraIfChanged(config.camera)
+        // selection / minimap jumps move the canvas. A bumped glide generation
+        // marks the camera as a navigation move → spring-glide to it; anything
+        // else goes through `applyCameraIfChanged`, which compares against the
+        // scroll view's LIVE state and no-ops echoes of our own pinch/scroll,
+        // so the round-trip can't fight the cursor-anchored `magnify`.
+        if config.cameraGlideGeneration != coord.lastGlideGeneration {
+            coord.lastGlideGeneration = config.cameraGlideGeneration
+            coord.animateCamera(to: config.camera)
+        } else {
+            coord.applyCameraIfChanged(config.camera)
+        }
+        // Media LOD (R1): re-gate native video playback when the gate inputs
+        // change (camera-rest epoch bump, lightbox/trim open, previews toggle).
+        if config.mediaGateKey != coord.lastMediaGateKey {
+            coord.lastMediaGateKey = config.mediaGateKey
+            coord.refreshMediaGate()
+        }
     }
 
     static func dismantleNSView(_ view: CLIPCanvasView, coordinator: Coordinator) {
@@ -306,6 +358,14 @@ struct CollectionCanvas: NSViewRepresentable {
         private(set) var nodes: [CanvasNode] = []
         weak var inputView: CanvasInputView?
         var boundsObserver: NSObjectProtocol?
+        // Camera glide (navigation spring — CanvasCameraController).
+        var glideTicker: DisplayLinkTicker?
+        var glideTarget: Camera?
+        var glideCurrent = Camera()
+        var glideVelocity: (x: CGFloat, y: CGFloat, zoom: CGFloat) = (0, 0, 0)
+        var lastGlideGeneration = 0
+        // Media LOD gate (native video playback).
+        var lastMediaGateKey = Int.min
         var escMonitor: Any?
         var colorKeyMonitor: Any?
         var deleteMonitor: Any?
@@ -351,6 +411,8 @@ struct CollectionCanvas: NSViewRepresentable {
         init(_ config: CanvasConfig) { self.config = config }
 
         func detach() {
+            glideTicker?.invalidate()
+            glideTicker = nil
             if let o = boundsObserver { NotificationCenter.default.removeObserver(o) }
             if let m = escMonitor { NSEvent.removeMonitor(m) }
             if let m = colorKeyMonitor { NSEvent.removeMonitor(m) }
@@ -578,6 +640,7 @@ struct CollectionCanvas: NSViewRepresentable {
                 }
             }
             refreshChrome()
+            refreshMediaGate()   // gate playback for cards added/re-hosted this apply
         }
 
         // MARK: - Persistent per-node z-order (bring-to-front that STAYS)
@@ -606,6 +669,7 @@ struct CollectionCanvas: NSViewRepresentable {
         /// the pan/bounds path). Marks the zoom active + (re)arms a settle; each
         /// tick cancels the previous, so the settle fires once the magnify stops.
         func zoomDidTick() {
+            cancelCameraGlide()   // direct zoom input seizes the camera mid-glide
             if !zoomMoving { zoomMoving = true; config.onZoomInteracting(true) }  // freeze DotGrid island
             zoomSettle?.cancel()
             let work = DispatchWorkItem { [weak self] in
@@ -710,6 +774,8 @@ struct CollectionCanvas: NSViewRepresentable {
             guard canvasRefreshLink == nil else { return }
             if #available(macOS 14.0, *), let v = scroll {
                 let link = v.displayLink(target: self, selector: #selector(canvasRefreshTick))
+                link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120,
+                                                                preferred: 120)
                 link.isPaused = true
                 link.add(to: .main, forMode: .common)
                 canvasRefreshLink = link
@@ -729,6 +795,23 @@ struct CollectionCanvas: NSViewRepresentable {
         private func flushCanvasRefresh() {
             pushCameraFromScroll()
             refreshChrome()
+            // Cards realized mid-scroll start as posters; this cheap pass (visible
+            // items only, `setPlaybackActive` no-ops when unchanged, liveness is
+            // frozen to the settled set during motion) brings them live.
+            refreshMediaGate()
+        }
+
+        /// R1 media LOD: gate every visible native video's playback on
+        /// `isNodeLive` — pause + poster when small/off-screen/moving, play (and
+        /// lazily build the player) when settled large. The SwiftUI media kinds
+        /// (tweet/web) gate themselves reactively; this covers the native views.
+        func refreshMediaGate() {
+            guard let cv = collection else { return }
+            for ip in cv.indexPathsForVisibleItems() where ip.item < nodes.count {
+                guard let it = cv.item(at: ip) as? HostingCollectionItem,
+                      let vid = it.nativeContentView as? CardVideoContentView else { continue }
+                vid.setPlaybackActive(config.isNodeLive(nodes[ip.item]))
+            }
         }
 
         deinit {
