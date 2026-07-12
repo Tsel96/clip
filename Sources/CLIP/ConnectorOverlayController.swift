@@ -92,11 +92,23 @@ final class ConnectorOverlayController {
 
     private var hoverGen = 0
 
+    /// The dot's live on-screen scale (presentation value) — the retarget
+    /// origin for the coalescing show/hide spring.
+    private func hoverDotLiveScale() -> CGFloat {
+        if let n = hoverDot.presentation()?.value(forKeyPath: "transform.scale.x") as? NSNumber {
+            return CGFloat(truncating: n)
+        }
+        return CGFloat(hoverDot.transform.m11)
+    }
+
     func showHoverDot(at point: CGPoint, mag: CGFloat) {
         hoverGen += 1
         // Dampened √mag zoom with a screen-size floor (matching the source port).
         let d = Self.portDiameter(base: Self.hoverDotDiameter, mag: mag)
         let wasHidden = hoverDot.isHidden
+        // Retarget origin BEFORE touching the model transform: a show that
+        // lands mid-hide picks up from the live shrinking scale, no jump.
+        let from = wasHidden ? 0.2 : hoverDotLiveScale()
         // Centred bounds + position so the scale spring grows from the dot's centre.
         CATransaction.begin(); CATransaction.setDisableActions(true)
         hoverDot.bounds = CGRect(x: 0, y: 0, width: d, height: d)
@@ -106,14 +118,20 @@ final class ConnectorOverlayController {
         hoverDot.transform = CATransform3DIdentity
         hoverDot.isHidden = false
         CATransaction.commit()
-        if wasHidden { hoverDot.add(Self.popSpring(from: 0.2, to: 1), forKey: "pop") }
+        // Same key both directions → one coalescing spring; the model value is
+        // committed above, so no fill-forwards residue accumulates.
+        hoverDot.add(Self.popSpring(from: from, to: 1), forKey: "pop")
     }
 
     func hideHoverDot() {
         guard !hoverDot.isHidden else { return }
         hoverGen += 1
         let gen = hoverGen
-        hoverDot.add(Self.popSpring(from: 1, to: 0.2), forKey: "pop")
+        let from = hoverDotLiveScale()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        hoverDot.transform = CATransform3DMakeScale(0.2, 0.2, 1)
+        CATransaction.commit()
+        hoverDot.add(Self.popSpring(from: from, to: 0.2), forKey: "pop")
         // Hide once the spring-down settles — unless it was re-shown meanwhile.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in
             guard let self, self.hoverGen == gen else { return }
@@ -124,14 +142,17 @@ final class ConnectorOverlayController {
         }
     }
 
-    /// Pleasurable scale spring (≈ Motion.pop) for the connect port.
+    /// Pleasurable scale spring for the connect port — the native mirror of
+    /// `Motion.pop` via `CLIPSpring.Preset.pop`. Model values are committed
+    /// by the callers, so no fill-forwards / never-removed residue.
     private static func popSpring(from: CGFloat, to: CGFloat) -> CASpringAnimation {
         let a = CASpringAnimation(keyPath: "transform.scale")
         a.fromValue = from; a.toValue = to
-        a.mass = 1; a.stiffness = 220; a.damping = 15; a.initialVelocity = 0
+        a.mass = 1
+        a.stiffness = CLIPSpring.Preset.pop.stiffness
+        a.damping = CLIPSpring.Preset.pop.caDamping
+        a.initialVelocity = 0
         a.duration = a.settlingDuration
-        a.fillMode = .forwards
-        a.isRemovedOnCompletion = false
         return a
     }
 
@@ -231,18 +252,30 @@ final class ConnectorOverlayController {
                                                   y: route.sourceCenter.y - d / 2,
                                                   width: d, height: d), transform: nil)
 
-            if let r = layoutLabel(b, text: c.label, center: labelCenter, mag: mag, selected: isSel) {
+            if let r = layoutLabel(b, id: c.id, text: c.label, center: labelCenter, mag: mag, selected: isSel) {
                 lblRects[c.id] = r
             }
         }
         labelHitRects = lblRects
-        // Drop layers for connectors that no longer exist.
+        // Fade out + drop layers for connectors that no longer exist — matches
+        // the 0.22s card-delete exit so a deleted card's connectors leave with
+        // it instead of vanishing a frame early.
         for (id, b) in bundles where !seen.contains(id) {
-            b.line.removeFromSuperlayer(); b.arrow.removeFromSuperlayer()
-            b.dot.removeFromSuperlayer()
-            b.labelBG.removeFromSuperlayer(); b.labelWhite.removeFromSuperlayer()
-            b.labelText.removeFromSuperlayer()
+            let layers = [b.line, b.arrow, b.dot, b.labelBG, b.labelWhite, b.labelText]
+            for l in layers {
+                let o = CABasicAnimation(keyPath: "opacity")
+                o.fromValue = l.presentation()?.opacity ?? l.opacity
+                o.toValue = 0
+                o.duration = 0.22
+                o.timingFunction = CLIPSpring.easeOutSoft
+                l.opacity = 0
+                l.add(o, forKey: "exitFade")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                layers.forEach { $0.removeFromSuperlayer() }
+            }
             bundles[id] = nil
+            labelKeys[id] = nil
         }
         midpoints = mids
         CATransaction.commit()
@@ -364,6 +397,16 @@ final class ConnectorOverlayController {
         root.addSublayer(labelBG)
         root.addSublayer(labelWhite)
         root.addSublayer(labelText)
+        // A new connector fades in rather than popping into existence in a
+        // single frame (explicit animation — runs despite the disabled-actions
+        // transaction redraw() wraps us in).
+        for l in [line, arrow, dot] {
+            let o = CABasicAnimation(keyPath: "opacity")
+            o.fromValue = 0; o.toValue = 1
+            o.duration = 0.14
+            o.timingFunction = CLIPSpring.easeOutSoft
+            l.add(o, forKey: "enterFade")
+        }
         let b = Bundle(line: line, arrow: arrow, dot: dot,
                        labelBG: labelBG, labelWhite: labelWhite, labelText: labelText)
         bundles[id] = b
@@ -421,7 +464,26 @@ final class ConnectorOverlayController {
     /// the dark text. Uses an attributed string so the font + colour render
     /// reliably (a bare `CATextLayer.font = NSFont` often draws nothing).
     @discardableResult
-    private func layoutLabel(_ b: Bundle, text: String, center: CGPoint, mag: CGFloat, selected: Bool) -> CGRect? {
+    /// Text-measurement cache: `redraw()` runs on EVERY drag tick and pan
+    /// frame, and `size(withAttributes:)` + a CATextLayer string rebuild per
+    /// labeled connector per frame is measurable work. Key = text + font
+    /// size; mag is constant during a drag, so drags are pure cache hits
+    /// (zoom changes the size legitimately and re-measures).
+    private var labelSizeCache: [String: CGSize] = [:]
+    /// Last applied (text|fontSize) key per connector — skips re-setting the
+    /// CATextLayer string (which re-rasterizes glyphs) when nothing changed.
+    private var labelKeys: [UUID: String] = [:]
+
+    private func measuredLabel(_ shown: String, fontSize: CGFloat, font: NSFont) -> CGSize {
+        let key = "\(String(format: "%.3f", fontSize))|\(shown)"
+        if let hit = labelSizeCache[key] { return hit }
+        if labelSizeCache.count > 512 { labelSizeCache.removeAll(keepingCapacity: true) }
+        let size = (shown as NSString).size(withAttributes: [.font: font])
+        labelSizeCache[key] = size
+        return size
+    }
+
+    private func layoutLabel(_ b: Bundle, id: UUID, text: String, center: CGPoint, mag: CGFloat, selected: Bool) -> CGRect? {
         guard !text.isEmpty else {
             b.labelBG.isHidden = true; b.labelWhite.isHidden = true; b.labelText.isHidden = true
             return nil
@@ -434,7 +496,7 @@ final class ConnectorOverlayController {
         let m = sqrt(mag)
         let fs = Self.labelFontSize / m
         let font = NSFont.monospacedSystemFont(ofSize: fs, weight: .semibold)   // SF Mono Semibold (Figma)
-        let measured = (shown as NSString).size(withAttributes: [.font: font])
+        let measured = measuredLabel(shown, fontSize: fs, font: font)
         func centred(_ w: CGFloat, _ h: CGFloat) -> CGRect {
             CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
         }
@@ -457,11 +519,17 @@ final class ConnectorOverlayController {
         }
 
         b.labelText.frame = centred(measured.width, measured.height)
-        b.labelText.string = NSAttributedString(string: shown, attributes: [
-            .font: font,
-            .foregroundColor: Self.labelTextColor      // Figma #16181A
-        ])
-        b.labelText.contentsScale = 3              // crisp when zoomed in
+        // Rebuild the attributed string ONLY when text/size changed — setting
+        // an equal-but-new string still re-rasterizes the text layer.
+        let key = "\(String(format: "%.3f", fs))|\(shown)"
+        if labelKeys[id] != key {
+            labelKeys[id] = key
+            b.labelText.string = NSAttributedString(string: shown, attributes: [
+                .font: font,
+                .foregroundColor: Self.labelTextColor      // Figma #16181A
+            ])
+            b.labelText.contentsScale = 3              // crisp when zoomed in
+        }
         // Clickable region (a touch larger than the glyphs) so a click on the label
         // selects the connector even in the rest (no-pill) state.
         return centred(measured.width + 18 / m, measured.height + 14 / m)
@@ -475,8 +543,9 @@ final class ConnectorOverlayController {
     /// for the label's HEIGHT — not its full width (the "huge vertical gap" bug).
     private func labelGapBox(_ text: String, mag: CGFloat, selected: Bool) -> (w: CGFloat, h: CGFloat) {
         let m = sqrt(mag)
-        let font = NSFont.monospacedSystemFont(ofSize: Self.labelFontSize / m, weight: .semibold)
-        let size = (text.uppercased() as NSString).size(withAttributes: [.font: font])
+        let fs = Self.labelFontSize / m
+        let font = NSFont.monospacedSystemFont(ofSize: fs, weight: .semibold)
+        let size = measuredLabel(text.uppercased(), fontSize: fs, font: font)
         let breathing = (selected ? 44 : 22) / m       // pill / breathing room
         return (size.width + breathing, size.height + breathing)
     }

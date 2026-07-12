@@ -262,7 +262,9 @@ final class RadialColorPicker: NSView {
         let idx = nearestPetal(to: p)
         guard idx != hovered else { return }
         hovered = idx
-        if idx != nil { CLIPHaptics.snap() }
+        // No haptic on plain hover (Spatial restraint — sweeping the flower
+        // must not machine-gun ticks); the pick's levelChange is the one
+        // meaningful moment.
         // (no cursor change on hover — keep the default arrow)
         applyHover(idx)                                   // hovered snaps; others ease
         updateHoverRing(for: idx, animated: false)
@@ -405,6 +407,24 @@ final class RadialColorPicker: NSView {
 
     func dismiss() {
         if let m = outsideMonitor { NSEvent.removeMonitor(m); outsideMonitor = nil }
+        // Exit reverses a fraction of the bloom — scale back toward the disc
+        // centre while fading, so the flower leaves the way it arrived
+        // instead of vanishing in place.
+        if let layer = layer {
+            let pivot = discCenter
+            var small = CATransform3DConcat(
+                CATransform3DMakeTranslation(-pivot.x, -pivot.y, 0),
+                CATransform3DMakeScale(0.9, 0.9, 1))
+            small = CATransform3DConcat(
+                small, CATransform3DMakeTranslation(pivot.x, pivot.y, 0))
+            let a = CABasicAnimation(keyPath: "transform")
+            a.fromValue = layer.presentation()?.transform ?? layer.transform
+            a.toValue = small
+            a.duration = 0.16
+            a.timingFunction = CLIPSpring.easeOutSoft
+            layer.transform = small
+            layer.add(a, forKey: "bloomOut")
+        }
         CLIPSpring.run(duration: 0.16, _: { [weak self] in self?.layer?.opacity = 0 }) { [weak self] in
             self?.removeFromSuperview()
         }

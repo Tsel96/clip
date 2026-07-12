@@ -87,6 +87,11 @@ extension CollectionCanvas.Coordinator {
     /// Pre–macOS 14 (no `NSView.displayLink`) falls back to the old snap.
     func animateCamera(to target: Camera) {
         guard let scroll, target.zoom > 0 else { return }
+        // Reduce Motion: the glide flies the ENTIRE viewport — the most
+        // vestibular motion in the app. Land instantly instead.
+        guard !Motion.reduced else {
+            applyCamera(target); pushCameraFromScroll(); return
+        }
         guard #available(macOS 14.0, *) else {
             applyCamera(target); pushCameraFromScroll(); return
         }

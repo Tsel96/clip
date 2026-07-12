@@ -383,7 +383,9 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         let s = CASpringAnimation(keyPath: "transform")
         s.fromValue = lidView.layer?.presentation()?.transform ?? lidView.layer?.transform ?? to
         s.toValue = to
-        s.stiffness = 320; s.damping = 26; s.mass = 1
+        s.stiffness = CLIPSpring.Preset.pop.stiffness
+        s.damping = CLIPSpring.Preset.pop.caDamping
+        s.mass = 1
         s.duration = s.settlingDuration
         lidView.layer?.transform = to
         lidView.layer?.add(s, forKey: "lidOpen")
@@ -392,7 +394,9 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         o.fromValue = lidView.layer?.presentation()?.opacity ?? lidView.layer?.opacity
         o.toValue = hovering ? 1 : 0
         o.duration = 0.18
-        o.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        // ease-OUT like the sibling halo/arrow fades — during a live drag the
+        // drop affordance must read instantly, not start slow.
+        o.timingFunction = CAMediaTimingFunction(name: .easeOut)
         lidView.layer?.opacity = hovering ? 1 : 0
         lidView.layer?.add(o, forKey: "lidFade")
 
@@ -428,7 +432,9 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         let a = CASpringAnimation(keyPath: "transform")
         a.fromValue = layer.presentation()?.transform ?? layer.transform
         a.toValue = target
-        a.stiffness = 320; a.damping = 26; a.mass = 1
+        a.stiffness = CLIPSpring.Preset.pop.stiffness
+        a.damping = CLIPSpring.Preset.pop.caDamping
+        a.mass = 1
         a.duration = a.settlingDuration
         layer.transform = target
         layer.add(a, forKey: "slideY")

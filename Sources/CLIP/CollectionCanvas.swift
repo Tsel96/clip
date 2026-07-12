@@ -1075,6 +1075,8 @@ struct CollectionCanvas: NSViewRepresentable {
         /// "card jumps inside". Reuses `spawnExitSnapshots`' bitmap-ghost trick but
         /// aims at the folder instead of straight down. Purely cosmetic + guarded.
         private func spawnFolderDropSnapshots(_ filed: Set<UUID>, into folderID: UUID) {
+            // Purely cosmetic cross-viewport flight — skip under Reduce Motion.
+            guard !Motion.reduced else { return }
             guard let cv = collection, let container = container,
                   let folderCard = cv.visibleItems()
                       .compactMap({ ($0 as? HostingCollectionItem)?.cardView })
