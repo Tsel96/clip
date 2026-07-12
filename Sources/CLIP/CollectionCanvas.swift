@@ -967,6 +967,10 @@ struct CollectionCanvas: NSViewRepresentable {
             for id in startPos.keys {
                 guard let idx = nodes.firstIndex(where: { $0.id == id }),
                       let view = cv.item(at: IndexPath(item: idx, section: 0))?.view else { continue }
+                // A fresh grab must seize the card instantly: kill any still-
+                // running release-carry spring, or the keyed animation keeps
+                // driving the presentation and the card ignores the new drag.
+                view.layer?.removeAnimation(forKey: "dropCarry")
                 let xform: CATransform3D
                 if newTarget != nil {
                     let cx = view.bounds.width / 2, cy = view.bounds.height / 2
@@ -1011,7 +1015,7 @@ struct CollectionCanvas: NSViewRepresentable {
         func endLiveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat,
                                carry: CGPoint = .zero) {
             // Close any open folder lid; if a card was filed, apply()'s refresh +
-            // spawnFolderDropSnapshots take over the "jump inside".
+            // spawnExitSnapshots take over the exit ghost.
             if let t = dropTargetID { folderContentView(t)?.setDropHover(false); dropTargetID = nil }
             guard let cv = collection, let layout = layout else { return }
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
@@ -1078,6 +1082,8 @@ struct CollectionCanvas: NSViewRepresentable {
         /// into the container at its frame and spring it down + fade out. Purely
         /// cosmetic + fully guarded — never blocks the actual removal.
         private func spawnExitSnapshots(_ removed: Set<UUID>) {
+            // Purely cosmetic ghost motion — skip under Reduce Motion.
+            guard !Motion.reduced else { return }
             guard let cv = collection, let container = container else { return }
             for item in cv.visibleItems() {
                 guard let card = (item as? HostingCollectionItem)?.cardView,
@@ -1116,68 +1122,9 @@ struct CollectionCanvas: NSViewRepresentable {
             }
         }
 
-        /// A card FILED into a folder flies into it: snapshot the card, then
-        /// shrink + translate the ghost to the folder's centre and fade — Spatial's
-        /// "card jumps inside". Reuses `spawnExitSnapshots`' bitmap-ghost trick but
-        /// aims at the folder instead of straight down. Purely cosmetic + guarded.
-        private func spawnFolderDropSnapshots(_ filed: Set<UUID>, into folderID: UUID) {
-            // Purely cosmetic cross-viewport flight — skip under Reduce Motion.
-            guard !Motion.reduced else { return }
-            guard let cv = collection, let container = container,
-                  let folderCard = cv.visibleItems()
-                      .compactMap({ ($0 as? HostingCollectionItem)?.cardView })
-                      .first(where: { $0.nodeID == folderID }),
-                  folderCard.bounds.width > 1
-            else { return }
-            let folderCenter = container.convert(
-                CGPoint(x: folderCard.bounds.midX, y: folderCard.bounds.midY), from: folderCard)
-            var flew = false
-            for item in cv.visibleItems() {
-                guard let card = (item as? HostingCollectionItem)?.cardView,
-                      let id = card.nodeID, filed.contains(id),
-                      card.bounds.width > 1, card.bounds.height > 1,
-                      let rep = card.bitmapImageRepForCachingDisplay(in: card.bounds)
-                else { continue }
-                card.cacheDisplay(in: card.bounds, to: rep)
-                guard let cg = rep.cgImage else { continue }
-                // The dragged card is corner-anchored (layer anchorPoint 0,0) and may
-                // be SHRUNK + translated over the folder. Reproduce its exact current
-                // transform on the ghost (same anchor + home frame) so the fly-in
-                // begins seamlessly from the shrunk card, then springs it to a dot at
-                // the folder centre.
-                let live = card.layer?.transform ?? CATransform3DIdentity
-                let home = container.convert(card.bounds, from: card)   // full-size home rect
-                let ghost = CALayer()
-                ghost.contents = cg
-                ghost.contentsGravity = .resizeAspect
-                ghost.zPosition = 60
-                ghost.anchorPoint = .zero                               // match the card's layer
-                ghost.frame = home
-                container.layer?.addSublayer(ghost)
-
-                let c = CGPoint(x: home.width / 2, y: home.height / 2)
-                let dx = folderCenter.x - home.midX, dy = folderCenter.y - home.midY
-                let target = CATransform3DConcat(
-                    CATransform3DConcat(CATransform3DMakeTranslation(-c.x, -c.y, 0),
-                                        CATransform3DMakeScale(0.12, 0.12, 1)),
-                    CATransform3DMakeTranslation(c.x + dx, c.y + dy, 0))
-                CATransaction.begin()
-                CATransaction.setCompletionBlock { ghost.removeFromSuperlayer() }
-                let s = CASpringAnimation(keyPath: "transform")
-                s.fromValue = live; s.toValue = target
-                s.stiffness = CLIPSpring.Preset.settle.stiffness
-                s.damping = CLIPSpring.Preset.settle.caDamping
-                s.duration = s.settlingDuration
-                let o = CABasicAnimation(keyPath: "opacity")
-                o.fromValue = 1; o.toValue = 0; o.duration = 0.38
-                o.timingFunction = CLIPSpring.easeOutSoft
-                ghost.transform = target; ghost.opacity = 0
-                ghost.add(s, forKey: "dropFly"); ghost.add(o, forKey: "dropFade")
-                CATransaction.commit()
-                flew = true
-            }
-            if flew { MainActor.assumeIsolated { Haptics.generic() } }
-        }
+        // (spawnFolderDropSnapshots — the folder fly-in ghost — was dead code:
+        // no call site; filing into a folder routes through spawnExitSnapshots
+        // per the comment at its call site. Deleted in the motion pass.)
 
         /// Center + fit the actual content (the nodes' bounding rect, not the
         /// padded world) in the viewport. Run once the scroll view has a real

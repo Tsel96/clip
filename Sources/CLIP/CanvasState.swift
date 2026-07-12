@@ -41,6 +41,10 @@ final class CanvasState: ObservableObject {
     /// (groupID, positions, undo) commits synchronously in
     /// `groupSelection()`; this set only delays the hide.
     @Published var groupFormationInFlight: Set<UUID> = []
+    /// Generation stamp for `groupFormationInFlight` cleanup timers — a
+    /// stale timer from a superseded ⌘G must not clear ids a newer,
+    /// still-animating converge owns.
+    var groupFormationGen = 0
     /// Bumped (by Tidy Up) so the native canvas applies the NEXT frames
     /// change animated. Deliberately not @Published — it always rides
     /// along with the position writes that trigger the update.

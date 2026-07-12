@@ -90,7 +90,7 @@ extension CanvasState {
         })
         let result = ColorformEngine.layout(clusters: clusters, nodeSizes: sizes)
         let framedCamera = cameraFraming(bulbs: result.bulbs)
-        withAnimation(Motion.structure) {
+        withAnimation(Motion.structureAccessible) {
             colorformPositions = result.positions
             colorBulbs = result.bulbs
             if let cam = framedCamera { camera = cam }
@@ -104,7 +104,7 @@ extension CanvasState {
     func exitColorform() {
         guard canvasMode == .colorform else { return }
         let restored = preColorformCamera
-        withAnimation(Motion.structure) {
+        withAnimation(Motion.structureAccessible) {
             canvasMode = .canvas
             colorformPositions = [:]
             colorBulbs = []

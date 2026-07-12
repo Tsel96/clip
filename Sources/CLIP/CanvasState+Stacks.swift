@@ -59,11 +59,16 @@ extension CanvasState {
         }
         // Converge decoration — spring-glide each member to the head's
         // position with a 30ms stagger. `updatePosition` writes the model
-        // value synchronously; only the animation is delayed.
+        // value synchronously; only the animation is delayed. Under Reduce
+        // Motion the cards simply take their place (no cross-canvas glide).
         let stagger: Double = 0.03
         for (i, mover) in movers.enumerated() {
-            withAnimation(Motion.structure.delay(Double(i) * stagger)) {
-                self.updatePosition(of: mover.id, to: headPos)
+            if Motion.reduced {
+                updatePosition(of: mover.id, to: headPos)
+            } else {
+                withAnimation(Motion.structure.delay(Double(i) * stagger)) {
+                    self.updatePosition(of: mover.id, to: headPos)
+                }
             }
         }
         // One undoable covering groupIDs + positions, committed before
@@ -71,13 +76,16 @@ extension CanvasState {
         commitUndoable(from: before)
         // End of converge: purely visual cleanup (safe against undo —
         // clearing the set never mutates the model) + the "deck formed"
-        // haptic timed to the visual settle.
-        let totalDuration = Double(max(0, movers.count - 1)) * stagger
-            + Motion.structureResponse
-        let moverIDs = movers.map(\.id)
+        // haptic timed to the visual settle. Generation-stamped: a timer
+        // from a superseded ⌘G must not clear a newer converge's ids.
+        groupFormationGen += 1
+        let gen = groupFormationGen
+        let totalDuration = Motion.reduced ? 0
+            : Double(max(0, movers.count - 1)) * stagger + Motion.structureResponse
         DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration) { [weak self] in
-            guard let self else { return }
-            self.groupFormationInFlight.subtract(moverIDs)
+            guard let self, self.groupFormationGen == gen else { return }
+            // Newest operation: anything still in the set is stale.
+            self.groupFormationInFlight.removeAll()
             Haptics.threshold()
         }
         // Selection should immediately track the visible representative
@@ -150,11 +158,16 @@ extension CanvasState {
         // Stage 2 — staggered spring outward. Closer-to-head cards (low
         // index) fire first; outer cards trail. Feels like the deck
         // erupts last-in-first-out. `updatePosition` commits the model
-        // value synchronously; the springs are decoration.
+        // value synchronously; the springs are decoration. Under Reduce
+        // Motion the fan just appears (no cross-canvas eruption).
         let stagger: Double = 0.03
         for (i, plan) in plans.enumerated() {
-            withAnimation(Motion.structure.delay(Double(i) * stagger)) {
-                self.updatePosition(of: plan.id, to: plan.target)
+            if Motion.reduced {
+                updatePosition(of: plan.id, to: plan.target)
+            } else {
+                withAnimation(Motion.structure.delay(Double(i) * stagger)) {
+                    self.updatePosition(of: plan.id, to: plan.target)
+                }
             }
         }
 

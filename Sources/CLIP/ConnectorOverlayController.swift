@@ -106,6 +106,8 @@ final class ConnectorOverlayController {
         // Dampened √mag zoom with a screen-size floor (matching the source port).
         let d = Self.portDiameter(base: Self.hoverDotDiameter, mag: mag)
         let wasHidden = hoverDot.isHidden
+        // A hide mid-flight leaves the model transform at the shrunk scale.
+        let hideInFlight = !CATransform3DIsIdentity(hoverDot.transform)
         // Retarget origin BEFORE touching the model transform: a show that
         // lands mid-hide picks up from the live shrinking scale, no jump.
         let from = wasHidden ? 0.2 : hoverDotLiveScale()
@@ -119,8 +121,12 @@ final class ConnectorOverlayController {
         hoverDot.isHidden = false
         CATransaction.commit()
         // Same key both directions → one coalescing spring; the model value is
-        // committed above, so no fill-forwards residue accumulates.
-        hoverDot.add(Self.popSpring(from: from, to: 1), forKey: "pop")
+        // committed above, so no fill-forwards residue accumulates. Only on a
+        // real transition — steady-state hover calls (every mouse move) must
+        // not re-add a spring per tick.
+        if wasHidden || hideInFlight {
+            hoverDot.add(Self.popSpring(from: from, to: 1), forKey: "pop")
+        }
     }
 
     func hideHoverDot() {
@@ -227,12 +233,17 @@ final class ConnectorOverlayController {
             let fullPath = CGMutablePath()
             fullPath.move(to: p0); fullPath.addCurve(to: p3, control1: c1, control2: c2)
 
-            // Break the line under the label (at the curve point nearest the label).
-            let lblBox = labelGapBox(c.label, mag: mag, selected: isSel)
-            b.line.path = hasLabel
-                ? gappedLinePath(p0: p0, p1: c1, p2: c2, p3: p3, labelCenter: labelCenter,
-                                 labelW: lblBox.w, labelH: lblBox.h)
-                : fullPath
+            // Break the line under the label (at the curve point nearest the
+            // label). Measured only when there IS a label — unlabeled
+            // connectors skip the text measurement entirely.
+            if hasLabel {
+                let lblBox = labelGapBox(c.label, mag: mag, selected: isSel)
+                b.line.path = gappedLinePath(p0: p0, p1: c1, p2: c2, p3: p3,
+                                             labelCenter: labelCenter,
+                                             labelW: lblBox.w, labelH: lblBox.h)
+            } else {
+                b.line.path = fullPath
+            }
             // Thicker when zoomed IN: a content-scaling width (≈1.8× content-
             // constant, so it grows clearly with the canvas) floored to a visible
             // screen minimum when zoomed out.
