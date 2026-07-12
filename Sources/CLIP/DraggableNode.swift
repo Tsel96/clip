@@ -311,14 +311,17 @@ struct DraggableNode: View {
         }
         .onTapGesture { handleTap() }
         .contextMenu { contextMenu }
-        .onHover { nodeHovering = $0 }
+        // Hover chrome only when SwiftUI positions the card; in the native
+        // canvas (positioned == false) CardItemView's lift spring is the
+        // single hover treatment — two systems on one card fight each other.
+        .onHover { nodeHovering = positioned && $0 }
         // Creation pop: a freshly-created node mounts with appearProgress
         // at 0 (set in `init`) and springs to 1. Older nodes mount at 1 —
         // the guard skips them, so scrolling a card back into the cull
         // window never replays the pop.
         .onAppear {
             guard appearProgress < 1 else { return }
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) {
+            withAnimation(Motion.pop) {
                 appearProgress = 1
             }
         }
@@ -772,11 +775,7 @@ struct DraggableNode: View {
                 // "alive" (matches the Luke Orb reference). The spring
                 // also softens snap-to-grid corrections from feeling
                 // like jumps.
-                withAnimation(.interactiveSpring(
-                    response: 0.12,
-                    dampingFraction: 0.86,
-                    blendDuration: 0.05
-                )) {
+                withAnimation(Motion.track) {
                     applyTranslation(value.translation)
                     // Tilt is proportional to recent horizontal motion.
                     // Capped at ±3°; the divisor is calibrated so a
@@ -835,7 +834,7 @@ struct DraggableNode: View {
                 // termination) so the user feels the "thud" at the
                 // moment they let go, matching the visual commit.
                 Haptics.tap()
-                withAnimation(.spring(response: 0.42, dampingFraction: 0.76)) {
+                withAnimation(Motion.settle) {
                     applyTranslation(finalDelta)
                     dragInProgress = false
                     dragTilt = 0
