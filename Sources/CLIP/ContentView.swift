@@ -50,11 +50,6 @@ struct ContentView: View {
                         dismissButton: .default(Text("OK"))
                     )
                 }
-                // ⌘K search palette — centred floating sheet.
-                .sheet(isPresented: $state.isSearchPresented) {
-                    SearchPalette()
-                        .padding(.vertical, 80)
-                }
                 // "Set up iPhone sharing" how-to, opened from the inbox
                 // empty state.
                 .sheet(isPresented: $state.isInboxGuidePresented) {
@@ -69,6 +64,25 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
             state.sweepSharedInbox()
+        }
+        // ⌘K search palette — an INSTANT floating overlay, not a .sheet: a
+        // keyboard-summoned command palette is a 100×/day action and must
+        // not pay window-sheet slide/dim choreography on every open AND
+        // close (the close used to animate while the camera jumped to the
+        // found card). Raycast-style: appear now, vanish now.
+        .overlay(alignment: .top) {
+            if state.isSearchPresented {
+                ZStack(alignment: .top) {
+                    // Click-out scrim (subtle dim, no fade choreography).
+                    Color.black.opacity(0.15)
+                        .ignoresSafeArea()
+                        .onTapGesture { state.isSearchPresented = false }
+                    SearchPalette()
+                        .padding(.top, 100)
+                }
+                .zIndex(90)
+                .transaction { $0.animation = nil }
+            }
         }
         // Full-window card lightbox — overlays the whole split view (covers
         // the sidebar); the window toolbar is hidden while it's open, so no

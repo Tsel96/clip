@@ -968,37 +968,52 @@ struct DotGrid: View {
     /// pointer is off the canvas.
     var pointer: CGPoint?
 
-    private static let baseSpacing: CGFloat = 24
-    private static let baseDot: CGFloat = 2.4
+    fileprivate static let baseSpacing: CGFloat = 24
+    fileprivate static let baseDot: CGFloat = 2.4
     /// Reveal radius around the cursor, in screen points.
-    private static let spotlightRadius: CGFloat = 220
+    fileprivate static let spotlightRadius: CGFloat = 220
     /// Screen spacing never drops below this (octave-doubled if it would) —
     /// bounds the dot count for the now full-screen grid at extreme zoom-out.
-    private static let minScreenSpacing: CGFloat = 12
+    fileprivate static let minScreenSpacing: CGFloat = 12
 
-    /// 0…1 reveal, animated up when the pointer enters the canvas and
-    /// down when it leaves so the pool fades rather than popping.
-    @State private var strength: Double = 0
-    /// Last known cursor position — the pool fades out here after the
-    /// pointer has already left (`pointer` is `nil` by then).
-    @State private var lastPointer: CGPoint = .zero
+    /// Screen spacing + dot size at a zoom (shared by both passes). Spacing
+    /// scales with zoom; octave-double only as a floor.
+    fileprivate static func metrics(_ zoom: CGFloat) -> (spacing: CGFloat, dot: CGFloat) {
+        var spacing = baseSpacing * zoom
+        while spacing < minScreenSpacing { spacing *= 2 }
+        return (spacing, max(1, baseDot * zoom))
+    }
+
+    /// World-anchored phase: dots sit on world multiples of `baseSpacing`,
+    /// so they track the camera exactly.
+    fileprivate static func phase(_ coord: CGFloat, spacing: CGFloat) -> CGFloat {
+        var p = coord.truncatingRemainder(dividingBy: spacing)
+        if p > 0 { p -= spacing }
+        return p
+    }
+
+    var body: some View {
+        // TWO passes so mouse movement never re-rasterizes the whole grid:
+        // the base field depends ONLY on (camera, size) — SwiftUI skips it
+        // on pointer moves — and the pointer feeds just the bounded
+        // spotlight pass.
+        ZStack(alignment: .topLeading) {
+            DotGridBase(camera: camera)
+            DotGridSpotlight(camera: camera, pointer: pointer)
+        }
+    }
+}
+
+/// Full-screen, world-anchored dot field. No pointer input, so it redraws
+/// only on camera / size changes — never on mouseMoved.
+private struct DotGridBase: View {
+    var camera: Camera
 
     var body: some View {
         Canvas { context, size in
-            // Spacing scales with zoom; octave-double only as a floor.
-            var spacing = Self.baseSpacing * camera.zoom
-            while spacing < Self.minScreenSpacing { spacing *= 2 }
-            let dotSize = max(1, Self.baseDot * camera.zoom)
-
-            // World-anchored phase: dots sit on world multiples of
-            // `baseSpacing`, so they track the camera exactly.
-            var phaseX = camera.x.truncatingRemainder(dividingBy: spacing)
-            if phaseX > 0 { phaseX -= spacing }
-            var phaseY = camera.y.truncatingRemainder(dividingBy: spacing)
-            if phaseY > 0 { phaseY -= spacing }
-
-            // Full-screen, world-anchored dot field (whole background, not just
-            // a cursor patch).
+            let (spacing, dotSize) = DotGrid.metrics(camera.zoom)
+            let phaseX = DotGrid.phase(camera.x, spacing: spacing)
+            let phaseY = DotGrid.phase(camera.y, spacing: spacing)
             var path = Path()
             var x = phaseX
             while x <= size.width {
@@ -1010,23 +1025,60 @@ struct DotGrid: View {
                 }
                 x += spacing
             }
-
-            // Persistent background grid — always visible, even with the cursor
-            // off the canvas.
+            // Persistent background grid — always visible, even with the
+            // cursor off the canvas.
             context.fill(path, with: .color(Color.primary.opacity(0.22)))
+        }
+    }
+}
 
-            // Cursor spotlight — brightens the dots near the pointer (the nice
-            // Spatial-style reveal), layered ON TOP of the base grid.
-            if strength > 0.001 {
-                let center = pointer ?? lastPointer
-                context.fill(path, with: .radialGradient(
-                    Gradient(colors: [
-                        Color.primary.opacity(0.32 * strength),
-                        Color.primary.opacity(0.14 * strength),
-                        .clear
-                    ]),
-                    center: center, startRadius: 0, endRadius: Self.spotlightRadius))
+/// Cursor spotlight — brightens the dots near the pointer (the nice
+/// Spatial-style reveal), layered ON TOP of the base grid. Only the dots
+/// inside the spotlight box are generated, so per-mouse-move work is
+/// bounded (~a few hundred dots) at any zoom.
+private struct DotGridSpotlight: View {
+    var camera: Camera
+    var pointer: CGPoint?
+
+    /// 0…1 reveal, animated up when the pointer enters the canvas and
+    /// down when it leaves so the pool fades rather than popping.
+    @State private var strength: Double = 0
+    /// Last known cursor position — the pool fades out here after the
+    /// pointer has already left (`pointer` is `nil` by then).
+    @State private var lastPointer: CGPoint = .zero
+
+    var body: some View {
+        Canvas { context, size in
+            guard strength > 0.001 else { return }
+            let center = pointer ?? lastPointer
+            let r = DotGrid.spotlightRadius
+            let (spacing, dotSize) = DotGrid.metrics(camera.zoom)
+            let phaseX = DotGrid.phase(camera.x, spacing: spacing)
+            let phaseY = DotGrid.phase(camera.y, spacing: spacing)
+            // First grid line at/after an edge (clamped to the on-screen field).
+            func firstLine(_ phase: CGFloat, after edge: CGFloat) -> CGFloat {
+                max(phase + ceil((edge - phase) / spacing) * spacing, phase)
             }
+            var path = Path()
+            var x = firstLine(phaseX, after: center.x - r)
+            let maxX = min(center.x + r, size.width)
+            let maxY = min(center.y + r, size.height)
+            while x <= maxX {
+                var y = firstLine(phaseY, after: center.y - r)
+                while y <= maxY {
+                    path.addEllipse(in: CGRect(x: x - dotSize / 2, y: y - dotSize / 2,
+                                               width: dotSize, height: dotSize))
+                    y += spacing
+                }
+                x += spacing
+            }
+            context.fill(path, with: .radialGradient(
+                Gradient(colors: [
+                    Color.primary.opacity(0.32 * strength),
+                    Color.primary.opacity(0.14 * strength),
+                    .clear
+                ]),
+                center: center, startRadius: 0, endRadius: r))
         }
         // Fade the pool in/out only on enter/leave transitions.
         .onChange(of: pointer == nil) { gone in

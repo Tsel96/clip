@@ -459,11 +459,6 @@ final class ConnectorOverlayController {
         return Self.arrowTemplate.copy(using: &tf) ?? Self.arrowTemplate
     }
 
-    /// Position the midpoint label in CONTENT space (so it scales with zoom like
-    /// the cards / Obsidian). A subtle canvas-coloured chip masks the line behind
-    /// the dark text. Uses an attributed string so the font + colour render
-    /// reliably (a bare `CATextLayer.font = NSFont` often draws nothing).
-    @discardableResult
     /// Text-measurement cache: `redraw()` runs on EVERY drag tick and pan
     /// frame, and `size(withAttributes:)` + a CATextLayer string rebuild per
     /// labeled connector per frame is measurable work. Key = text + font
@@ -483,6 +478,11 @@ final class ConnectorOverlayController {
         return size
     }
 
+    /// Position the midpoint label in CONTENT space (so it scales with zoom like
+    /// the cards / Obsidian). A subtle canvas-coloured chip masks the line behind
+    /// the dark text. Uses an attributed string so the font + colour render
+    /// reliably (a bare `CATextLayer.font = NSFont` often draws nothing).
+    @discardableResult
     private func layoutLabel(_ b: Bundle, id: UUID, text: String, center: CGPoint, mag: CGFloat, selected: Bool) -> CGRect? {
         guard !text.isEmpty else {
             b.labelBG.isHidden = true; b.labelWhite.isHidden = true; b.labelText.isHidden = true

@@ -261,16 +261,25 @@ final class CanvasToolPaletteView: NSView {
         layer.add(a, forKey: "morphFade")
     }
 
+    /// Pending morphBlur filter cleanups, per view — cancelled on retrigger
+    /// so a stale cleanup can't strip the filter under a new morph.
+    private var morphBlurCleanup: [ObjectIdentifier: DispatchWorkItem] = [:]
+
     /// Animated Gaussian blur on a morphing view — the SwiftUI "blur material"
     /// transition feel. Fading-out blurs 0→max; fading-in sharpens max→0. The
     /// filter is cleared once settled so there's no idle render cost.
+    /// Retrigger-safe: a toggle mid-morph reverses from the LIVE radius.
     private func morphBlur(_ view: NSView, fadingOut: Bool, dur: CFTimeInterval) {
         guard let layer = view.layer, dur > 0, let f = CIFilter(name: "CIGaussianBlur") else {
             view.layer?.filters = nil; return
         }
         let maxR: CGFloat = 7
-        let from: CGFloat = fadingOut ? 0 : maxR
         let to: CGFloat = fadingOut ? maxR : 0
+        let key = ObjectIdentifier(view)
+        morphBlurCleanup[key]?.cancel()
+        let live = (layer.presentation()?.value(forKeyPath: "filters.blur.inputRadius") as? NSNumber)
+            .map { CGFloat(truncating: $0) }
+        let from = live ?? (fadingOut ? 0 : maxR)
         f.name = "blur"
         f.setValue(to, forKey: "inputRadius")
         layer.filters = [f]
@@ -279,7 +288,9 @@ final class CanvasToolPaletteView: NSView {
         a.duration = dur
         a.timingFunction = CLIPSpring.easeOutSoft
         layer.add(a, forKey: "morphBlur")
-        DispatchQueue.main.asyncAfter(deadline: .now() + dur + 0.06) { [weak view] in view?.layer?.filters = nil }
+        let cleanup = DispatchWorkItem { [weak view] in view?.layer?.filters = nil }
+        morphBlurCleanup[key] = cleanup
+        DispatchQueue.main.asyncAfter(deadline: .now() + dur + 0.06, execute: cleanup)
     }
 
     /// Bloom the flower color picker above the folder bar's Color (droplet) button.
@@ -507,7 +518,12 @@ private final class PropButton: NSView {
             refreshMarker()                                        // 3 states only: rest / hover / selected — no press scale
         } else if usesStateImages {
             crossfadeHover(isHovered)                              // rest ↔ hover artwork
-            CLIPSpring.scale(self, to: isPressed ? 0.94 : 1.0, key: "xform")  // subtle press only
+            // Down-stroke snaps fast (Spatial press feel); only the release springs.
+            if isPressed {
+                CLIPSpring.pressScale(self, to: 0.94, key: "xform")
+            } else {
+                CLIPSpring.scale(self, to: 1.0, key: "xform")
+            }
         } else {
             refreshScale()
         }
@@ -1313,7 +1329,9 @@ final class ToolPaletteButton: NSView, NSViewToolTipOwner {
 
     override func mouseDown(with event: NSEvent) {
         isPressed = true
-        CLIPSpring.scale(self, to: 0.94, key: "press")     // unified press-shrink
+        // Fast non-spring down-stroke; the mouseUp release springs (shared
+        // key so the release retargets from mid-press) — Spatial's press feel.
+        CLIPSpring.pressScale(self, to: 0.94, key: "press")
     }
 
     override func mouseUp(with event: NSEvent) {
