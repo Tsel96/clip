@@ -46,39 +46,39 @@ extension CanvasState {
             }
 
         let before = snapshotForUndo()
-        // Stage 1 — spring-glide each non-head member to the head's
-        // position, with a 30ms stagger per index. Members remain
-        // visible during this phase (their `groupID` is still nil),
-        // so the user sees the cards physically converge.
+        // Commit the group NOW — a keyboard action's state must never lag
+        // its animation. ⌘Z, a second ⌘G, or a drag during the converge
+        // all read committed state. `groupFormationInFlight` keeps the
+        // movers visible (see `isHiddenByStack`) so the converge below
+        // still plays as pure decoration over committed state.
+        groupFormationInFlight.formUnion(movers.map(\.id))
+        for c in candidates {
+            mutateNode(c.id) { node in
+                node.groupID = newGroupID
+            }
+        }
+        // Converge decoration — spring-glide each member to the head's
+        // position with a 30ms stagger. `updatePosition` writes the model
+        // value synchronously; only the animation is delayed.
         let stagger: Double = 0.03
-        let springResponse: Double = 0.55
-        let springDamping: Double = 0.82
         for (i, mover) in movers.enumerated() {
-            let delay = Double(i) * stagger
-            withAnimation(
-                .spring(response: springResponse,
-                        dampingFraction: springDamping)
-                    .delay(delay)
-            ) {
+            withAnimation(Motion.structure.delay(Double(i) * stagger)) {
                 self.updatePosition(of: mover.id, to: headPos)
             }
         }
-        // Stage 2 — once the longest stagger + spring is done, stamp
-        // the `groupID` on every member. The non-head ones now disappear
-        // (filtered out of `visibleNodes`) and the head's StackVisualView
-        // ghost layer takes over. Single undoable wraps stage 1 + 2 via
-        // the snapshot captured before stage 1.
-        let totalDuration = Double(max(0, movers.count - 1)) * stagger + springResponse
+        // One undoable covering groupIDs + positions, committed before
+        // the decoration finishes.
+        commitUndoable(from: before)
+        // End of converge: purely visual cleanup (safe against undo —
+        // clearing the set never mutates the model) + the "deck formed"
+        // haptic timed to the visual settle.
+        let totalDuration = Double(max(0, movers.count - 1)) * stagger
+            + Motion.structureResponse
+        let moverIDs = movers.map(\.id)
         DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration) { [weak self] in
             guard let self else { return }
-            for c in candidates {
-                self.mutateNode(c.id) { node in
-                    node.groupID = newGroupID
-                }
-            }
-            // Threshold haptic — the deck has just *formed*.
+            self.groupFormationInFlight.subtract(moverIDs)
             Haptics.threshold()
-            self.commitUndoable(from: before)
         }
         // Selection should immediately track the visible representative
         // (the head) — the stack-classifier and Smart Selection both
@@ -149,27 +149,19 @@ extension CanvasState {
 
         // Stage 2 — staggered spring outward. Closer-to-head cards (low
         // index) fire first; outer cards trail. Feels like the deck
-        // erupts last-in-first-out.
+        // erupts last-in-first-out. `updatePosition` commits the model
+        // value synchronously; the springs are decoration.
         let stagger: Double = 0.03
-        let springResponse: Double = 0.55
-        let springDamping: Double = 0.82
         for (i, plan) in plans.enumerated() {
-            withAnimation(
-                .spring(response: springResponse,
-                        dampingFraction: springDamping)
-                    .delay(Double(i) * stagger)
-            ) {
+            withAnimation(Motion.structure.delay(Double(i) * stagger)) {
                 self.updatePosition(of: plan.id, to: plan.target)
             }
         }
 
-        // Stage 3 — finalize: commit undo + threshold haptic on settle.
-        let totalDuration = Double(max(0, plans.count - 1)) * stagger + springResponse
-        DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration) { [weak self] in
-            guard let self else { return }
-            Haptics.threshold()
-            self.commitUndoable(from: before)
-        }
+        // Stage 3 — commit immediately: ⌘Z during the cascade must undo
+        // THIS ungroup, not the action before it.
+        Haptics.threshold()
+        commitUndoable(from: before)
 
         // Selection updates immediately so the chrome reflects the new
         // member set (the loose cards) without waiting for stage 3.
@@ -194,6 +186,9 @@ extension CanvasState {
         if focusedStackID != nil, focusedStackID == group {
             return false
         }
+        // Mid-converge: the group is committed but the card is still
+        // visibly gliding into the deck.
+        if groupFormationInFlight.contains(id) { return false }
         return !isStackHead(id)
     }
 

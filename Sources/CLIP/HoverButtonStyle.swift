@@ -19,8 +19,8 @@ struct HoverButtonStyle: ButtonStyle {
             configuration.label
                 .brightness(configuration.isPressed ? -0.05 : (hovering ? 0.07 : 0))
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)
-                .animation(.easeOut(duration: 0.12), value: hovering)
-                .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+                .animation(Motion.feedback, value: hovering)
+                .animation(Motion.feedback, value: configuration.isPressed)
                 .onHover { hovering = $0 }
         }
     }

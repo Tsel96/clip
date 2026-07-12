@@ -36,6 +36,11 @@ final class CanvasState: ObservableObject {
     /// instead of being filtered out by `isHiddenByStack`. Esc /
     /// click-out clears this and the cards spring back into the stack.
     @Published var focusedStackID: UUID? = nil
+    /// Nodes whose `groupID` is already committed but which stay visible
+    /// while the ⌘G converge decoration plays. Purely visual: the model
+    /// (groupID, positions, undo) commits synchronously in
+    /// `groupSelection()`; this set only delays the hide.
+    @Published var groupFormationInFlight: Set<UUID> = []
     /// The unfolded folder, if any. While set, the canvas shows ONLY that
     /// folder's children (`canvasDisplayNodes`) under its own fitted camera;
     /// Esc / the back affordance clears it and restores the prior camera.
@@ -991,7 +996,7 @@ final class CanvasState: ObservableObject {
     /// A new toast cancels the previous one's dismissal timer.
     func showToast(_ text: String, systemImage: String) {
         toastDismissWork?.cancel()
-        withAnimation(.spring(response: 0.40, dampingFraction: 0.82)) {
+        withAnimation(Motion.pop) {
             toast = ToastContent(text: text, systemImage: systemImage)
         }
         let work = DispatchWorkItem { [weak self] in
@@ -1473,14 +1478,14 @@ final class CanvasState: ObservableObject {
         guard case .folder = nodeByID[folderID]?.kind else { return }
         cancelPanInertia()
         deselectAll()
-        withAnimation(.easeInOut(duration: 0.2)) { focusedFolderID = folderID }
+        withAnimation(.easeOut(duration: 0.2)) { focusedFolderID = folderID }
         Haptics.tap()
     }
 
     /// Close the folder grid → back to the board (camera unchanged).
     func exitFolderFocus() {
         guard focusedFolderID != nil else { return }
-        withAnimation(.easeInOut(duration: 0.2)) { focusedFolderID = nil }
+        withAnimation(.easeOut(duration: 0.2)) { focusedFolderID = nil }
     }
 
     /// Drop cards INTO a folder: add them to its `childIDs` so they leave the

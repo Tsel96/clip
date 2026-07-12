@@ -20,7 +20,7 @@ extension CanvasState {
         // world coords, so we don't need the camera. Park it at neutral
         // values so any leak-through has predictable behaviour.
         let neutral = Camera(x: 0, y: 0, zoom: 1.0)
-        withAnimation(Motion.structure) {
+        withAnimation(Motion.structureAccessible) {
             canvasMode = .archive
             archiveLevel = .calendar
             setArchiveDays(days)
@@ -46,7 +46,7 @@ extension CanvasState {
     func popArchiveLevel() {
         switch archiveLevel {
         case .card(let cardID):
-            withAnimation(Motion.structure) {
+            withAnimation(Motion.structureAccessible) {
                 // O(1) reverse lookup: which day owns this card?
                 if let dayForCard = cardToDay[cardID] {
                     archiveLevel = .day(dayForCard)
@@ -55,7 +55,7 @@ extension CanvasState {
                 }
             }
         case .day:
-            withAnimation(Motion.structure) {
+            withAnimation(Motion.structureAccessible) {
                 archiveLevel = .calendar
                 archivePositions = [:]
                 archiveSizes = [:]
@@ -82,7 +82,7 @@ extension CanvasState {
                 ? viewportSize
                 : CGSize(width: 1200, height: 800)
         )
-        withAnimation(Motion.structure) {
+        withAnimation(Motion.structureAccessible) {
             archiveLevel = .day(normalized)
             archivePositions = positions
             archiveSizes = sizes
@@ -93,7 +93,10 @@ extension CanvasState {
     /// centered, per-kind size for the focused card and merges it into
     /// `archivePositions` / `archiveSizes` so the existing card view
     /// glides from its bento slot to the lightbox center.
-    func drillToCard(_ id: UUID) {
+    /// `animation` defaults to the structural hero glide; keyboard
+    /// navigation passes `Motion.fade` — a repeated keypress must not
+    /// replay a cross-screen flight per step.
+    func drillToCard(_ id: UUID, animation: Animation = Motion.structureAccessible) {
         guard let node = nodeByID[id] else { return }
         let viewport = viewportSize.width > 0
             ? viewportSize
@@ -103,7 +106,7 @@ extension CanvasState {
             renderedHeight: renderedHeight(of: node),
             viewportSize: viewport
         )
-        withAnimation(Motion.structure) {
+        withAnimation(animation) {
             archiveLevel = .card(id)
             // Replace overrides with just the focused card's layout —
             // the rest of the day's cards aren't rendered in lightbox.
@@ -152,7 +155,7 @@ extension CanvasState {
         }
 
         if let t = target, t != currentID {
-            drillToCard(t)
+            drillToCard(t, animation: Motion.fade)
         }
     }
 
@@ -181,7 +184,7 @@ extension CanvasState {
     func exitArchive() {
         guard canvasMode == .archive else { return }
         let restored = preArchiveCamera
-        withAnimation(Motion.structure) {
+        withAnimation(Motion.structureAccessible) {
             canvasMode = .canvas
             archiveLevel = .calendar
             setArchiveDays([:])

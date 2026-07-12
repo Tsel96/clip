@@ -47,7 +47,7 @@ struct SectionNodeView: View {
                 .frame(height: headerHeight)
         }
         .onHover { newValue in
-            withAnimation(.easeInOut(duration: 0.15)) { hovering = newValue }
+            withAnimation(Motion.feedback) { hovering = newValue }
         }
     }
 
@@ -87,7 +87,7 @@ struct SectionNodeView: View {
             colorPicker
                 .opacity(hovering || renaming ? 1 : 0)
                 .allowsHitTesting(hovering || renaming)
-                .animation(.easeInOut(duration: 0.15),
+                .animation(Motion.feedback,
                            value: hovering || renaming)
         }
         .padding(.horizontal, 10)

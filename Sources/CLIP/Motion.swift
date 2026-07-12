@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// CLIP's motion language — one set of named physics instead of a zoo of
@@ -23,7 +24,13 @@ enum Motion {
 
     /// Structural rearrangement: mode enter/exit, layout reflows,
     /// stack choreography. The app's load-bearing spring.
-    static let structure = Animation.spring(response: 0.385, dampingFraction: 0.84)
+    static let structure = Animation.spring(
+        response: structureResponse, dampingFraction: structureDamping)
+    /// Scalar mirrors of `structure` for code that derives durations
+    /// from the response (stagger totals etc.) — keeps those sums in
+    /// lockstep with the token instead of a drifting copy.
+    static let structureResponse: Double = 0.385
+    static let structureDamping: Double = 0.84
 
     /// Decisive gesture settle: drag release, snap-to-guides landing.
     static let settle = Animation.spring(response: 0.294, dampingFraction: 0.76)
@@ -54,4 +61,17 @@ enum Motion {
     /// Near-critical damping: spatial navigation must not overshoot,
     /// or the user loses their bearings.
     static let glideDampingRatio: CGFloat = 0.95
+
+    // MARK: Reduced motion
+
+    /// System "Reduce Motion". Large, vestibular movements (whole-canvas
+    /// reflows, camera flights, cross-viewport ghosts) must respect it.
+    static var reduced: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+    /// `structure` with a reduced-motion fallback: a brief non-spatial
+    /// ease instead of a whole-layout spring flight.
+    static var structureAccessible: Animation {
+        reduced ? .easeOut(duration: 0.16) : structure
+    }
 }
