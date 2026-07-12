@@ -45,15 +45,24 @@ struct LinkInputBar: View {
             if shown {
                 // Pre-fill from the clipboard if it holds a link — one Enter to add.
                 text = Self.clipboardLink() ?? ""
-                // Focus immediately AND again after the open animation: a panel that
-                // is still scaling in (ToolbarPanelTransition) can reject first
-                // responder mid-transition, so one attempt alone often misses.
-                focused = true
-                DispatchQueue.main.async { focused = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { focused = true }
+                lockFocus()
             } else {
                 focused = false
             }
+        }
+    }
+
+    /// Focus the field deterministically: a panel still scaling in
+    /// (ToolbarPanelTransition) can reject first responder, so instead of
+    /// fixed-time retries racing the spring, re-assert once per runloop
+    /// tick until the field actually accepts (bounded, ~a frame or two in
+    /// practice — keystrokes land as soon as physically possible).
+    private func lockFocus(_ attempts: Int = 24) {
+        guard state.isLinkInputPresented else { return }
+        focused = true
+        guard attempts > 0 else { return }
+        DispatchQueue.main.async {
+            if !focused { lockFocus(attempts - 1) }
         }
     }
 
@@ -112,7 +121,7 @@ struct LinkInputBar: View {
                 .frame(width: 24, height: 24)
                 .opacity(text.isEmpty ? 0.4 : 1.0)   // fully opaque once there's text
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hover)
             .help("Add link to canvas")
         }
         .padding(.leading, 19)
@@ -151,7 +160,7 @@ struct LinkInputBar: View {
                     .shadow(color: .black.opacity(0.02), radius: 4, y: 4))
             .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.hover)
         .help(help)
     }
 

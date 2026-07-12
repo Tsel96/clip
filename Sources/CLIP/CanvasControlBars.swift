@@ -75,7 +75,7 @@ private struct PillIconButton: View {
         }
         .buttonStyle(.hover)                              // press scale + brightness
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(Motion.feedback, value: hovering)
         .help(help)
     }
 }
@@ -178,7 +178,7 @@ struct CanvasZoomPill: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .onHover { pctHovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: pctHovering)
+        .animation(Motion.feedback, value: pctHovering)
         .help("Change zoom level")
     }
 }
@@ -200,7 +200,7 @@ private struct ZoomStepButton: View {
         }
         .buttonStyle(.hover)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(Motion.feedback, value: hovering)
         .help(help)
     }
 }

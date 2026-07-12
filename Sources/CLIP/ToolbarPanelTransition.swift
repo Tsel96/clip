@@ -30,7 +30,7 @@ import SwiftUI
 ///   • start scale 0.5, anchored `.bottom`  → grows out of the button
 ///   • opacity 0 → 1
 ///   • short ~12pt vertical rise as it opens (longer reads as a slide)
-///   • spring `Motion.popper` (response 0.28, dampingFraction 0.84) — the
+///   • spring `Motion.popper` (response 0.196, dampingFraction 0.84) — the
 ///     "snappy/fast/smooth, almost no overshoot" Spatial feel
 struct ToolbarPanelTransition: ViewModifier {
     /// Whether the panel is open.
