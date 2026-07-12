@@ -224,6 +224,10 @@ final class SmartSelectionController: ObservableObject {
         let (snapped, _) = TidyUpEngine.tidy(rects: rects, zoom: zoom)
 
         let before = state.snapshotForUndo()
+        // The native canvas applies this frames pass ANIMATED (cards glide
+        // into the snapped grid) — a one-frame teleport plus haptic read as
+        // a glitch, not a tidy.
+        state.animateFramesToken += 1
         for (i, node) in payload.enumerated() {
             state.updatePosition(of: node.id, to: snapped[i].origin)
         }

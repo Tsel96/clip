@@ -298,6 +298,10 @@ struct CanvasConfig {
     /// or flip (camera rest epoch, lightbox, trim, previews-only toggle) —
     /// prompts the coordinator to re-gate native video playback.
     let mediaGateKey: Int
+    /// Bumped when the NEXT frames change should apply ANIMATED — Tidy Up
+    /// bumps it so cards glide into their snapped grid instead of
+    /// teleporting in one frame.
+    var animateFramesToken: Int = 0
     /// Whether a node's heavy media should play right now (`state.isLive`).
     let isNodeLive: (CanvasNode) -> Bool
 }
@@ -384,6 +388,7 @@ struct CollectionCanvas: NSViewRepresentable {
         var lastSnapGeneration = 0
         // Media LOD gate (native video playback).
         var lastMediaGateKey = Int.min
+        var lastAnimateFramesToken = 0
         var escMonitor: Any?
         var colorKeyMonitor: Any?
         var deleteMonitor: Any?
@@ -500,6 +505,11 @@ struct CollectionCanvas: NSViewRepresentable {
             let countChanged = nodes.count != p.nodes.count
             let oldFrames = layout?.itemFrames ?? []
             let framesChanged = oldFrames != frames
+            // Tidy Up bumped the token → this frames pass lands as a glide,
+            // not a teleport. Consumed here whether or not it's usable, so a
+            // stale bump can't animate an unrelated later pass.
+            let animateFrames = p.animateFramesToken != lastAnimateFramesToken
+            lastAnimateFramesToken = p.animateFramesToken
             // Flag genuinely-new cards (added after the first load) to scale in,
             // and snapshot just-removed cards so they can scale OUT (the item is
             // gone after reloadData, so we animate a snapshot in its place).
@@ -616,7 +626,23 @@ struct CollectionCanvas: NSViewRepresentable {
                     // drag instantly.
                     CATransaction.begin(); CATransaction.setDisableActions(true)
                     for ip in cv.indexPathsForVisibleItems() where ip.item < frames.count {
-                        cv.item(at: ip)?.view.frame = frames[ip.item]
+                        guard let view = cv.item(at: ip)?.view else { continue }
+                        // Tidy Up: glide each card from where it was into its
+                        // snapped slot (Motion.structure mirror) — the ONLY
+                        // feedback for the action used to be a haptic.
+                        let from = view.layer?.presentation()?.position ?? view.layer?.position
+                        view.frame = frames[ip.item]
+                        if animateFrames, let layer = view.layer, let from,
+                           from != layer.position {
+                            let a = CASpringAnimation(keyPath: "position")
+                            a.fromValue = from
+                            a.toValue = layer.position
+                            a.stiffness = CLIPSpring.Preset.structure.stiffness
+                            a.damping = CLIPSpring.Preset.structure.caDamping
+                            a.mass = 1
+                            a.duration = a.settlingDuration
+                            layer.add(a, forKey: "tidySettle")
+                        }
                     }
                     CATransaction.commit()
                     // A SIZE change (resize) also needs the hosted card to re-render

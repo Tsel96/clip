@@ -41,6 +41,10 @@ final class CanvasState: ObservableObject {
     /// (groupID, positions, undo) commits synchronously in
     /// `groupSelection()`; this set only delays the hide.
     @Published var groupFormationInFlight: Set<UUID> = []
+    /// Bumped (by Tidy Up) so the native canvas applies the NEXT frames
+    /// change animated. Deliberately not @Published — it always rides
+    /// along with the position writes that trigger the update.
+    var animateFramesToken = 0
     /// The unfolded folder, if any. While set, the canvas shows ONLY that
     /// folder's children (`canvasDisplayNodes`) under its own fitted camera;
     /// Esc / the back affordance clears it and restores the prior camera.

@@ -555,6 +555,7 @@ struct CanvasView: View {
                                 h.combine(state.videosShowPreviewOnly)
                                 return h.finalize()
                             }(),
+                            animateFramesToken: state.animateFramesToken,
                             isNodeLive: { state.isLive($0) }
                         ))
                         .onAppear {
