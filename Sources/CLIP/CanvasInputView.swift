@@ -55,6 +55,10 @@ final class CanvasInputView: NSView {
     /// under the cursor, not animate in.
     var draggedNodeIDs: Set<UUID> { Set(moveStartPos.keys) }
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
+    /// Last two drag-tick samples (time, delta) — release velocity for the
+    /// drop's decorative carry-through (content units/s).
+    private var prevMoveSample: (t: CFTimeInterval, d: CGPoint)?
+    private var lastMoveSample: (t: CFTimeInterval, d: CGPoint)?
     /// Non-dragging node rects for alignment snapping, snapshotted at move-begin.
     private var moveOtherRects: [CGRect] = []
     private var primaryMoveID: UUID?
@@ -611,7 +615,23 @@ final class CanvasInputView: NSView {
                 p.onInteractionEnded()
                 p.onMoveCommitted(Set(moveStartPos.keys))   // drop-onto-folder check
             }
-            coordinator?.endLiveReposition(moveStartPos, dx: moveDelta.x, dy: moveDelta.y)
+            // Release velocity from the last two drag ticks → a small,
+            // capped decorative overshoot so a thrown card carries its
+            // momentum into the settle instead of freezing on release.
+            var carry = CGPoint.zero
+            if let a = prevMoveSample, let b = lastMoveSample {
+                let dt = b.t - a.t
+                if dt > 0, dt < 0.1 {
+                    let vx = (b.d.x - a.d.x) / dt, vy = (b.d.y - a.d.y) / dt
+                    if hypot(vx, vy) * mag > 200 {           // real throws only
+                        let cap = 48 / mag                   // ≤48 screen pt
+                        carry = CGPoint(x: max(-cap, min(cap, vx * 0.06)),
+                                        y: max(-cap, min(cap, vy * 0.06)))
+                    }
+                }
+            }
+            coordinator?.endLiveReposition(moveStartPos, dx: moveDelta.x, dy: moveDelta.y,
+                                           carry: carry)
         case .resize:
             if didBegin { p.onInteractionEnded() }
         case .rotate:
@@ -688,6 +708,7 @@ final class CanvasInputView: NSView {
         lastSnapClaim = (false, false)
         stopEdgeAutoScroll()
         lastDragWindowPoint = nil
+        prevMoveSample = nil; lastMoveSample = nil
     }
 
     /// One tick of a live MOVE drag: alignment/spacing snap the primary node,
@@ -735,6 +756,8 @@ final class CanvasInputView: NSView {
         // Drive the move VISUALLY only (no per-tick model mutation). The model
         // is committed once on mouse-up.
         moveDelta = CGPoint(x: sdx, y: sdy)
+        prevMoveSample = lastMoveSample
+        lastMoveSample = (CACurrentMediaTime(), moveDelta)
         coordinator?.liveReposition(moveStartPos, dx: sdx, dy: sdy)   // live preview
     }
 
@@ -758,8 +781,8 @@ final class CanvasInputView: NSView {
         guard step != .zero else { stopEdgeAutoScroll(); return }
         autoScrollStep = step
         if autoScrollTicker == nil {
-            autoScrollTicker = DisplayLinkTicker(view: self) { [weak self] _ in
-                self?.edgeAutoScrollTick()
+            autoScrollTicker = DisplayLinkTicker(view: self) { [weak self] dt in
+                self?.edgeAutoScrollTick(dt)
             }
         }
         if autoScrollTicker?.isRunning != true {
@@ -775,15 +798,19 @@ final class CanvasInputView: NSView {
     /// One auto-scroll frame: nudge the clip origin (clamped by AppKit at the
     /// document edge), then re-drive the move from the stationary cursor. The
     /// bounds change rides the existing coalesced camera-push/refresh path.
-    private func edgeAutoScrollTick() {
+    private func edgeAutoScrollTick(_ dt: CFTimeInterval) {
         guard mode == .move, let scroll = enclosingScrollView,
               let wp = lastDragWindowPoint, let p = config else {
             stopEdgeAutoScroll(); return
         }
         let clip = scroll.contentView
         var origin = clip.bounds.origin
-        origin.x += autoScrollStep.x
-        origin.y += autoScrollStep.y
+        // Frame-rate independent: `autoScrollStep` is calibrated for 60 Hz
+        // (≤14 screen-pt per 1/60 s ≈ 840 pt/s); scale by the real dt so a
+        // 120 Hz ProMotion display doesn't auto-scroll twice as fast.
+        let scale = min(CGFloat(max(dt, 0)) * 60, 3)
+        origin.x += autoScrollStep.x * scale
+        origin.y += autoScrollStep.y * scale
         clip.scroll(to: origin)
         scroll.reflectScrolledClipView(clip)
         driveMove(pt: convert(wp, from: nil), modifiers: lastDragModifiers, p: p)

@@ -26,6 +26,10 @@ enum CLIPSpring {
         /// Element entrance pop — mirrors SwiftUI `Motion.pop` (0.35/0.72)
         /// so the native side pops at the same speed as the SwiftUI side.
         static let pop     = Preset(response: 0.35, damping: 0.72)
+        /// Decisive gesture settle — mirrors SwiftUI `Motion.settle`
+        /// (0.294/0.76): native drag-release must land at the same speed
+        /// as the SwiftUI drag path.
+        static let gestureSettle = Preset(response: 0.294, damping: 0.76)
         /// A larger surface (panel / hero) easing in — minimal overshoot.
         static let surface = Preset(response: 0.5,  damping: 0.86)
         /// Canvas→detail hero morph: ~0.3s, near-critically damped so it

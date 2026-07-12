@@ -300,8 +300,23 @@ struct CanvasView: View {
             )
             .frame(width: w, height: trimH)
             .position(x: originX + w / 2, y: originY + h + gap + trimH / 2)
-            .transition(.opacity)
+            // Origin-aware: the panel grows out of the card it belongs to
+            // (top edge, where it visually attaches) instead of a flat fade.
+            .transition(.scale(scale: 0.96, anchor: .top).combined(with: .opacity))
         }
+    }
+
+    /// The opened folder card's on-screen centre as a UnitPoint of the
+    /// canvas viewport — the folder grid's grow/shrink anchor. Falls back
+    /// to centre when geometry isn't available yet.
+    private func folderGridAnchor(_ id: UUID) -> UnitPoint {
+        guard let node = state.nodeByID[id],
+              let rect = state.screenRect(of: node),
+              state.viewportSize.width > 0, state.viewportSize.height > 0
+        else { return .center }
+        let x = (rect.midX - state.canvasViewFrame.minX) / state.viewportSize.width
+        let y = (rect.midY - state.canvasViewFrame.minY) / state.viewportSize.height
+        return UnitPoint(x: min(max(x, 0), 1), y: min(max(y, 0), 1))
     }
 
     var body: some View {
@@ -658,21 +673,26 @@ struct CanvasView: View {
                 }
             }
             // Figma-style "drop something here" highlight while dragging
-            // a file or URL over the canvas.
+            // a file or URL over the canvas. Soft-fades in/out (Motion.fade)
+            // so edge-skimming drags don't strobe the overlay on/off.
             .overlay {
-                if isDropTargeted {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(
-                            Color.accentColor,
-                            style: StrokeStyle(lineWidth: 2, dash: [8, 5])
-                        )
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.accentColor.opacity(0.06))
-                        )
-                        .padding(2)
-                        .allowsHitTesting(false)
+                ZStack {
+                    if isDropTargeted {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(
+                                Color.accentColor,
+                                style: StrokeStyle(lineWidth: 2, dash: [8, 5])
+                            )
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.accentColor.opacity(0.06))
+                            )
+                            .padding(2)
+                            .transition(.opacity)
+                    }
                 }
+                .animation(Motion.fade, value: isDropTargeted)
+                .allowsHitTesting(false)
             }
             .onAppear {
                 state.viewportSize = geo.size
@@ -721,7 +741,11 @@ struct CanvasView: View {
         .overlay {
             if state.canvasMode == .canvas, let fid = state.focusedFolderID {
                 FolderGridView(state: state, folderID: fid)
-                    .transition(.opacity)
+                    // Signature moment: the grid grows out of (and shrinks
+                    // back into) the folder card the user clicked — spatial
+                    // continuity instead of a flat cross-fade.
+                    .transition(.scale(scale: 0.96, anchor: folderGridAnchor(fid))
+                        .combined(with: .opacity))
             }
         }
         // Unfolded-folder back chip (top-LEFT): re-fold to the main canvas. Anchored
@@ -783,7 +807,12 @@ struct CanvasView: View {
         // Video TRIM widget — mounted at the TOP level (above the canvas + its
         // input overlay) so its controls actually receive clicks, and positioned
         // just BELOW the card, matching its on-screen width (user spec).
-        .overlay { trimWidgetOverlay }
+        .overlay {
+            // popper spring drives the trim panel's anchored grow-in/out
+            // (the `.animation` wraps the conditional, so removal animates too).
+            trimWidgetOverlay
+                .animation(Motion.popper, value: state.trimmingCardID)
+        }
         // Bottom-CENTER: the Spatial-style yellow tool palette + "+" (Figma 51:12692).
         .overlay(alignment: .bottom) {
             if state.canvasMode == .canvas, state.focusedFolderID == nil {
@@ -899,8 +928,12 @@ struct CanvasBehindOverlays: View {
                 EmptyStateView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(false)
+                    // Dissolve as the first card lands / the last one leaves —
+                    // matches the card entrance instead of a single-frame cut.
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
         }
+        .animation(Motion.fade, value: state.nodes.isEmpty)
         .onChange(of: state.isZoomInteracting) { zooming in
             zoomFrozenCamera = zooming ? cameraStore.camera : nil
         }

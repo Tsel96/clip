@@ -982,12 +982,14 @@ struct CollectionCanvas: NSViewRepresentable {
         /// does NOT repaint the rasterized zoomed-out canvas — which is why a
         /// low-zoom group move "didn't move" no matter what we set. `reloadData`
         /// forces a full repaint, so the commit lands at ANY magnification.
-        func endLiveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
+        func endLiveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat,
+                               carry: CGPoint = .zero) {
             // Close any open folder lid; if a card was filed, apply()'s refresh +
             // spawnFolderDropSnapshots take over the "jump inside".
             if let t = dropTargetID { folderContentView(t)?.setDropHover(false); dropTargetID = nil }
             guard let cv = collection, let layout = layout else { return }
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
+            var settled: [NSView] = []
             CATransaction.begin(); CATransaction.setDisableActions(true)
             for (id, sp) in startPos {
                 guard let idx = nodes.firstIndex(where: { $0.id == id }), idx < layout.itemFrames.count
@@ -1003,9 +1005,27 @@ struct CollectionCanvas: NSViewRepresentable {
                 if let item = cv.item(at: IndexPath(item: idx, section: 0)) {
                     item.view.layer?.transform = CATransform3DIdentity
                     item.view.frame = f
+                    settled.append(item.view)
                 }
             }
             CATransaction.commit()
+            // Release physics: a thrown drop carries the gesture's momentum —
+            // a small decorative overshoot along the throw that springs back
+            // onto the committed frame (native mirror of DraggableNode's
+            // Motion.settle throw; the model is already committed above).
+            if carry != .zero {
+                for view in settled {
+                    guard let layer = view.layer else { continue }
+                    let a = CASpringAnimation(keyPath: "transform")
+                    a.fromValue = CATransform3DMakeTranslation(carry.x, carry.y, 0)
+                    a.toValue = CATransform3DIdentity
+                    a.stiffness = CLIPSpring.Preset.gestureSettle.stiffness
+                    a.damping = CLIPSpring.Preset.gestureSettle.caDamping
+                    a.mass = 1
+                    a.duration = a.settlingDuration
+                    layer.add(a, forKey: "dropCarry")
+                }
+            }
             // Redraw connectors at the COMMITTED positions and clear the live
             // drag offset in one shot (avoids a double-offset / snap-back flicker
             // before SwiftUI's updateNSView round-trips the new model positions).
