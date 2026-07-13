@@ -47,6 +47,11 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
     /// Current art canvas height (1044 rest/per-count, 1099 selected — the
     /// selected SVG carries extra glow margin) so layout maps the taller art.
     private var currentArtHeight: CGFloat = 1044
+    /// Raw-case title as last set by the model (NOT the uppercased at-rest
+    /// display string in `titleField`) — `beginRename` seeds the editor from
+    /// this instead of `titleField.stringValue`, otherwise committing without
+    /// retyping would bake the uppercase DISPLAY string back into the model.
+    private var rawTitle: String = ""
 
     /// The folder occupies this sub-rect of the rest SVG's 1163×1044 canvas
     /// (the rest is shadow margin) — used to bleed the margin outside the node.
@@ -284,6 +289,7 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
 
     func update(for node: CanvasNode) {
         guard case .folder(let title, let icon, let childIDs) = node.kind else { return }
+        rawTitle = title
         titleField.stringValue = (title.isEmpty ? "Untitled" : title).uppercased()
         countField.stringValue = childIDs.isEmpty
             ? "No items"
@@ -451,6 +457,11 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         // editor (the 1/2/3-item SVGs bake their own title; the rest art is clean).
         shapeView.image = tintedIfNeeded(Self.restImage)
         titleField.isHidden = false                 // show even if a baked-text SVG is up
+        // Seed the editor with the RAW-case title, not the uppercased at-rest
+        // display currently sitting in `titleField.stringValue` (THE BUG: opening
+        // the editor and committing without retyping used to bake that uppercase
+        // string back into the model).
+        titleField.stringValue = rawTitle
         titleField.isEditable = true
         titleField.isSelectable = true
         titleField.isBordered = false
@@ -495,6 +506,15 @@ final class FolderCardView: NSView, NativeCardUpdatable, NSTextFieldDelegate {
         titleField.delegate = nil
         // Restore the per-count art (with its baked title) now the edit is done.
         refreshArt()
+        // Redraw the at-rest uppercase DISPLAY immediately — `update(for:)` would
+        // normally do this on the next model round-trip, but that round-trip is
+        // skipped below for a no-op commit.
+        titleField.stringValue = (newTitle.isEmpty ? "Untitled" : newTitle).uppercased()
+        // Only commit (and let the model create an undo entry) when the RAW-case
+        // value actually changed — opening the editor and pressing Return/clicking
+        // away without retyping is a no-op, not a rename.
+        guard newTitle != rawTitle else { return }
+        rawTitle = newTitle
         commit(newTitle)
     }
 

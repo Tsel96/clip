@@ -88,7 +88,11 @@ struct LinkInputBar: View {
                 // so we draw the display ourselves and keep the field's text clear.
                 Text(text.isEmpty ? "INSERT LINK HERE" : text.uppercased())
                     .font(Self.inputFont)
-                    .foregroundStyle(.black.opacity(text.isEmpty ? 0.2 : 1.0))
+                    // Figma's 20%-black placeholder reads at ~1.6:1 against the
+                    // white field (WCAG floor is 3:1 for UI text) — bumped
+                    // toward Apple's placeholderTextColor convention (~40% black)
+                    // while staying visibly secondary to the typed value.
+                    .foregroundStyle(.black.opacity(text.isEmpty ? 0.4 : 1.0))
                     .lineLimit(1)
                     .allowsHitTesting(false)
                 // Real editable field — transparent text so only the uppercase
@@ -156,8 +160,7 @@ struct LinkInputBar: View {
             .frame(width: 36, height: 36)
             .background(
                 Circle().fill(.white.opacity(0.6))
-                    .shadow(color: .black.opacity(0.03), radius: 1, y: 1)
-                    .shadow(color: .black.opacity(0.02), radius: 4, y: 4))
+                    .figmaPillShadow())   // same 3-stop shadow as the controls-bar/sidebar pills
             .contentShape(Circle())
         }
         .buttonStyle(.hover)

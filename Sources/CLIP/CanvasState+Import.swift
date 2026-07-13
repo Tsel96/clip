@@ -54,19 +54,13 @@ extension CanvasState {
     func addPostFromURL(_ url: String, at worldPoint: CGPoint? = nil,
                         origin: CanvasNode.Origin = .local) {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Route by what the real parsers can extract, not by substring
-        // sniffing — the machine sweats so a /statuses/ path or a link
-        // full of tracking params still lands as a card.
-        if TweetService.extractTweetID(from: trimmed) != nil
-            || TweetService.isLikelyTweetURL(trimmed) {
-            addTweet(url: trimmed, at: worldPoint, origin: origin)
-        } else if InstagramService.parse(trimmed) != nil
-            || InstagramService.isLikelyInstagramURL(trimmed) {
-            addInstagram(url: trimmed, at: worldPoint, origin: origin)
-        } else if YouTubeService.videoID(from: trimmed) != nil
-            || YouTubeService.isLikelyYouTubeURL(trimmed) {
-            addYouTube(url: trimmed, at: worldPoint, origin: origin)
-        } else {
+        // One shared detector (LinkKind) for every ingestion path — routes
+        // by what the real parsers can extract, not substring sniffing.
+        switch LinkKind.detect(trimmed) {
+        case .tweet:     addTweet(url: trimmed, at: worldPoint, origin: origin)
+        case .instagram: addInstagram(url: trimmed, at: worldPoint, origin: origin)
+        case .youtube:   addYouTube(url: trimmed, at: worldPoint, origin: origin)
+        case nil:
             // Any other http(s) link becomes a rendered web-clip card
             // instead of a dead-end alert.
             addWebClip(url: trimmed, at: worldPoint, origin: origin)

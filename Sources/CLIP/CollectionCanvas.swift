@@ -690,11 +690,12 @@ struct CollectionCanvas: NSViewRepresentable {
                 for ip in cv.indexPathsForVisibleItems() where ip.item < p.nodes.count {
                     let newNode = p.nodes[ip.item]
                     guard let it = cv.item(at: ip) as? HostingCollectionItem else { continue }
-                    // Native text ⇄ SwiftUI editor swap when this node enters or
-                    // leaves edit mode (editingTextNodeID isn't in nativeContentKey,
-                    // so the content-only branch below would miss the transition).
-                    // Gated with the renderer so flag-off text is plain SwiftUI.
-                    if case .text = newNode.kind, FeatureFlags.useNativeText {
+                    // Text ⇄ editor swap when this node enters or leaves edit
+                    // mode (editingTextNodeID isn't in nativeContentKey, so the
+                    // content-only branch below would miss the transition).
+                    // (The old useNativeText flag was a no-op — text never had
+                    // a native renderer; this branch always ran.)
+                    if case .text = newNode.kind {
                         let shouldEdit = (p.editingTextNodeID == newNode.id)
                         if shouldEdit == it.usesNativeContent {
                             // Mismatch: editing → SwiftUI field, resting → native.

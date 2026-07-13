@@ -969,15 +969,21 @@ final class CanvasState: ObservableObject {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         let cardWidth: CGFloat = 360
         var made: CanvasNode?
-        if TweetService.isLikelyTweetURL(trimmed), TweetService.extractTweetID(from: trimmed) != nil {
-            made = CanvasNode.tweet(url: trimmed, position: .zero, width: cardWidth)
-        } else if InstagramService.isLikelyInstagramURL(trimmed), InstagramService.parse(trimmed) != nil {
-            made = CanvasNode.instagram(url: trimmed, position: .zero, width: cardWidth,
-                                        height: InstagramService.defaultCardHeight(for: trimmed))
-        } else if YouTubeService.isLikelyYouTubeURL(trimmed), YouTubeService.videoID(from: trimmed) != nil {
-            made = CanvasNode(position: .zero, width: cardWidth,
-                              height: YouTubeService.defaultCardHeight(forWidth: cardWidth),
-                              kind: .youtube(url: trimmed))
+        // Same LinkKind detector as the paste path — the inbox used to
+        // require isLikely AND a parsed id, silently dropping URL shapes
+        // the paste path accepted.
+        if let kind = LinkKind.detect(trimmed) {
+            switch kind {
+            case .tweet:
+                made = CanvasNode.tweet(url: trimmed, position: .zero, width: cardWidth)
+            case .instagram:
+                made = CanvasNode.instagram(url: trimmed, position: .zero, width: cardWidth,
+                                            height: InstagramService.defaultCardHeight(for: trimmed))
+            case .youtube:
+                made = CanvasNode(position: .zero, width: cardWidth,
+                                  height: YouTubeService.defaultCardHeight(forWidth: cardWidth),
+                                  kind: .youtube(url: trimmed))
+            }
         } else if let u = URL(string: trimmed),
                   let scheme = u.scheme?.lowercased(),
                   scheme == "http" || scheme == "https" {

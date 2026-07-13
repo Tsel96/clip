@@ -17,7 +17,7 @@ with the default Command Line Tools **fails** — several views (e.g.
 which only exists in the macOS 26 SDK. Xcode-beta supplies that SDK; the
 default CLT doesn't.
 
-Run tests the same way: `DEVELOPER_DIR=... swift build` above, or `swift test`.
+Tests need the same `DEVELOPER_DIR` prefix: `DEVELOPER_DIR="/Applications/Xcode-beta.app/Contents/Developer" swift test`.
 
 To build and package a release `.app` (what's actually shipped/deployed):
 

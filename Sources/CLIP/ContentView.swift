@@ -169,10 +169,7 @@ struct ContentView: View {
 
     private func bestPasteboardCandidate() -> String {
         guard let s = NSPasteboard.general.string(forType: .string) else { return "" }
-        if TweetService.isLikelyTweetURL(s) { return s }
-        if InstagramService.isLikelyInstagramURL(s) { return s }
-        if YouTubeService.isLikelyYouTubeURL(s) { return s }
-        return ""
+        return LinkKind.detect(s) != nil ? s : ""
     }
 }
 
@@ -375,19 +372,19 @@ struct AddToCanvasSheet: View {
     private var canSubmit: Bool {
         switch mode {
         case .link:
-            return TweetService.isLikelyTweetURL(url)
-                || InstagramService.isLikelyInstagramURL(url)
-                || YouTubeService.isLikelyYouTubeURL(url)
+            return LinkKind.detect(url) != nil
         case .upload:
             return pickedURL != nil && pickError == nil
         }
     }
 
     private var detectedKindLabel: (title: String, icon: String)? {
-        if TweetService.isLikelyTweetURL(url) { return ("X / Twitter post", "bird") }
-        if InstagramService.isLikelyInstagramURL(url) { return ("Instagram", "camera") }
-        if YouTubeService.isLikelyYouTubeURL(url) { return ("YouTube", "play.rectangle") }
-        return nil
+        switch LinkKind.detect(url) {
+        case .tweet:     return ("X / Twitter post", "bird")
+        case .instagram: return ("Instagram", "camera")
+        case .youtube:   return ("YouTube", "play.rectangle")
+        case nil:        return nil
+        }
     }
 
     private func submit() {

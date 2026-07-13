@@ -23,6 +23,7 @@ import AppKit
 /// (`requestDeletePage` + the confirmation dialog → `confirmDeletePage`).
 struct PagesSidebar: View {
     @EnvironmentObject var state: CanvasState
+    @Environment(\.clipTheme) private var theme
 
     @State private var renamingID: UUID? = nil
     @State private var renameText: String = ""
@@ -40,12 +41,15 @@ struct PagesSidebar: View {
 
     // MARK: Figma tokens
 
-    /// Panel surface fill (`#F4F8F9`).
+    /// Panel surface fill (`#F4F8F9`) — a distinct Figma-specified panel tint,
+    /// not close enough to any `clipTheme` surface tier to route through one.
     private let panelFill   = Color(red: 0.957, green: 0.973, blue: 0.976)
-    /// Panel hairline border (`rgba(0,0,0,0.16)`).
-    private let panelBorder = Color.black.opacity(0.16)
-    /// Primary text (`rgba(0,0,0,0.85)`).
-    private let labelColor  = Color.black.opacity(0.85)
+    /// Panel hairline border — routed through the shared theme token (was a
+    /// hand-rolled `Color.black.opacity(0.16)` that drifted from `theme.border`).
+    private var panelBorder: Color { theme.border }
+    /// Primary text — routed through the shared theme token (was a hand-rolled
+    /// `Color.black.opacity(0.85)` duplicating `theme.textPrimary`).
+    private var labelColor: Color { theme.textPrimary }
     /// Hover + selected row wash — green `#208F08` @ 10%, multiply (Figma 74:25952
     /// hover / 74:25949 selected use the identical wash).
     private let rowWash = Color(red: 32 / 255, green: 143 / 255, blue: 8 / 255).opacity(0.10)
@@ -153,7 +157,7 @@ struct PagesSidebar: View {
     private var header: some View {
         HStack(spacing: 6) {
             Text("PAGES")
-                .clipLabel(11, tracking: 0)
+                .clipLabel(11)
                 .foregroundStyle(labelColor)
                 // Figma offsets the label 8pt further in than the row inset
                 // (label x=18 vs panel; rows x=10). Nudge to match.
@@ -190,33 +194,44 @@ struct PagesSidebar: View {
 
         HStack(spacing: 6) {
             if renamingID == page.id {
-                // Uppercase via the binding — `.textCase(.uppercase)` doesn't
-                // transform an editable field's input, so force it on every keystroke.
-                TextField("Page name", text: Binding(
-                    get: { renameText },
-                    set: { renameText = $0.uppercased() }
-                ))
-                    .textFieldStyle(.plain)
-                    .font(.clip(11))
-                    .foregroundStyle(labelColor)
-                    .tint(accentGreen)          // green caret + selection (Figma 88:342)
-                    .focused($renameFocused)
-                    .onAppear {
-                        renameText = page.name.uppercased()   // start uppercased (no blink)
-                        renameFocused = true
-                    }
-                    .onSubmit { commitRename(for: page.id) }
-                    .onExitCommand { cancelRename() }
-                    .onChange(of: renameFocused) { focused in
-                        if !focused { commitRename(for: page.id) }
-                    }
+                // Raw-case buffer underneath (transparent text, owns the caret +
+                // the actual committed value) + an uppercase-for-DISPLAY-only
+                // overlay on top — `.textCase(.uppercase)` doesn't transform an
+                // editable field's input, so mutating the buffer itself was the
+                // old approach, but that bakes the uppercase string into the
+                // model on any no-retype commit. Same pattern as `LinkInputBar`
+                // and `FolderGridView.FolderNameField`.
+                ZStack(alignment: .leading) {
+                    Text(renameText.uppercased())
+                        .clipLabel(11)
+                        .foregroundStyle(labelColor)
+                        .lineLimit(1)
+                        .allowsHitTesting(false)
+                    TextField("Page name", text: $renameText)
+                        .textFieldStyle(.plain)
+                        .font(.clip(11))
+                        .foregroundStyle(.clear)
+                        .tint(accentGreen)          // green caret + selection (Figma 88:342)
+                        .focused($renameFocused)
+                        .onAppear {
+                            renameText = page.name   // raw case — overlay displays it uppercased
+                            renameFocused = true
+                        }
+                        .onSubmit { commitRename(for: page.id) }
+                        .onExitCommand { cancelRename() }
+                        .onChange(of: renameFocused) { focused in
+                            if !focused { commitRename(for: page.id) }
+                        }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Text(page.name)
-                    .clipLabel(11, tracking: 0)
+                    .clipLabel(11)
                     .foregroundStyle(labelColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(page.name)
             }
 
             if page.pinned {
@@ -279,7 +294,7 @@ struct PagesSidebar: View {
             }
             .draggable(page.id.uuidString) {
                 Text(page.name)
-                    .clipLabel(11, tracking: 0)
+                    .clipLabel(11)
                     .foregroundStyle(labelColor)
                     .padding(.horizontal, 8)
                     .frame(height: rowHeight)
@@ -308,9 +323,7 @@ struct PagesSidebar: View {
                 .background(
                     Circle()
                         .fill(Color.white.opacity(0.6))
-                        .shadow(color: .black.opacity(0.03), radius: 1, y: 1)
-                        .shadow(color: .black.opacity(0.02), radius: 2, y: 4)
-                        .shadow(color: .black.opacity(0.01), radius: 2.5, y: 9)
+                        .figmaPillShadow()
                 )
                 .contentShape(Circle())
         }
@@ -323,7 +336,7 @@ struct PagesSidebar: View {
     // MARK: - Rename helpers
 
     private func beginRename(_ page: Page) {
-        renameText = page.name.uppercased()
+        renameText = page.name   // raw case — the row overlay displays it uppercased
         renamingID = page.id
         renameFocused = true
         installRenameDismissMonitor()
@@ -331,9 +344,12 @@ struct PagesSidebar: View {
 
     private func commitRename(for id: UUID) {
         guard renamingID == id else { return }   // ignore stale/duplicate commits
-        let value = renameText
+        let value = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         renamingID = nil
         removeRenameDismissMonitor()
+        // Skip the no-op case (opened + closed without an actual edit) so it
+        // doesn't create an undo entry downstream.
+        guard let page = state.pages.first(where: { $0.id == id }), value != page.name else { return }
         state.renamePage(id, to: value)
     }
 

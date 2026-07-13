@@ -14,12 +14,6 @@ enum FeatureFlags {
     /// evict on delete). If a regression shows up, set back to false.
     static let useWebViewCache = true
 
-    /// Render text cards with native `CardTextContentView` at rest (editing
-    /// still swaps to the proven SwiftUI `TextNodeView`). ON for the all-phases
-    /// push. SAFETY VALVE: if the native⇄editor swap misbehaves, set false to
-    /// restore the fully-SwiftUI text card (the editingTextNodeID it relies on is
-    /// set the same way either path, so flipping this is self-contained).
-    static let useNativeText = true
 }
 
 /// Caches `WKWebView`s by node id so a quick remount (e.g. a selection

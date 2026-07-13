@@ -2,7 +2,8 @@
 
 Everything needed to ship CLIP, run it unattended at the show, and push silent
 self-updates. Built for a **free Apple ID** (unsigned, ad-hoc signed) + GitHub
-Releases + a Netlify/Vercel landing page.
+Releases + a Vercel landing page (Netlify was the original plan; `netlify.toml`
+is still in the repo but is legacy — see step 2).
 
 ## 0. One-time setup
 1. **GitHub repo** (must be **public** — raw appcast + release downloads need
@@ -16,6 +17,7 @@ Releases + a Netlify/Vercel landing page.
 
 ## 1. Cut a release (build → publish → everyone updates)
 ```sh
+export DEVELOPER_DIR="/Applications/Xcode-beta.app/Contents/Developer"  # release.sh's swift build needs it
 MARKETING=1.0 BUILD=1 Scripts/release.sh
 ```
 This builds, packages `CLIP.app` (icon + fonts + feed URL baked in), zips it,
@@ -23,17 +25,29 @@ publishes a GitHub Release `v1.0`, writes `appcast/latest.json`
 (build/version/url/sha256), and pushes. **Bump `BUILD` every release** — the
 updater compares it. Installed copies (kiosk + public) update within ~10 min.
 
+There's also a separate, automatic path: `.github/workflows/release.yml`
+runs on every push (throttled to once/4h) on a `macos-26` GitHub-hosted
+runner and cuts its own GitHub Release. It requires that runner label to
+exist — re-verify `runs-on: macos-26` still resolves (and that Actions isn't
+billing-blocked; it has been before) next time it's touched. For an
+exhibition/kiosk build, prefer the local `Scripts/make-app.sh` path below —
+it doesn't depend on GitHub Actions being available at all.
+
 ## 2. Landing page (`site/`)
 One-viewport page (`site/index.html` + `style.css` + icon + fonts). Before
-deploying, replace the two placeholders in `index.html`:
+first deploy, fill in the two placeholders in `index.html`:
 - `DOWNLOAD_URL_HERE` → `https://github.com/<you>/clip/releases/latest/download/CLIP-<ver>.zip`
 - `SHORTCUT_URL_HERE` → your iCloud Shortcut share link (step 4)
 
-Deploy: drag `site/` into Netlify, or connect the repo (publish dir = `site`).
+**Live host is Vercel**, not Netlify: `cd site && npx vercel --prod`
+(project `clip-umprum`, currently live at `clip-umprum.vercel.app`). The
+`netlify.toml` at repo root is left over from an earlier plan (publish dir
+`site`) and is unused — Netlify isn't the deploy target, don't reach for it
+unless you're deliberately moving hosts.
 
 ## 3. Exhibition Mac mini (kiosk)
 ```sh
-swift build -c release
+DEVELOPER_DIR="/Applications/Xcode-beta.app/Contents/Developer" swift build -c release
 FEED_URL="https://raw.githubusercontent.com/<you>/clip/main/appcast/latest.json" \
   MARKETING=1.0 BUILD=1 Scripts/make-app.sh
 Scripts/install-kiosk.sh

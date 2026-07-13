@@ -11,6 +11,7 @@ DEVELOPER_DIR="/Applications/Xcode-beta.app/Contents/Developer" swift build
 CONFIG=debug Scripts/make-app.sh /Applications
 killall -9 CLIP; open /Applications/CLIP.app
 ```
+Confirm it builds green before changing anything.
 SourceKit squiggles in this repo are SPURIOUS — trust `swift build`, not the editor.
 Branch `claude/code-audit-performance-o0u336`; an auto-snapshot commit lands every ~5 min (expected).
 

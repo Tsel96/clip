@@ -37,6 +37,20 @@ private struct SVGIcon: View {
 
 // MARK: - Shared Figma pill chrome
 
+extension View {
+    /// The app's shared floating-pill drop shadow: a 3-stop soft shadow used
+    /// under every white/translucent pill (controls bar, sidebar toggle, the
+    /// sidebar "i" button, the link-input's popover buttons) so they all read
+    /// as the same elevation. Centralized here — it had drifted into a
+    /// shortened, differently-keyed 2-stop copy at one call site.
+    func figmaPillShadow() -> some View {
+        self
+            .shadow(color: .black.opacity(0.03), radius: 1, y: 1)
+            .shadow(color: .black.opacity(0.02), radius: 2, y: 4)
+            .shadow(color: .black.opacity(0.01), radius: 2.5, y: 9)
+    }
+}
+
 /// White-60% rounded-999 pill with 4pt padding + the Figma layered drop shadow.
 struct FigmaPill<Content: View>: View {
     @ViewBuilder var content: Content
@@ -46,15 +60,13 @@ struct FigmaPill<Content: View>: View {
             .background(Color.white.opacity(0.6), in: Capsule(style: .continuous))
             .overlay(Capsule(style: .continuous)
                 .strokeBorder(Color.black.opacity(0.04), lineWidth: 0.5))
-            // Identical 3-stop shadow to the sidebar "i" button (the reference).
-            .shadow(color: .black.opacity(0.03), radius: 1, y: 1)
-            .shadow(color: .black.opacity(0.02), radius: 2, y: 4)
-            .shadow(color: .black.opacity(0.01), radius: 2.5, y: 9)
+            .figmaPillShadow()
     }
 }
 
-/// One 24pt-icon control inside a pill: 28pt-min slot, dims when "off", soft
-/// hover wash. Press feedback via the standard plain button.
+/// One 24pt-icon control inside a pill: 36pt-min slot (desktop hit-area floor —
+/// the icon itself stays 24pt), dims when "off", soft hover wash. Press
+/// feedback via the standard plain button.
 private struct PillIconButton: View {
     let icon: String
     var isOn: Bool = true
@@ -66,8 +78,8 @@ private struct PillIconButton: View {
         Button(action: action) {
             SVGIcon(name: icon, size: 24)
                 .opacity(isOn ? 1.0 : 0.45)               // toggle state via opacity
-                .frame(height: 28)
-                .frame(minWidth: 28)
+                .frame(height: 36)
+                .frame(minWidth: 36)
                 .padding(.horizontal, 4)
                 .background(Capsule(style: .continuous)
                     .fill(Color.black.opacity(hovering ? 0.07 : 0)))   // visible hover wash
@@ -111,16 +123,14 @@ struct SidebarToggleButton: View {
             withAnimation(Motion.popper) { state.showSidebar.toggle() }
         } label: {
             SVGIcon(name: state.showSidebar ? "sidebar-open" : "sidebar-closed", size: 24)
-                .frame(height: 28)
-                .frame(minWidth: 28)
+                .frame(height: 36)
+                .frame(minWidth: 36)
                 .padding(.horizontal, 4)
                 .padding(4)
                 .background(Color.white.opacity(0.6), in: Capsule(style: .continuous))
                 .overlay(Capsule(style: .continuous)
                     .strokeBorder(Color.black.opacity(0.04), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.03), radius: 1, y: 1)
-                .shadow(color: .black.opacity(0.02), radius: 2, y: 4)
-                .shadow(color: .black.opacity(0.01), radius: 2.5, y: 9)
+                .figmaPillShadow()
                 .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.hover)
@@ -169,7 +179,7 @@ struct CanvasZoomPill: View {
             Text("\(Int((cameraStore.camera.zoom * 100).rounded())) %")
                 .font(.clip(13).monospacedDigit())
                 .foregroundStyle(.black.opacity(0.78))
-                .frame(minWidth: 52, minHeight: 28)
+                .frame(minWidth: 52, minHeight: 36)
                 .background(Capsule(style: .continuous)
                     .fill(Color.black.opacity(pctHovering ? 0.07 : 0)))
                 .contentShape(Rectangle())
@@ -193,7 +203,7 @@ private struct ZoomStepButton: View {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.black.opacity(0.75))
-                .frame(width: 28, height: 28)
+                .frame(width: 36, height: 36)
                 .background(Capsule(style: .continuous)
                     .fill(Color.black.opacity(hovering ? 0.07 : 0)))
                 .contentShape(Capsule(style: .continuous))
