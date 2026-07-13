@@ -1,15 +1,17 @@
 name: Build & Release CLIP
 
 # Builds the macOS app on a real Mac runner and publishes CLIP.dmg +
-# CLIP.zip + latest.json to GitHub Releases. The website's Download
-# button (releases/latest/download/CLIP.dmg) and the in-app self-updater
-# (releases/latest/download/latest.json) both track "latest" automatically,
-# so every repo update ships a fresh, downloadable, self-updating build.
+# CLIP.zip + latest.json to GitHub Releases.
+#
+# MANUAL-ONLY (2026-07-13, deliberate — do not re-add push triggers):
+#  1. The old `claude/**` push trigger shipped mid-session autopush
+#     snapshots as the PUBLIC `releases/latest` dmg the website serves.
+#  2. Releases are now Ed25519-SIGNED by local `Scripts/release.sh` (the
+#     signing key deliberately lives only on the release machine, outside
+#     repo + CI). This workflow writes an UNSIGNED latest.json which
+#     builds ≥9045 refuse — and `make_latest: true` would clobber the
+#     signed manifest. Public releases go through `Scripts/release.sh`.
 on:
-  push:
-    branches: [main, 'claude/**']
-    tags: ['v*']
-    paths-ignore: ['site/**', '**/*.md']
   workflow_dispatch:
 
 permissions:
