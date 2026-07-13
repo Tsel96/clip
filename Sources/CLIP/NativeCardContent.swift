@@ -305,6 +305,8 @@ final class CardVideoContentView: NSView {
     private let posterLayer = CALayer()
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
+    /// Watches the looper for `.failed` — dead-media guard in `makePlayer`.
+    private var looperStatusObs: NSKeyValueObservation?
     private let fileURL: URL
     private let timeRange: CMTimeRange?
     private let nodeID: UUID?
@@ -368,6 +370,20 @@ final class CardVideoContentView: NSView {
         p.isMuted = true
         player = p
         host.attach(player: p)
+        // Dead-media guard (mirrors TweetVideoPlayer): a missing/broken file
+        // drives the looper to `.failed` — rest as the poster instead of
+        // letting the looper churn failed items on the main thread forever.
+        looperStatusObs = looper?.observe(\.status, options: [.new]) { [weak self] looper, _ in
+            guard looper.status == .failed else { return }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.looperStatusObs = nil
+                self.player?.pause()
+                self.looper = nil
+                self.player = nil
+                self.host.isHidden = true
+            }
+        }
     }
 
     override func layout() {

@@ -79,6 +79,8 @@ struct TweetVideoPlayer: NSViewRepresentable {
         fileprivate var looper: AVPlayerLooper?
         /// Non-nil when this player participates in the reuse cache.
         fileprivate var cacheNodeID: UUID?
+        /// Watches the looper for `.failed` — see the dead-media guard below.
+        fileprivate var looperStatusObs: NSKeyValueObservation?
 
         func install(in host: PlayerHostView, url: URL, timeRange: CMTimeRange?,
                      nodeID: UUID? = nil, useCache: Bool = false) {
@@ -109,9 +111,21 @@ struct TweetVideoPlayer: NSViewRepresentable {
             }
             self.player = player
             host.attach(player: player)
+            // Dead-media guard: a template item that can't play (expired
+            // tweet CDN URL, deleted file) drives the looper to `.failed` —
+            // tear the player down to its poster then. Left alone, failed
+            // loopers churn item-advance callbacks on the main thread
+            // forever; ~15 of them pinned it at ~67% and froze all canvas
+            // input (2026-07-13).
+            looperStatusObs = self.looper?.observe(\.status, options: [.new]) { [weak self] looper, _ in
+                guard looper.status == .failed else { return }
+                DispatchQueue.main.async { self?.tearDown() }
+            }
         }
 
         func tearDown() {
+            looperStatusObs?.invalidate()
+            looperStatusObs = nil
             player?.pause()
             looper = nil
             player = nil
