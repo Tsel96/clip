@@ -57,10 +57,11 @@ extension CanvasState {
     /// cheap so a boardful of social/video cards still magnifies smoothly.
     static let livePlaybackMinScreenSide: CGFloat = 120
 
-    /// IDs of the media nodes currently allowed to decode/play: EVERY media card
-    /// that intersects the (margin-expanded) viewport AND projects at/above the
-    /// size breakpoint. No concurrency cap — per the product call, any video even
-    /// partly on screen plays; only off-screen and zoomed-out-small cards rest.
+    /// IDs of the media nodes currently allowed to decode/play: media cards
+    /// that intersect the (margin-expanded) viewport AND project at/above the
+    /// size breakpoint, capped at `livePlaybackMaxConcurrent` nearest the
+    /// viewport centre (the old uncapped product call froze the app on a
+    /// 34-tweet board — see computeLiveMediaIDs).
     /// Memoised and keyed off `mediaGateEpoch` (which bumps only on camera
     /// SETTLE), so the set is frozen during a live pan/zoom — nothing flips
     /// live↔poster mid-gesture (no churn / no "videos stopped"); it re-evaluates
@@ -77,10 +78,19 @@ extension CanvasState {
     /// All media nodes that intersect the (margin-expanded) viewport and project
     /// at/above the size breakpoint. Cheap (≤ media-node count) — called only on
     /// a cache miss.
+    /// Hard ceiling on simultaneously-live heavy-media cards. The previous
+    /// product call was "no cap — any video even partly on screen plays";
+    /// evidence killed it: a 34-tweet board put ~15 AVPlayerLoopers' item
+    /// churn on the main thread (sampled at ~67% busy) and froze ALL canvas
+    /// input. Nearest-to-viewport-center cards win the slots, so what the
+    /// user is actually looking at still plays.
+    static let livePlaybackMaxConcurrent = 8
+
     private func computeLiveMediaIDs() -> Set<UUID> {
         let vis = visibleWorldRect
         let liveRect = vis.insetBy(dx: -vis.width * 0.2, dy: -vis.height * 0.2)
-        var ids = Set<UUID>()
+        let center = CGPoint(x: vis.midX, y: vis.midY)
+        var candidates: [(id: UUID, d2: CGFloat)] = []
         for node in nodes {
             switch node.kind {
             case .video, .tweet, .instagram, .youtube, .webclip: break
@@ -90,9 +100,14 @@ extension CanvasState {
             let r = CGRect(x: node.position.x, y: node.position.y, width: node.width, height: h)
             guard liveRect.intersects(r) else { continue }
             guard projectedScreenSide(of: node) >= Self.livePlaybackMinScreenSide else { continue }
-            ids.insert(node.id)
+            let dx = r.midX - center.x, dy = r.midY - center.y
+            candidates.append((node.id, dx * dx + dy * dy))
         }
-        return ids
+        if candidates.count > Self.livePlaybackMaxConcurrent {
+            candidates.sort { $0.d2 < $1.d2 }
+            candidates.removeLast(candidates.count - Self.livePlaybackMaxConcurrent)
+        }
+        return Set(candidates.map(\.id))
     }
 
     /// Below this projected on-screen size (pt), a card drops to its
