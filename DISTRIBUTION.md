@@ -25,13 +25,14 @@ publishes a GitHub Release `v1.0`, writes `appcast/latest.json`
 (build/version/url/sha256), and pushes. **Bump `BUILD` every release** — the
 updater compares it. Installed copies (kiosk + public) update within ~10 min.
 
-There's also a separate, automatic path: `.github/workflows/release.yml`
-runs on every push (throttled to once/4h) on a `macos-26` GitHub-hosted
-runner and cuts its own GitHub Release. It requires that runner label to
-exist — re-verify `runs-on: macos-26` still resolves (and that Actions isn't
-billing-blocked; it has been before) next time it's touched. For an
-exhibition/kiosk build, prefer the local `Scripts/make-app.sh` path below —
-it doesn't depend on GitHub Actions being available at all.
+`.github/workflows/release.yml` is MANUAL-ONLY (workflow_dispatch) as of
+2026-07-13: its old push trigger shipped mid-session autopush snapshots as
+the public `releases/latest` dmg, and it writes an UNSIGNED latest.json
+that builds ≥9045 refuse (updates are Ed25519-signed; the key lives only
+in `~/.clip-release/` on the release machine). The one supported release
+path is local `Scripts/release.sh` — it builds, signs the manifest, and
+publishes the GitHub Release. If the workflow is ever revived, re-verify
+`runs-on: macos-26` still resolves and that Actions isn't billing-blocked.
 
 ## 2. Landing page (`site/`)
 One-viewport page (`site/index.html` + `style.css` + icon + fonts). Before

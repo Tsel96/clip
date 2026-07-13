@@ -588,14 +588,4 @@ struct _TopSegmentedRepresentable: NSViewRepresentable {
     }
 }
 
-// MARK: - NSColor hex helper
-
-private extension NSColor {
-    /// Initialise from a 0xRRGGBB integer literal, sRGB colour space.
-    static func fromHex(_ hex: UInt32) -> NSColor {
-        let r = CGFloat((hex >> 16) & 0xFF) / 255
-        let g = CGFloat((hex >>  8) & 0xFF) / 255
-        let b = CGFloat( hex        & 0xFF) / 255
-        return NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
-    }
-}
+// (hex helpers live in NSColor+Hex.swift — one sRGB implementation.)

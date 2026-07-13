@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Which appearance the app paints in. `.system` follows macOS; `.light` /
@@ -50,6 +51,12 @@ struct ClipTheme {
     static let candyYellowRim    = Color(red: 1.00, green: 0.988, blue: 0.663)  // #FFFCA9
     static let candyYellowTop    = Color(red: 1.00, green: 0.961, blue: 0.231)  // #FFF53B
     static let candyYellowBottom = Color(red: 0.973, green: 0.871, blue: 0.278) // #F8DE47
+    /// AppKit mirrors of the candy stops for the CALayer-gradient chrome
+    /// (`CanvasToolPalette`) — same single source, explicit sRGB so the
+    /// layer gradients match the SwiftUI side on color-managed displays.
+    static let candyYellowRimNS    = NSColor(srgbRed: 1.00, green: 0.988, blue: 0.663, alpha: 1)
+    static let candyYellowTopNS    = NSColor(srgbRed: 1.00, green: 0.961, blue: 0.231, alpha: 1)
+    static let candyYellowBottomNS = NSColor(srgbRed: 0.973, green: 0.871, blue: 0.278, alpha: 1)
 
     /// Brand yellow — sampled from the candy palette's body-bottom stop so the
     /// icon accent and the toolbar's candy pill read as one brand yellow.

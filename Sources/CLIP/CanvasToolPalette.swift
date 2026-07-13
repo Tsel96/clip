@@ -776,10 +776,10 @@ private final class MainPillView: NSView {
         // gradient renders the rim only along the rounded top — never the sides
         // or bottom — so the green outer ring stays the sole full-perimeter edge.
         innerLayer.colors = [
-            NSColor.fromHex(0xFFFCA9).cgColor,   // pale top rim
-            NSColor.fromHex(0xFFFCA9).cgColor,
-            NSColor.fromHex(0xFFF53B).cgColor,   // body top
-            NSColor.fromHex(0xF8DE47).cgColor    // body bottom
+            ClipTheme.candyYellowRimNS.cgColor,   // pale top rim
+            ClipTheme.candyYellowRimNS.cgColor,
+            ClipTheme.candyYellowTopNS.cgColor,   // body top
+            ClipTheme.candyYellowBottomNS.cgColor    // body bottom
         ]
         // rim ≈ 2 pt of the 58 pt capsule → 2/58 ≈ 0.0345
         innerLayer.locations = [0.0, 0.0345, 0.0345, 1.0]
@@ -974,8 +974,8 @@ private final class AddPillView: NSView {
 
     /// Candy-yellow inner skin (default) — pale rim + warm gradient.
     private static let yellowSkin: [CGColor] = [
-        NSColor.fromHex(0xFFFCA9).cgColor, NSColor.fromHex(0xFFFCA9).cgColor,
-        NSColor.fromHex(0xFFF53B).cgColor, NSColor.fromHex(0xF8DE47).cgColor
+        ClipTheme.candyYellowRimNS.cgColor, ClipTheme.candyYellowRimNS.cgColor,
+        ClipTheme.candyYellowTopNS.cgColor, ClipTheme.candyYellowBottomNS.cgColor
     ]
     /// Selected skin (Figma 72:36780): #3DA726→#4CC432 gradient + 30% black overlay
     /// = #2B751B→#358923. No separate rim — uniform dark green at top.
@@ -1008,10 +1008,10 @@ private final class AddPillView: NSView {
         // Pale top rim only (Figma `border-t-2`), via a crisp 4-stop gradient —
         // matches the main pill. 2 pt of the 58 pt inner circle → ≈ 0.0345.
         innerLayer.colors = [
-            NSColor.fromHex(0xFFFCA9).cgColor,
-            NSColor.fromHex(0xFFFCA9).cgColor,
-            NSColor.fromHex(0xFFF53B).cgColor,
-            NSColor.fromHex(0xF8DE47).cgColor
+            ClipTheme.candyYellowRimNS.cgColor,
+            ClipTheme.candyYellowRimNS.cgColor,
+            ClipTheme.candyYellowTopNS.cgColor,
+            ClipTheme.candyYellowBottomNS.cgColor
         ]
         innerLayer.locations = [0.0, 0.0345, 0.0345, 1.0]
         innerLayer.startPoint = CGPoint(x: 0.5, y: 0)
@@ -1560,26 +1560,7 @@ struct _PaletteRepresentable: NSViewRepresentable {
     func makeCoordinator() -> Void { }
 }
 
-// MARK: - NSColor hex helper
-
-private extension NSColor {
-    /// Initialise from a 0xRRGGBB integer literal, sRGB colour space.
-    static func fromHex(_ hex: UInt32) -> NSColor {
-        let r = CGFloat((hex >> 16) & 0xFF) / 255
-        let g = CGFloat((hex >>  8) & 0xFF) / 255
-        let b = CGFloat( hex        & 0xFF) / 255
-        return NSColor(calibratedRed: r, green: g, blue: b, alpha: 1)
-    }
-
-    /// `#RRGGBB` (sRGB) — used to persist the folder tint.
-    var hexRGB: String {
-        let c = usingColorSpace(.sRGB) ?? self
-        return String(format: "#%02X%02X%02X",
-                      Int((c.redComponent * 255).rounded()),
-                      Int((c.greenComponent * 255).rounded()),
-                      Int((c.blueComponent * 255).rounded()))
-    }
-}
+// (hex helpers live in NSColor+Hex.swift — one sRGB implementation.)
 
 // MARK: - FolderActionBarView
 
@@ -1670,8 +1651,8 @@ private final class FolderActionBarView: NSView {
         outerLayer.masksToBounds = false
         layer?.addSublayer(outerLayer)
         innerLayer.colors = [
-            NSColor.fromHex(0xFFFCA9).cgColor, NSColor.fromHex(0xFFFCA9).cgColor,
-            NSColor.fromHex(0xFFF53B).cgColor, NSColor.fromHex(0xF8DE47).cgColor,
+            ClipTheme.candyYellowRimNS.cgColor, ClipTheme.candyYellowRimNS.cgColor,
+            ClipTheme.candyYellowTopNS.cgColor, ClipTheme.candyYellowBottomNS.cgColor,
         ]
         innerLayer.locations = [0.0, 0.0345, 0.0345, 1.0]
         innerLayer.startPoint = CGPoint(x: 0.5, y: 0)
