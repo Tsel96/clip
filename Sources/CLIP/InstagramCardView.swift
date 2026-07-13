@@ -112,12 +112,10 @@ struct InstagramWebView: NSViewRepresentable {
     @Binding var isLoading: Bool
     @Binding var didFail: Bool
 
-    /// One WebKit content-process pool shared across every Instagram card
-    /// on the canvas. Without this, each `WKWebView` spawns its own
-    /// `com.apple.WebKit.WebContent` worker (~150 MB+ on macOS 14); five
-    /// cards = five workers. With the pool, all cards share one worker
-    /// when WebKit can coalesce, which it does for same-origin loads.
-    private static let sharedProcessPool = WKProcessPool()
+    // (The old shared WKProcessPool was removed: creating/using multiple
+    // pools "no longer has any effect" since macOS 12 — the entire supported
+    // range — so it never coalesced anything. WebContent memory is bounded
+    // by the isLive semantic-zoom gate tearing down offscreen webviews.)
 
     func makeNSView(context: Context) -> WKWebView {
         let webView: WKWebView
@@ -132,7 +130,6 @@ struct InstagramWebView: NSViewRepresentable {
 
     private static func makeWebView(url: URL) -> WKWebView {
         let cfg = WKWebViewConfiguration()
-        cfg.processPool = sharedProcessPool
         cfg.allowsAirPlayForMediaPlayback = true
         // Browser-level permission: don't require a user click for media.
         cfg.mediaTypesRequiringUserActionForPlayback = []

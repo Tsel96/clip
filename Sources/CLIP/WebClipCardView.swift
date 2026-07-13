@@ -129,9 +129,6 @@ struct WebClipWebView: NSViewRepresentable {
     @Binding var didFail: Bool
     @Binding var cachedSnapshot: NSImage?
 
-    /// Shared WebKit process pool across all web clip cards.
-    private static let sharedProcessPool = WKProcessPool()
-
     func makeNSView(context: Context) -> WKWebView {
         let webView: WKWebView
         if FeatureFlags.useWebViewCache, let nodeID {
@@ -146,7 +143,6 @@ struct WebClipWebView: NSViewRepresentable {
 
     private static func makeWebView(url: URL) -> WKWebView {
         let cfg = WKWebViewConfiguration()
-        cfg.processPool = sharedProcessPool
         cfg.allowsAirPlayForMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
         // Desktop User-Agent so sites render their full experience.

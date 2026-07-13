@@ -33,6 +33,29 @@ final class UpdateChecker {
         let version: String
         let url: String
         let sha256: String
+        /// Ed25519 signature (base64) over "sha256|build|url", made by
+        /// `Scripts/release.sh` with the private key in `~/.clip-release/`
+        /// on the release machine. Absent/invalid → the update is refused.
+        let sig: String?
+    }
+
+    /// The release keypair's PUBLIC half, baked in. The private key lives
+    /// only in `~/.clip-release/update-signing.key` on the release machine —
+    /// OUTSIDE this repo — so someone who can merely push to the repo or
+    /// publish a GitHub Release (leaked `gh` token, compromised CI) cannot
+    /// mint an update these installs will accept.
+    private static let updatePublicKey = Data(
+        base64Encoded: "1oVk4KFOtS5R1gCarZg4O9W6xComOER8YeR8bxq0VZs=")!
+
+    /// True only if the manifest's signature covers its hash+build+url.
+    private func manifestIsAuthentic(_ m: Manifest) -> Bool {
+        guard let sigB64 = m.sig,
+              let sig = Data(base64Encoded: sigB64),
+              let key = try? Curve25519.Signing.PublicKey(
+                  rawRepresentation: Self.updatePublicKey)
+        else { return false }
+        let message = Data("\(m.sha256)|\(m.build)|\(m.url)".utf8)
+        return key.isValidSignature(sig, for: message)
     }
 
     private var feedURL: URL? {
@@ -80,6 +103,14 @@ final class UpdateChecker {
         let m = try JSONDecoder().decode(Manifest.self, from: data)
 
         guard m.build > currentBuild, let zipURL = URL(string: m.url) else { return }
+
+        // The sha256 alone proves nothing — it arrives over the same channel
+        // as the zip URL, published by whoever can write to the repo. The
+        // Ed25519 signature is the actual trust anchor (key held OFF-repo).
+        guard manifestIsAuthentic(m) else {
+            Log.updater.error("Update manifest signature missing/invalid — refusing build \(m.build)")
+            return
+        }
 
         // Download the update archive. Read + hash off the main actor —
         // the zip is tens of MB and this class is @MainActor.

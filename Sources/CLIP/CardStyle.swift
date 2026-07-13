@@ -33,6 +33,18 @@ struct FigmaCardStyle: ViewModifier {
                 )
                 .allowsHitTesting(false)
             )
+            // `isElevated` was a declared-but-unread parameter (every call site
+            // threaded a live hover flag into it for nothing). Wherever
+            // `DraggableNode` is the sole chrome provider (FolderGridView's grid,
+            // the lightbox) this is the ONLY hover shadow those cards get; where
+            // `DraggableNode` also wraps the card, its own hover shadow (see
+            // `DraggableNode.swift`) stacks on top, per that view's doc comment.
+            // `CardItemView`'s NSCollectionView path never sets `isElevated` and
+            // draws its own CALayer shadow instead, so it's unaffected.
+            .shadow(color: .black.opacity(isElevated ? 0.16 : 0),
+                    radius: isElevated ? 14 : 0,
+                    y: isElevated ? 8 : 0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isElevated)
     }
 }
 

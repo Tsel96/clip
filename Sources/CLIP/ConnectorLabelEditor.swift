@@ -53,7 +53,13 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
         pill.addSubview(inner)
 
         let field = NSTextField()
-        field.stringValue = current.uppercased()
+        // RAW case — `current` is the model's `Connector.label`, which
+        // `ConnectorOverlayController.layoutLabel` already renders uppercase
+        // at-rest via a display-time `.uppercased()`. Seeding the editor with
+        // an already-uppercased string (and, formerly, re-uppercasing it on
+        // every keystroke below) meant committing without retyping baked the
+        // uppercase DISPLAY string into the model.
+        field.stringValue = current
         field.placeholderString = "LABEL"
         field.font = .monospacedSystemFont(ofSize: Self.fieldFontSize, weight: .semibold)
         field.alignment = .left
@@ -154,15 +160,12 @@ extension CollectionCanvas.Coordinator: NSTextFieldDelegate {
     // MARK: NSTextFieldDelegate
 
     public func controlTextDidChange(_ obj: Notification) {
-        // Force uppercase display (Figma), preserving the caret position.
-        if let field = editingConnectorField {
-            let upper = field.stringValue.uppercased()
-            if upper != field.stringValue {
-                let sel = field.currentEditor()?.selectedRange
-                field.stringValue = upper
-                if let sel { field.currentEditor()?.selectedRange = sel }
-            }
-        }
+        // The field keeps the RAW-case text the user types — forcing it
+        // uppercase here (as this used to) mutates the value that gets
+        // committed, not just its on-screen appearance. The display-only
+        // uppercase transform already happens at render time in
+        // `ConnectorOverlayController.layoutLabel` (`text.uppercased()`),
+        // matching how `c.label` is stored raw everywhere else.
         if let cid = editingConnectorID { positionEditor(at: cid) }
     }
 

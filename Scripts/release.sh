@@ -45,6 +45,20 @@ FEED_URL="$RAW_FEED" MARKETING="$MARKETING" BUILD="$BUILD" ZIP=1 DMG=1 Scripts/m
 SHA=$(shasum -a 256 "$ROOT/$ZIP" | awk '{print $1}')   # updater verifies the ZIP
 echo "  zip sha256 $SHA"
 
+# Sign the manifest with the OFF-REPO release key: the app's baked-in public
+# key must verify "sha256|build|url", so repo/Release write access alone
+# can't push an update to installs (the sha256 travels the same channel as
+# the zip URL — it is not a trust anchor by itself).
+SIGNING_KEY="$HOME/.clip-release/update-signing.key"
+if [ ! -f "$SIGNING_KEY" ]; then
+  echo "ERROR: update-signing key missing at $SIGNING_KEY — releases must be signed." >&2
+  echo "       (Generate once with Curve25519.Signing.PrivateKey and store the" >&2
+  echo "       base64 rawRepresentation there; pubkey is baked into Updater.swift.)" >&2
+  exit 1
+fi
+SIG=$(swift "$ROOT/Scripts/sign-update.swift" "$SIGNING_KEY" "$SHA|$BUILD|$ZIP_URL")
+echo "  manifest sig $SIG"
+
 echo "→ writing appcast/latest.json"
 cat > "$ROOT/appcast/latest.json" <<JSON
 {
@@ -52,6 +66,7 @@ cat > "$ROOT/appcast/latest.json" <<JSON
   "version": "$MARKETING",
   "url": "$ZIP_URL",
   "sha256": "$SHA",
+  "sig": "$SIG",
   "notes": "$NOTES"
 }
 JSON

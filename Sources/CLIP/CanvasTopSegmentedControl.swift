@@ -307,10 +307,18 @@ final class CanvasTopSegmentedControlView: NSView {
     /// Builds the per-state attributed title (color, alpha, embossed shadow).
     /// Active: #000000 α0.90 + 4-layer text shadow (simplified to one NSShadow).
     /// Inactive: #FFFFFF α0.40, no shadow (per Figma React + screenshot).
+    /// App-wide tracking rule for uppercase SF Mono UI labels (`Typography.swift`'s
+    /// `clipLabel`: 1.3pt at its ~11pt default size ≈ 0.13pt of kern per point of
+    /// font size). This label used `kern = 0` on the premise that SF Mono's fixed
+    /// glyph-advance width ("monospacing") already supplies that spacing — it
+    /// doesn't: monospacing is equal advance width, tracking is *added*
+    /// inter-glyph whitespace for legibility, and the two aren't substitutes.
+    private static let trackingPerPoint: CGFloat = 0.13
+
     private static func attributedTitle(_ title: String, active: Bool) -> NSAttributedString {
         var attrs: [NSAttributedString.Key: Any] = [
             .font: labelFont,
-            .kern: 0,   // SF Mono is already monospaced; no extra tracking
+            .kern: labelFont.pointSize * trackingPerPoint,
         ]
         if active {
             attrs[.foregroundColor] = NSColor.black.withAlphaComponent(0.90)
@@ -435,12 +443,14 @@ private final class SegmentIndicatorView: NSView {
 
         // Body gradient + pale top rim, identical recipe to the bottom palette:
         // a crisp 4-stop vertical gradient paints the 1 pt #FFFCA9 rim only on
-        // the rounded top edge, never the sides/bottom.
+        // the rounded top edge, never the sides/bottom. Sourced from
+        // ClipTheme's shared candy-yellow stops (not a separate hand-rolled hex
+        // copy) so this pill and `ClipTheme.accentYellow` can't drift apart.
         bodyLayer.colors = [
-            NSColor.fromHex(0xFFFCA9).cgColor,   // pale top rim
-            NSColor.fromHex(0xFFFCA9).cgColor,
-            NSColor.fromHex(0xFFF53B).cgColor,   // body top
-            NSColor.fromHex(0xF8DE47).cgColor,   // body bottom
+            NSColor(ClipTheme.candyYellowRim).cgColor,     // pale top rim
+            NSColor(ClipTheme.candyYellowRim).cgColor,
+            NSColor(ClipTheme.candyYellowTop).cgColor,     // body top
+            NSColor(ClipTheme.candyYellowBottom).cgColor,  // body bottom
         ]
         bodyLayer.startPoint = CGPoint(x: 0.5, y: 0)
         bodyLayer.endPoint   = CGPoint(x: 0.5, y: 1)

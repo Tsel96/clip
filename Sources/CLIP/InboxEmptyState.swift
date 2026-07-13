@@ -18,7 +18,10 @@ struct InboxEmptyState: View {
                         .strokeBorder(theme.border, lineWidth: 1))
                 Image(systemName: "iphone.radiowaves.left.and.right")
                     .font(.system(size: 28, weight: .regular))
-                    .foregroundStyle(theme.accent)
+                    // `accentOnSurface`, not `accent`: this glyph sits directly on
+                    // `surfaceInset`, and the flat brand yellow is only ~1.3:1
+                    // against it (near-invisible) — see ClipTheme.accentOnSurface.
+                    .foregroundStyle(theme.accentOnSurface)
             }
             .frame(width: 64, height: 64)
 
@@ -41,7 +44,9 @@ struct InboxEmptyState: View {
                 HStack(spacing: 8) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(theme.accent)
+                        // Same on-surface reasoning as the icon chip above — this
+                        // glyph sits on `surfaceElevated`, not a fill `accent` owns.
+                        .foregroundStyle(theme.accentOnSurface)
                     Text("HOW TO SET IT UP")
                         .font(.clip(10.5))
                         .tracking(1.2)
