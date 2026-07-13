@@ -58,6 +58,7 @@ extension CollectionCanvas.Coordinator {
 
     func applyCamera(_ cam: Camera) {
         guard let scroll, cam.zoom > 0 else { return }
+        Diag.log("APPLYCAMERA x=\(cam.x) y=\(cam.y) z=\(cam.zoom)")
         applyingProgrammatic = true
         defer { applyingProgrammatic = false; lastCamera = cam }
         scroll.magnification = cam.zoom

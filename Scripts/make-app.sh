@@ -39,6 +39,14 @@ DEST_DIR="${1:-$ROOT}"
 APP="$DEST_DIR/CLIP.app"
 PB=/usr/libexec/PlistBuddy
 
+# ALWAYS build first. This script used to only PACKAGE an existing binary,
+# which silently shipped stale code: builds 9044-9049 were one unchanged
+# Jul-12 binary re-stamped with new version numbers because the deployer
+# forgot the separate `swift build -c release`. Building here makes that
+# mistake impossible (an incremental no-op when already fresh).
+echo "→ swift build -c $CONFIG"
+swift build -c "$CONFIG"
+
 [ -f "$BIN" ]  || { echo "✗ no binary at $BIN — run: swift build -c $CONFIG"; exit 1; }
 [ -f "$ICON" ] || { echo "✗ no icon at $ICON"; exit 1; }
 
