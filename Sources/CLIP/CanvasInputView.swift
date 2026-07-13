@@ -43,6 +43,12 @@ final class CanvasInputView: NSView {
         }
     }
 
+    /// O(1) node lookup on the drag/rotate hot paths via the coordinator's
+    /// id index (falls back to a scan only if the coordinator is gone).
+    private func node(_ id: UUID, _ p: CanvasConfig) -> CanvasNode? {
+        coordinator?.nodeByID[id] ?? p.nodes.first(where: { $0.id == id })
+    }
+
     private var mode: Mode = .idle
     private var startPt: NSPoint = .zero            // content coords
     private var resizeGrip: Grip?
@@ -141,7 +147,7 @@ final class CanvasInputView: NSView {
         // Select mode: resize cursor over a selected node's grip, else the arrow
         // (this also resets the grab cursor when you switch off the Hand tool).
         let pt = convert(event.locationInWindow, from: nil)
-        if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
+        if let selID = p.selectedNodeID, let sel = node(selID, p),
            isResizable(sel), let g = grip(at: pt, of: sel, p) {
             g.cursor.set()
         } else {
@@ -287,7 +293,7 @@ final class CanvasInputView: NSView {
     /// the text view stays first responder). Everything else returns self.
     override func hitTest(_ point: NSPoint) -> NSView? {
         if let p = config, let editID = p.editingTextNodeID,
-           let n = p.nodes.first(where: { $0.id == editID }) {
+           let n = node(editID, p) {
             let local = convert(point, from: superview)
             if contentFrame(n, p).contains(local),
                let tv = editingTextView() {
@@ -298,7 +304,7 @@ final class CanvasInputView: NSView {
         // fall through to the editor's controls (scrub handles, save/reset/cancel)
         // — otherwise this overlay swallows them and no trim button works.
         if let p = config, let trimID = p.trimmingNodeID,
-           let n = p.nodes.first(where: { $0.id == trimID }) {
+           let n = node(trimID, p) {
             let local = convert(point, from: superview)
             if contentFrame(n, p).insetBy(dx: -24, dy: -24).contains(local) { return nil }
         }
@@ -425,14 +431,14 @@ final class CanvasInputView: NSView {
             return
         }
         // Rotate handle on the single selected node (not sections/folders) → rotate.
-        if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
+        if let selID = p.selectedNodeID, let sel = node(selID, p),
            !sel.isSection, !sel.isFolder, rotateHandleHit(pt, of: sel, p) {
             mode = .rotate; rotateNodeID = selID
             beginIfNeeded(p, primary: selID)
             return
         }
         // Corner / edge resize on the single selected resizable node.
-        if let selID = p.selectedNodeID, let sel = p.nodes.first(where: { $0.id == selID }),
+        if let selID = p.selectedNodeID, let sel = node(selID, p),
            isResizable(sel), let g = grip(at: pt, of: sel, p) {
             mode = .resize; resizeGrip = g; resizeNodeID = selID
             resizeStartFrame = CGRect(x: sel.position.x, y: sel.position.y,
@@ -491,7 +497,7 @@ final class CanvasInputView: NSView {
             beginIfNeeded(p, primary: nil)
             applyResize(dx: dx, dy: dy, event: event, p: p)
         case .rotate:
-            guard let id = rotateNodeID, let n = p.nodes.first(where: { $0.id == id }) else { return }
+            guard let id = rotateNodeID, let n = node(id, p) else { return }
             let f = contentFrame(n, p)
             let c = CGPoint(x: f.midX, y: f.midY)
             // The card's "up" points at the cursor: rotation = pointer angle + 90°.
@@ -559,7 +565,7 @@ final class CanvasInputView: NSView {
         case .pendingConnect, .connect:
             mode = .connect
             guard let srcID = connectSourceID,
-                  let src = p.nodes.first(where: { $0.id == srcID }) else { break }
+                  let src = node(srcID, p) else { break }
             let hovered = hitNode(at: pt, p)
             let target = (hovered != nil && hovered!.id != srcID && !hovered!.isSection) ? hovered : nil
             let srcRect = contentFrame(src, p)
@@ -723,7 +729,7 @@ final class CanvasInputView: NSView {
         var sdx = dx, sdy = dy
         if !modifiers.contains(.command),
            let pid = primaryMoveID, let sp = moveStartPos[pid],
-           let pn = p.nodes.first(where: { $0.id == pid }) {
+           let pn = node(pid, p) {
             let rect = CGRect(x: sp.x + dx, y: sp.y + dy,
                               width: pn.width, height: pn.height ?? 120)
             let others = moveOtherRects   // snapshotted at gesture start
@@ -839,7 +845,7 @@ final class CanvasInputView: NSView {
 
     private func applyResize(dx: CGFloat, dy: CGFloat, event: NSEvent, p: CanvasConfig) {
         guard let g = resizeGrip, let id = resizeNodeID,
-              let n = p.nodes.first(where: { $0.id == id }) else { return }
+              let n = node(id, p) else { return }
         let start = resizeStartFrame
         // Each axis only changes if the grip touches an edge on that axis (an
         // edge grip leaves the other axis fixed).

@@ -282,6 +282,11 @@ extension CanvasState {
     func endDrag() {
         activeDragID = nil
         activeDragConnectedIDs = []
+        // Every geometry commit (move/resize/rotate, both native and SwiftUI
+        // paths) funnels through here once per gesture — re-gate media so a
+        // card dragged on-screen starts playing without waiting for a camera
+        // settle (the gate memo is otherwise keyed on camera epoch only).
+        noteGeometryChangedForMediaGate()
     }
 
     // MARK: - Connectors

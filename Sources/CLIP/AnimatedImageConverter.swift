@@ -54,7 +54,16 @@ enum AnimatedImageConverter {
         let frameOpts = [kCGImageSourceShouldCache: false] as CFDictionary
         for i in 0..<count {
             guard let cg = CGImageSourceCreateImageAtIndex(src, i, frameOpts) else { continue }
-            while !input.isReadyForMoreMediaData { usleep(2000) }
+            // Bounded like the pool-wait below, AND bail if the writer died
+            // mid-encode (disk full, bad pixel data) — `isReadyForMoreMediaData`
+            // can stay false forever on a failed writer, hanging the import.
+            var readyWait = 0
+            while !input.isReadyForMoreMediaData {
+                guard writer.status == .writing, readyWait < 5000 else {
+                    throw writer.error ?? Err.writer
+                }
+                usleep(2000); readyWait += 1
+            }
             // The pool appears asynchronously after startSession — wait for it
             // like the input, instead of failing the whole conversion.
             var poolWait = 0
@@ -86,9 +95,22 @@ enum AnimatedImageConverter {
         sem.wait()
         guard writer.status == .completed else { throw writer.error ?? Err.writer }
 
-        let stored = MediaStore.importFile(tmp)
-        try? FileManager.default.removeItem(at: tmp)
-        return stored
+        // Return the TEMP file — `addVideo` copies it into MediaStore only
+        // after its size/duration/dimension caps pass, so a rejected
+        // conversion can't orphan a file in the permanent (non-GC'd) store.
+        return tmp
+    }
+
+    /// Cheap pre-flight (header reads only, no frame decode): frame count +
+    /// first-frame pixel dimensions. Bounds the decode/encode work an
+    /// animated source can demand before we commit to converting it.
+    static func fitsLimits(_ data: Data, maxPixelDim: Int, maxFrames: Int) -> Bool {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+        guard CGImageSourceGetCount(src) <= maxFrames else { return false }
+        guard let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Int,
+              let h = props[kCGImagePropertyPixelHeight] as? Int else { return true }
+        return w <= maxPixelDim && h <= maxPixelDim
     }
 
     /// Per-frame delay with the browser convention: sub-11 ms delays are a

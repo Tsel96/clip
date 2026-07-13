@@ -376,7 +376,19 @@ struct CollectionCanvas: NSViewRepresentable {
         weak var container: FlippedContainer?
         weak var overlayHost: NSHostingView<AnyView>?
         weak var layout: CanvasWorldLayout?
-        private(set) var nodes: [CanvasNode] = []
+        private(set) var nodes: [CanvasNode] = [] {
+            // O(1) id lookup for the drag/rotate/chrome hot paths. `nodes`
+            // only changes when contentSignature changes (apply), never per
+            // tick, so the rebuild cost is off the hot path.
+            didSet {
+                nodeByID = Dictionary(nodes.map { ($0.id, $0) },
+                                      uniquingKeysWith: { a, _ in a })
+                nodeIndexByID = Dictionary(nodes.enumerated().map { ($0.element.id, $0.offset) },
+                                           uniquingKeysWith: { a, _ in a })
+            }
+        }
+        private(set) var nodeByID: [UUID: CanvasNode] = [:]
+        private(set) var nodeIndexByID: [UUID: Int] = [:]
         weak var inputView: CanvasInputView?
         var boundsObserver: NSObjectProtocol?
         // Camera glide (navigation spring — CanvasCameraController).
@@ -793,10 +805,17 @@ struct CollectionCanvas: NSViewRepresentable {
             guard let cc = connectorController else { return }
             cc.setVisible(config.showConnectors)        // honour the show/hide toggle
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
+            // Frames only for actual connector ENDPOINTS — this runs on every
+            // coalesced pan frame, and iterating the whole page made the cost
+            // O(nodes) regardless of connector count (the comment below always
+            // promised O(connectors); now it's true).
             var frames: [UUID: CGRect] = [:]
-            for n in config.nodes {
-                frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
-                                      width: max(1, n.width), height: max(1, n.height ?? 120))
+            for c in config.connectors {
+                for id in [c.sourceID, c.targetID] where frames[id] == nil {
+                    guard let n = nodeByID[id] else { continue }
+                    frames[id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
+                                        width: max(1, n.width), height: max(1, n.height ?? 120))
+                }
             }
             // NB: deliberately NO viewport cull here. A culled connector's
             // layers get destroyed (redraw's stale-bundle sweep), which made
@@ -905,7 +924,7 @@ struct CollectionCanvas: NSViewRepresentable {
         private func draggedCentre(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) -> CGPoint? {
             var rect: CGRect?
             for (id, sp) in startPos {
-                guard let n = nodes.first(where: { $0.id == id }) else { continue }
+                guard let n = nodeByID[id] else { continue }
                 let r = CGRect(x: sp.x + dx, y: sp.y + dy, width: n.width, height: n.height ?? n.width)
                 rect = rect?.union(r) ?? r
             }
@@ -965,7 +984,7 @@ struct CollectionCanvas: NSViewRepresentable {
             // Translate (+ shrink toward the folder) each dragged item.
             let t = CATransform3DMakeTranslation(dx, dy, 0)
             for id in startPos.keys {
-                guard let idx = nodes.firstIndex(where: { $0.id == id }),
+                guard let idx = nodeIndexByID[id],
                       let view = cv.item(at: IndexPath(item: idx, section: 0))?.view else { continue }
                 // A fresh grab must seize the card instantly: kill any still-
                 // running release-carry spring, or the keyed animation keeps
@@ -1022,7 +1041,7 @@ struct CollectionCanvas: NSViewRepresentable {
             var settled: [NSView] = []
             CATransaction.begin(); CATransaction.setDisableActions(true)
             for (id, sp) in startPos {
-                guard let idx = nodes.firstIndex(where: { $0.id == id }), idx < layout.itemFrames.count
+                guard let idx = nodeIndexByID[id], idx < layout.itemFrames.count
                 else { continue }
                 let n = nodes[idx]
                 let f = CGRect(x: sp.x + dx - minX, y: sp.y + dy - minY,
@@ -1553,7 +1572,7 @@ final class CardItemView: NSView {
 
     private var liveNode: CanvasNode? {
         guard let id = nodeID else { return nil }
-        return coordinator?.config.nodes.first { $0.id == id }
+        return coordinator?.nodeByID[id]
     }
     /// Live select/hover state (reads the coordinator so it's never one event
     /// stale). `isLifted` = either → drives the 1.06 scale + elevated shadow.

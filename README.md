@@ -1,43 +1,58 @@
-# Embedded Video Canvas (macOS, SwiftUI)
+# CLIP
 
-A native macOS port of the React/Figma-Make prototype.
-Paste an X.com (Twitter) link and the post — including the autoplaying
-video — appears as a card on an infinite, pannable canvas.
+A native macOS spatial-canvas app (AppKit + SwiftUI, single SwiftPM
+executable target). Drop in links, images, videos, and drawings and arrange
+them freely on an infinite, pannable/zoomable canvas — cards, folders,
+connectors, stickies, an archive view, and a colorform mode.
 
-## Run
-
-From this folder:
+## Build
 
 ```bash
-swift run
+DEVELOPER_DIR="/Applications/Xcode-beta.app/Contents/Developer" swift build
 ```
 
-…or open `Package.swift` in Xcode and press ⌘R.
+This is the **only** working build command. Plain `swift build` / `swift run`
+with the default Command Line Tools **fails** — several views (e.g.
+`LiquidGlassMinimap.swift`, `VideoTrimOverlay.swift`) use `glassEffect`,
+which only exists in the macOS 26 SDK. Xcode-beta supplies that SDK; the
+default CLT doesn't.
+
+Run tests the same way: `DEVELOPER_DIR=... swift build` above, or `swift test`.
+
+To build and package a release `.app` (what's actually shipped/deployed):
+
+```bash
+CONFIG=release BUILD=<n> Scripts/make-app.sh /Applications
+```
+
+See `DISTRIBUTION.md` for the full release/exhibition runbook and
+`AGENT_HANDOFF.md` for current in-progress work.
 
 ## Use
 
-| Action                                | How                                          |
-| ------------------------------------- | -------------------------------------------- |
-| Add a tweet by URL                    | Toolbar **+** button, or **⌘N**              |
-| Paste a tweet URL onto the canvas     | **⌘V**                                       |
-| Pan the canvas                        | Two-finger trackpad scroll                   |
-| Zoom                                  | Pinch on trackpad, or **⌘+ / ⌘− / ⌘0**       |
-| Move a card                           | Click + drag                                 |
-| Mute / pause a video                  | Hover the video, use the on-card buttons     |
-| Delete the selected card              | **Delete**                                   |
+Menu shortcuts live in `ClipApp.swift` (`.commands { … }`) — that's the
+source of truth. Highlights:
 
-## Architecture
+| Action                     | Shortcut |
+| -------------------------- | -------- |
+| Add a post by URL          | **⌘N**   |
+| New folder                 | **⇧⌘N**  |
+| Paste onto the canvas      | **⌘V**   |
+| Find                       | **⌘K**   |
+| Delete selection           | **Delete** |
+| Canvas / Colorform / Archive mode | **⌘1 / ⌘2 / ⌘3** |
+| Zoom in / out / actual size | **⌘+ / ⌘− / ⌘0** |
 
-* `EmbeddedVideoCanvasApp.swift` – `@main` SwiftUI scene + ⌘ shortcuts
-* `ContentView.swift` – native window toolbar + Add-Tweet sheet
-* `CanvasView.swift` – infinite canvas, dot grid, drag-to-move
-* `ScrollAndMagnifyCapture.swift` – `NSView` that turns trackpad scroll
-  + pinch into pan / zoom callbacks (the one bit SwiftUI can’t do alone)
-* `TweetCardView.swift` – tweet card UI (avatar, text, video, metrics)
-* `TweetVideoPlayer.swift` – `AVPlayerLayer`-backed view, looping + autoplay
-* `TweetService.swift` – fetches tweet JSON from Twitter’s syndication
-  endpoint, falling back to react-tweet's public proxy
-* `Models.swift` – `TweetData`, `TweetNode`, `Camera`
+## Code layout
 
-All buttons / fields / menus / pickers are stock AppKit-flavoured SwiftUI
-controls — no custom-styled widgets.
+`Sources/CLIP/` (~108 files, single executable target — see `Package.swift`).
+No itemized file list here; it goes stale immediately. Entry points to start
+from:
+
+* `ClipApp.swift` – `@main` scene, menu commands
+* `CanvasState.swift` (+ `CanvasState+*.swift` extensions) – the canvas model
+* `CollectionCanvas.swift` / `CanvasView.swift` – the AppKit-backed canvas view
+* `Models.swift` – `CanvasNode` / `CanvasNode.Kind` and friends
+
+`Tests/CLIPTests/` holds the test target (`swift test`, same `DEVELOPER_DIR`
+requirement as above).

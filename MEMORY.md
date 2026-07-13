@@ -2,15 +2,23 @@
 
 A continuity doc so work can resume after `/clear` or a fresh container.
 CLIP is a native macOS SwiftUI infinite-canvas moodboard (`Sources/CLIP/`,
-~65 files, SwiftPM, macOS 13+, **Apple Silicon**, uses the macOS 26 Liquid
-Glass API so it needs the Xcode 26 / macOS 26 SDK to build).
+~108 files, single SwiftPM executable target, macOS 13+, **Apple Silicon**,
+uses the macOS 26 Liquid Glass API so it needs the Xcode 26 / macOS 26 SDK
+to build). `Tests/CLIPTests/` has a test target too.
 
 **Working branch:** `claude/code-audit-performance-o0u336` (PR #2 was the
 original perf pass; subsequent work continues on this branch).
-**Build:** `swift build`; bundle via `Scripts/make-app.sh` (DMG=1 ZIP=1).
-This dev env is **Linux — cannot compile AppKit**; the macOS-26 GitHub
-Actions workflow (`.github/workflows/release.yml`) is the compile gate and
-publishes releases.
+**Build (the only working command):**
+`DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build`
+— this dev env IS macOS and compiles locally; plain `swift build`/`swift run`
+fails against the default Command Line Tools (no macOS 26 SDK). Bundle via
+`CONFIG=release BUILD=<n> Scripts/make-app.sh` (DMG=1 ZIP=1) — currently
+deployed build 9044. The GH Actions workflow (`.github/workflows/release.yml`,
+`macos-26` runner) is a separate auto-release path triggered by every push
+(throttled to once/4h) that publishes to GitHub Releases; it's been green and
+shipping (through v1.0.489) as of this writing, but re-verify before relying
+on it — it has gone billing-blocked before. Local `make-app.sh` is the path
+to trust for the kiosk/exhibition build.
 
 ## Shipped & green (committed + pushed)
 - **Perf audit pass** (merged via PR #2): off-main JSON autosave, corrupt-
@@ -42,32 +50,12 @@ publishes releases.
   (`CanvasState.jumpToNode(_:onPage:)`); new Pages/Outline sidebar switcher
   (`OutlinePanel.swift`); shared helpers in `NodeSearch.swift`.
 
-## WIP — pushed but DOES NOT COMPILE (Web Clips, planned feature #2)
-New `.webclip(url)` Kind = a rendered card for any http(s) URL (replaces the
-old "unsupported URL" alert; arbitrary iPhone-shared links also land).
-- **Done:** Models (Kind case/factory/Codable encode+decode), NodeSearch
-  (summary→url, icon→globe), DraggableNode dispatch, CardLightboxLayer
-  (badge "WEB" + CardContentView), CanvasState (renderedHeight 320, autoTag
-  web/link, `addWebClip`, addPostFromURL fallback, ingestSharedURL
-  fallback), MinimapView fill (blue).
-- **TODO to compile (every remaining exhaustive `switch node.kind`):**
-  - `StackVisualView.swift` MemberCoverView (~line 222) — add `.webclip` arm
-  - `StackFocusEngine.swift` naturalSize (~line 73) — add `.webclip` to the
-    `.image,.video,.tweet,.instagram,.youtube,.drawing` raw group
-  - `ArchiveListView.swift` — 4 switches: title, kindLabel, kindSymbol,
-    kindColor — add `.webclip` arms
-  - NEW `WebClipCardView.swift` — clone `InstagramCardView` (shared
-    WKProcessPool, isLive gating, dismantleNSView teardown, desktop UA);
-    on `didFinish` call `takeSnapshot` → save to the snapshot store; resting
-    (not-live) state shows the cached snapshot or a `globe`+host placeholder.
-    Signature used by callers: `WebClipCardView(url:isLive:nodeID:)`.
-  - NEW `WebClipSnapshotStore.swift` — PNG cache at
-    `~/Library/Application Support/CLIP/webclips/<nodeID>.png`, off-main
-    writes; **NOT** in canvas.json. API: `image(for:)`, `save(_:for:)`,
-    `remove(for:)`.
-- Verify on macOS CI until green; ⚠️ until then the workflow build is RED
-  (no new release — the last green release stays "latest", download
-  unaffected).
+## Web Clips (planned feature #2) — SHIPPED
+`.webclip(url)` Kind is a rendered card for any http(s) URL (replaces the old
+"unsupported URL" alert; arbitrary iPhone-shared links also land). All the
+exhaustive `switch node.kind` sites (`StackVisualView`, `StackFocusEngine`,
+`ArchiveListView`, etc.) have `.webclip` arms, and `WebClipCardView.swift` /
+`WebClipSnapshotStore.swift` exist and compile. No longer WIP.
 
 ## Not started (planned features #3, #4)
 - **Notes + Markdown export** — new `.note(markdown:)` Kind; block-level
@@ -104,14 +92,13 @@ Full design lives in the plan file:
 - Download button → install page → `releases/latest/download/CLIP.dmg`.
 
 ## Open follow-ups / decisions
-- **Repo is PRIVATE** → release-asset download URLs 404 for the public.
-  User chose **"make repo public"** (Settings → Danger Zone → Change
-  visibility) — once done, website download + in-app self-updater work
-  with no code change. NOT yet done.
+- Repo is now **PUBLIC** (`Tsel96/clip`) — release-asset download URLs and
+  the raw appcast work for the public. (Was private; done.)
+- `site/index.html`'s iPhone-Shortcut link is filled in — no
+  `SHORTCUT_URL_HERE` placeholder left (grep confirms). (Done.)
 - **Delete the Vercel token** `clip-deploy` at vercel.com/account/tokens
-  (it was used from chat to deploy; still active).
-- `site/index.html` "Send links from iPhone" still has `SHORTCUT_URL_HERE`
-  placeholder — paste the real iCloud Shortcut link.
+  (it was used from chat to deploy; unverified whether still active —
+  check before assuming).
 - Hero product shot is a composed scene; swap a real screenshot into
   `site/assets/` when available.
 - In-app setup-guide URL points at `clip-umprum.vercel.app` (good).

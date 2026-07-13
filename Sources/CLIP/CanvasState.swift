@@ -387,6 +387,10 @@ final class CanvasState: ObservableObject {
     /// the size breakpoint). NOT bumped during the gesture → nothing flips
     /// mid-zoom → no "videos blink while zooming".
     @Published private(set) var mediaGateEpoch = 0
+    /// Geometry commits (drag/resize end) must re-gate too: a media card
+    /// dragged into the viewport or resized past the breakpoint would
+    /// otherwise stay a poster until the next camera settle.
+    func noteGeometryChangedForMediaGate() { mediaGateEpoch &+= 1 }
     /// True while a pan/zoom is actively moving the camera; `isLive` freezes its
     /// size gate during this window so a visible card never swaps to a poster
     /// mid-zoom.

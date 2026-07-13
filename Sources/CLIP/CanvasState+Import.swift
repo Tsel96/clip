@@ -151,6 +151,20 @@ extension CanvasState {
         // static path if the conversion fails.
         let ext = (filename as NSString).pathExtension.lowercased()
         if ["gif", "webp"].contains(ext), AnimatedImageConverter.isAnimated(data) {
+            // Same source cap as every other image path, plus a frame/pixel
+            // ceiling — an animated source must not buy unbounded decode +
+            // H.264 encode work by dodging the static-image guards.
+            // ponytail: 1200 frames ≈ 2 min at 10 fps; raise if real gifs hit it.
+            guard data.count <= Self.maxImageBytes,
+                  AnimatedImageConverter.fitsLimits(
+                      data, maxPixelDim: Self.maxImagePixelDim, maxFrames: 1200)
+            else {
+                alert = AlertContent(
+                    title: "Animation too large",
+                    message: "Animated images can be up to \(byteString(Self.maxImageBytes)) and \(Self.maxImagePixelDim) × \(Self.maxImagePixelDim) px."
+                )
+                return
+            }
             Task { [weak self] in
                 let url = await Task.detached { try? AnimatedImageConverter.mp4(from: data) }.value
                 guard let self else { return }
