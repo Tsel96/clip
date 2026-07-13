@@ -11,14 +11,26 @@ import CryptoKit
 /// sweep keyed on referenced names if the folder ever matters.
 enum MediaStore {
 
+    /// Test seam: relocate the store. Never set in production.
+    static var dirOverride: URL?
+
     static var dir: URL {
-        (FileManager.default
+        dirOverride ?? (FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory()))
             .appendingPathComponent("CLIP/media", isDirectory: true)
     }
 
-    static func url(for name: String) -> URL { dir.appendingPathComponent(name) }
+    static func url(for name: String) -> URL {
+        // Content-addressed names are always bare "<hex>[.ext]" — refuse
+        // anything path-like so a hand-edited canvas.json can't read or
+        // write outside the store. The bogus path resolves to a missing
+        // file → blank card, same as any absent media.
+        guard !name.contains("/"), !name.contains(".."), !name.hasPrefix("~") else {
+            return dir.appendingPathComponent("invalid-media-name")
+        }
+        return dir.appendingPathComponent(name)
+    }
 
     static func read(_ name: String) -> Data? { try? Data(contentsOf: url(for: name)) }
 

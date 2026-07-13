@@ -27,10 +27,20 @@ enum CanvasStore {
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
     }
 
+    /// Test seam: when set, canvas.json lives under this directory instead
+    /// of the real Application Support folder. Never set in production.
+    static var rootOverride: URL?
+
     static var fileURL: URL {
-        supportDir
-            .appendingPathComponent(folderName, isDirectory: true)
+        (rootOverride ?? supportDir.appendingPathComponent(folderName, isDirectory: true))
             .appendingPathComponent(fileName)
+    }
+
+    /// Test seam: clear the skip-if-identical memo and the one-time
+    /// migration flag so test cases don't leak state into each other.
+    static func resetForTesting() {
+        saveQueue.sync { lastSaved = nil }
+        legacyEmbeddedMediaSeen = false
     }
 
     /// One-time move of the pre-rename data folder to the new `CLIP` folder,
