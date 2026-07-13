@@ -38,6 +38,13 @@ extension CollectionCanvas.Coordinator {
         // 0.18 s settle) covers both; without this a stale camera echo snaps
         // the viewport back one tick during continuous wheel-zoom.
         if zoomMoving { return }
+        // Same story for a live two-finger PAN: the published camera lags the
+        // fingers by a frame, lands outside the echo epsilon below, and
+        // re-applying it snapped the view back every tick — "scroll doesn't
+        // move the canvas". The scroll view owns the camera until the
+        // gesture (+ momentum) settles; pushCameraFromScroll keeps the model
+        // in sync and the next settled update reconciles any residue.
+        if (scroll as? CenterZoomScrollView)?.isUserScrolling == true { return }
         // Same story mid-glide: the animator owns the camera until it settles
         // (its settle does the final apply + publish); re-applying the model
         // value here would snap the view to the glide TARGET mid-flight.
@@ -58,7 +65,6 @@ extension CollectionCanvas.Coordinator {
 
     func applyCamera(_ cam: Camera) {
         guard let scroll, cam.zoom > 0 else { return }
-        Diag.log("APPLYCAMERA x=\(cam.x) y=\(cam.y) z=\(cam.zoom)")
         applyingProgrammatic = true
         defer { applyingProgrammatic = false; lastCamera = cam }
         scroll.magnification = cam.zoom

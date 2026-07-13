@@ -71,8 +71,19 @@ final class CenterZoomScrollView: NSScrollView {
     /// zoom at all. Trackpads send precise pixel deltas (small gain); notchy
     /// wheels send line deltas through a soft knee (tanh) so one aggressive
     /// notch can't jump a whole zoom level.
+    /// Time of the last user scroll event (incl. momentum tail). While a
+    /// scroll is live, `applyCameraIfChanged` must NOT re-apply the model
+    /// camera: the publish round-trip lags the fingers by a frame, so the
+    /// "echo" arrives >0.5pt behind the live position and re-applying it
+    /// snaps the view back every tick — pan freezes in place. Same class
+    /// of guard as `isMagnifying` (pinch) and `zoomMoving` (⌘-wheel).
+    private(set) var lastUserScrollAt: CFTimeInterval = 0
+    /// True while a scroll gesture (or its momentum) happened within the
+    /// last ~0.15s — the camera settle window, mirroring zoomMoving's.
+    var isUserScrolling: Bool { CACurrentMediaTime() - lastUserScrollAt < 0.15 }
+
     override func scrollWheel(with event: NSEvent) {
-        Diag.log("SCROLLVIEW.scrollWheel dx=\(event.scrollingDeltaX) dy=\(event.scrollingDeltaY) mom=\(event.momentumPhase.rawValue) cmd=\(event.modifierFlags.contains(.command)) clipOrigin=\(contentView.bounds.origin)")
+        lastUserScrollAt = CACurrentMediaTime()
         // Only DELIBERATE input seizes a glide: momentum-tail events (fingers
         // off the glass — ⌘±/fit pressed right after a fling must win) and
         // zero-delta phase bookkeeping (mayBegin from resting fingers) don't.
@@ -81,9 +92,7 @@ final class CenterZoomScrollView: NSScrollView {
             onUserScrollWheel?()
         }
         guard event.modifierFlags.contains(.command) else {
-            super.scrollWheel(with: event)
-            Diag.log("SCROLLVIEW after-super clipOrigin=\(contentView.bounds.origin) docSize=\(documentView?.frame.size ?? .zero) clipSize=\(contentView.bounds.size) mag=\(magnification)")
-            return
+            return super.scrollWheel(with: event)
         }
         let raw = event.scrollingDeltaY
         let dy: CGFloat = event.hasPreciseScrollingDeltas
@@ -150,10 +159,7 @@ final class ToolOverlayHostingView: NSHostingView<AnyView> {
     override func hitTest(_ point: NSPoint) -> NSView? {
         isSelectMode() ? nil : super.hitTest(point)
     }
-    override func scrollWheel(with event: NSEvent) {
-        Diag.log("TOOLOVERLAY.scroll forward → scrollRef=\(scrollRef != nil)")
-        scrollRef?.scrollWheel(with: event)
-    }
+    override func scrollWheel(with event: NSEvent) { scrollRef?.scrollWheel(with: event) }
     override func magnify(with event: NSEvent) { scrollRef?.magnify(with: event) }
 }
 

@@ -95,7 +95,6 @@ struct CanvasEventMonitor: NSViewRepresentable {
                         self.onPointerMove(inside ? pointInView : nil)
                         return event
                     case .scrollWheel:
-                        Diag.log("MONITOR.scroll inside=\(inside) captures=\(self.capturesScrollMagnify) dy=\(event.scrollingDeltaY)")
                         guard inside, self.capturesScrollMagnify else { return event }
                         // AppKit returns scrolls with positive dy = scroll up. Our flipped
                         // canvas (top-left origin) wants positive y = move down. Pass the
