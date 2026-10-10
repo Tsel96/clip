@@ -397,10 +397,9 @@ final class CardDetailView: NSView {
     private func detailMetadata(for node: CanvasNode) -> [(label: String, value: String, link: String?)] {
         var rows: [(label: String, value: String, link: String?)] = []
         // RESOLUTION — pixel dimensions for image.
-        if case .image(let data, _) = node.kind, let img = NSImage(data: data) {
-            let rep = img.representations.first
-            let w = rep?.pixelsWide ?? Int(img.size.width)
-            let h = rep?.pixelsHigh ?? Int(img.size.height)
+        // Header read only — the image was already decoded once for display.
+        if case .image(let data, _) = node.kind, let size = NodeMetadata.pixelSize(of: data) {
+            let (w, h) = size
             if w > 0, h > 0 { rows.append(("Resolution", "\(w) × \(h)", nil)) }
         }
         // LINK — source URL, shown compactly as host + ↗, clickable to open.

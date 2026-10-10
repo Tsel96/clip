@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import AVFoundation
+import ImageIO
 
 /// A single auto-derived metadata row to display under a card.
 struct CardMetadataRow: Equatable {
@@ -45,10 +46,10 @@ enum NodeMetadata {
                 .init(label: "File", value: filename),
                 .init(label: "Size", value: byteCount(data.count)),
             ]
-            if let img = NSImage(data: data) {
-                let s = img.size
-                let w = Int(s.width.rounded()), h = Int(s.height.rounded())
-                rows.append(.init(label: "Dimensions", value: "\(w) × \(h)"))
+            // Read the dimensions from the image header — never decode the
+            // pixels (this runs inside a SwiftUI body, on every re-render).
+            if let size = pixelSize(of: data) {
+                rows.append(.init(label: "Dimensions", value: "\(size.0) × \(size.1)"))
             }
             return rows
 
@@ -61,8 +62,7 @@ enum NodeMetadata {
                 .attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber {
                 rows.append(.init(label: "Size", value: byteCount(bytes.intValue)))
             }
-            let asset = AVURLAsset(url: fileURL)
-            let dur = CMTimeGetSeconds(asset.duration)
+            let dur = videoDuration(fileURL)
             if dur.isFinite, dur > 0 {
                 rows.append(.init(label: "Duration", value: formatDuration(dur)))
             }
@@ -75,6 +75,31 @@ enum NodeMetadata {
         case .text, .drawing, .section, .stickyNote, .webclip:
             return []
         }
+    }
+
+    /// Pixel size from the image header (no decode).
+    static func pixelSize(of data: Data) -> (Int, Int)? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Int,
+              let h = props[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        // EXIF orientations 5–8 are rotated 90°: report width/height as shown.
+        let orientation = props[kCGImagePropertyOrientation] as? Int ?? 1
+        return orientation >= 5 ? (h, w) : (w, h)
+    }
+
+    /// Video durations by file, so the header is read once per clip rather
+    /// than synchronously on every re-render of the detail panel.
+    private static var durationCache: [URL: Double] = [:]
+    private static let durationLock = NSLock()
+
+    private static func videoDuration(_ url: URL) -> Double {
+        durationLock.lock()
+        if let d = durationCache[url] { durationLock.unlock(); return d }
+        durationLock.unlock()
+        let d = CMTimeGetSeconds(AVURLAsset(url: url).duration)
+        durationLock.lock(); durationCache[url] = d; durationLock.unlock()
+        return d
     }
 
     // MARK: - Async-enriched (network fetch)

@@ -850,11 +850,21 @@ extension TweetData {
         let mp4s = variants
             .filter { $0.contentType == "video/mp4" }
             .sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }
-        return mp4s.first.flatMap { URL(string: $0.url) }
+        return mp4s.first.flatMap { Self.twitterMediaURL($0.url) }
     }
 
     var posterURL: URL? {
-        mediaDetails?.first.flatMap { URL(string: $0.mediaURLHTTPS) }
+        mediaDetails?.first.flatMap { Self.twitterMediaURL($0.mediaURLHTTPS) }
+    }
+
+    /// Media URLs come from tweet JSON — possibly via the third-party fallback
+    /// proxy — so only accept https URLs on Twitter's media CDN before they're
+    /// handed to AVPlayer / image loading.
+    static func twitterMediaURL(_ s: String) -> URL? {
+        guard let url = URL(string: s), url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              host == "twimg.com" || host.hasSuffix(".twimg.com") else { return nil }
+        return url
     }
 
     var hasPhoto: Bool {

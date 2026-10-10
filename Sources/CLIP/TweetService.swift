@@ -51,10 +51,17 @@ enum TweetService {
     static func fetch(tweetID: String) async throws -> TweetData {
         do {
             return try await fetchSyndication(tweetID: tweetID)
+        } catch TweetServiceError.notFound {
+            // Deleted / private tweet — the proxy can't do better, and there's
+            // no reason to send the id to a third party.
+            throw TweetServiceError.notFound
         } catch {
             return try await fetchReactTweet(tweetID: tweetID)
         }
     }
+
+    /// Tweet JSON is a few KB; refuse to decode anything absurd.
+    private static let maxResponseBytes = 2 * 1024 * 1024
 
     // MARK: - Syndication endpoint
 
@@ -85,6 +92,7 @@ enum TweetService {
             throw TweetServiceError.network("HTTP \(http.statusCode)")
         }
 
+        guard data.count <= maxResponseBytes else { throw TweetServiceError.decoding }
         do {
             return try JSONDecoder().decode(TweetData.self, from: data)
         } catch {
@@ -111,6 +119,7 @@ enum TweetService {
         guard (200..<300).contains(http.statusCode) else {
             throw TweetServiceError.network("HTTP \(http.statusCode)")
         }
+        guard data.count <= maxResponseBytes else { throw TweetServiceError.decoding }
         do {
             let wrapper = try JSONDecoder().decode(ReactTweetResponse.self, from: data)
             guard let tweet = wrapper.data else { throw TweetServiceError.notFound }

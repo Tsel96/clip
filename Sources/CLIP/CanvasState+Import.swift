@@ -218,8 +218,25 @@ extension CanvasState {
             return
         }
 
-        let asset = AVURLAsset(url: fileURL)
-        let duration = CMTimeGetSeconds(asset.duration)
+        // Duration + resolution checks read the file's headers with AVFoundation's
+        // async loaders — the old synchronous `asset.duration` / `tracks` calls
+        // blocked the main thread on every drop. The card is added once checks pass.
+        let centre = worldPoint ?? screenToWorld(point: viewportCentre)
+        Task { @MainActor [weak self] in
+            let asset = AVURLAsset(url: fileURL)
+            let duration = (try? await asset.load(.duration)).map(CMTimeGetSeconds) ?? .nan
+            var naturalSize: CGSize?
+            if let track = try? await asset.loadTracks(withMediaType: .video).first,
+               let props = try? await track.load(.naturalSize, .preferredTransform) {
+                naturalSize = props.0.applying(props.1)
+            }
+            self?.finishAddingVideo(fileURL: fileURL, centre: centre,
+                                    duration: duration, naturalSize: naturalSize)
+        }
+    }
+
+    private func finishAddingVideo(fileURL: URL, centre: CGPoint,
+                                   duration: Double, naturalSize: CGSize?) {
         if duration.isFinite, duration > Self.maxVideoDurationSeconds {
             alert = AlertContent(
                 title: "Video too long",
@@ -228,8 +245,7 @@ extension CanvasState {
             return
         }
 
-        if let track = asset.tracks(withMediaType: .video).first {
-            let raw = track.naturalSize.applying(track.preferredTransform)
+        if let raw = naturalSize {
             let w = abs(raw.width), h = abs(raw.height)
             if w > Self.maxVideoPixelDim || h > Self.maxVideoPixelDim {
                 alert = AlertContent(
@@ -242,7 +258,6 @@ extension CanvasState {
 
         let cardWidth: CGFloat = 480
         let cardHeight: CGFloat = 270
-        let centre = worldPoint ?? screenToWorld(point: viewportCentre)
         let position = CGPoint(
             x: centre.x - cardWidth  / 2,
             y: centre.y - cardHeight / 2

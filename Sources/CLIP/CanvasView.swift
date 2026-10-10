@@ -425,16 +425,7 @@ struct CanvasView: View {
                                     }
                                 }
                             },
-                            onMarquee: { contentRect, additive in
-                                // Content → world, then select every node the box touches.
-                                let world = contentRect.offsetBy(dx: worldBounds.minX,
-                                                                 dy: worldBounds.minY)
-                                let hits = Set(state.nodes.filter { n in
-                                    world.intersects(CGRect(x: n.position.x, y: n.position.y,
-                                                            width: n.width, height: n.height ?? 120))
-                                }.map(\.id))
-                                state.selectNodes(additive ? state.selectedNodeIDs.union(hits) : hits)
-                            },
+                            onMarquee: { ids in state.selectNodes(ids) },
                             onSelect: { id, shift in
                                 guard state.toolMode == .select else { return }
                                 if shift { state.toggleNodeSelection(id) }

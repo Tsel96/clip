@@ -262,10 +262,23 @@ extension CanvasState {
     /// (uuid-ascending) order. Returns `[]` for non-grouped nodes.
     func stackMembers(of id: UUID) -> [UUID] {
         guard let node = nodeByID[id], let group = node.groupID else { return [] }
-        return nodes
-            .filter { $0.groupID == group }
-            .map(\.id)
-            .sorted { $0.uuidString < $1.uuidString }
+        return stackGroups[group] ?? []
+    }
+
+    /// groupID → members (head-first), built once per document version. The
+    /// per-node `isHiddenByStack` / `isStackHead` checks run for every card
+    /// on every render; rescanning the page for each made that O(cards²).
+    private var stackGroups: [UUID: [UUID]] {
+        if let c = stackIndexCache, c.version == pagesVersion, c.page == activePageID {
+            return c.groups
+        }
+        var groups: [UUID: [UUID]] = [:]
+        for n in nodes {
+            if let g = n.groupID { groups[g, default: []].append(n.id) }
+        }
+        groups = groups.mapValues { $0.sorted { $0.uuidString < $1.uuidString } }
+        stackIndexCache = (pagesVersion, activePageID, groups)
+        return groups
     }
 
     /// Expand a selection set to include every member of any card-stack

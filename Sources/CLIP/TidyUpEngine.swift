@@ -217,6 +217,26 @@ enum TidyUpEngine {
     /// Iteration over the `remaining` set is sorted by edge index so the
     /// algorithm is fully deterministic — same input always yields the
     /// same output, important for testability.
+    /// First index whose value is ≥ `x` (values sorted ascending).
+    private static func lowerBound(_ values: [Double], _ x: Double) -> Int {
+        var lo = 0, hi = values.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if values[mid] < x { lo = mid + 1 } else { hi = mid }
+        }
+        return lo
+    }
+
+    /// First index whose value is > `x` (values sorted ascending).
+    private static func upperBound(_ values: [Double], _ x: Double) -> Int {
+        var lo = 0, hi = values.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if values[mid] <= x { lo = mid + 1 } else { hi = mid }
+        }
+        return lo
+    }
+
     private static func ransacCluster(
         edges: [Edge],
         axis: TidyAlignmentCluster.Axis,
@@ -234,6 +254,13 @@ enum TidyUpEngine {
 
             // Deterministic seed order.
             let seeds = remaining.sorted()
+            // The pool sorted by value, so each inlier test is a binary-searched
+            // window [line - tol, line + tol] instead of a scan of every edge
+            // (that scan, per seed per refit, made this O(R³) on big selections).
+            let pool = seeds.sorted {
+                edges[$0].value != edges[$1].value ? edges[$0].value < edges[$1].value : $0 < $1
+            }
+            let poolValues = pool.map { Double(edges[$0].value) }
 
             for seed in seeds {
                 var line = Double(edges[seed].value)
@@ -241,16 +268,12 @@ enum TidyUpEngine {
 
                 // Iterate to convergence (bounded at 32 — typical = 2-4).
                 for _ in 0..<32 {
-                    var fresh = Set<Int>()
+                    let lo = lowerBound(poolValues, line - Double(tolerance))
+                    let hi = upperBound(poolValues, line + Double(tolerance))
+                    let fresh = Set(pool[lo..<hi])
                     var sum = 0.0
-                    var count = 0
-                    for j in remaining {
-                        if abs(Double(edges[j].value) - line) <= Double(tolerance) {
-                            fresh.insert(j)
-                            sum += Double(edges[j].value)
-                            count += 1
-                        }
-                    }
+                    for k in lo..<hi { sum += poolValues[k] }
+                    let count = hi - lo
                     let newLine = count > 0 ? sum / Double(count) : line
                     let stable = (fresh == inliers) && abs(newLine - line) < 1e-6
                     inliers = fresh
@@ -491,23 +514,28 @@ enum TidyUpEngine {
         }
         pending.sort { $0.score > $1.score }
 
+        // The normal-equation system (AᵀWA + reg²·I) x = AᵀWb + reg²·orig is
+        // kept SPARSE and updated incrementally: each constraint touches one
+        // or two nodes, so adding (or rolling back) one is O(1), and each
+        // Gauss-Seidel sweep is O(n + nnz) instead of rebuilding and sweeping
+        // a dense n×n matrix per constraint (which was O(C·n³) overall and
+        // froze Tidy Up on ~100 cards).
         let regWeight = 1.0
-        var accepted: [Constraint] = []
-        var currentCoords = originals.map(Double.init)
+        let reg2 = regWeight * regWeight
+        let originalsD = originals.map(Double.init)
+        var system = SparseSystem(n: n)
+        for i in 0..<n {
+            system.diag[i] = reg2
+            system.rhs[i] = reg2 * originalsD[i]
+        }
+        var currentCoords = originalsD
         var currentEnergy = 0.0
         var dropped = 0
         let totalBudget = energyBudgetPerNode * Double(n)
-        let originalsD = originals.map(Double.init)
 
         for c in pending {
-            accepted.append(c)
-            let newCoords = solveNormalEquations(
-                originals: originalsD,
-                regWeight: regWeight,
-                constraints: accepted,
-                n: n,
-                warmStart: currentCoords
-            )
+            system.add(c, sign: 1)
+            let newCoords = system.solve(warmStart: currentCoords)
             var newEnergy = 0.0
             for i in 0..<n {
                 let d = newCoords[i] - originalsD[i]
@@ -518,7 +546,7 @@ enum TidyUpEngine {
                 currentCoords = newCoords
                 currentEnergy = newEnergy
             } else {
-                accepted.removeLast()
+                system.add(c, sign: -1)          // roll the constraint back out
                 dropped += 1
             }
         }
@@ -529,53 +557,61 @@ enum TidyUpEngine {
         )
     }
 
-    /// Solve `(AᵀWA + reg²·I) x = AᵀWb + reg²·orig` by Gauss-Seidel.
-    /// The regularizer guarantees diagonal dominance ⇒ guaranteed
-    /// convergence in O(n) iterations. Returns the new coordinate vector.
-    private static func solveNormalEquations(
-        originals: [Double],
-        regWeight: Double,
-        constraints: [Constraint],
-        n: Int,
-        warmStart: [Double]
-    ) -> [Double] {
-        var M = [[Double]](repeating: [Double](repeating: 0, count: n), count: n)
-        var v = [Double](repeating: 0, count: n)
+    /// Sparse symmetric system for `solveAxis`: diagonal + per-row
+    /// off-diagonal entries (spacing constraints couple two nodes).
+    private struct SparseSystem {
+        var diag: [Double]
+        var off: [[Int: Double]]
+        var rhs: [Double]
 
-        let reg2 = regWeight * regWeight
-        for i in 0..<n {
-            M[i][i] += reg2
-            v[i] += reg2 * originals[i]
+        init(n: Int) {
+            diag = [Double](repeating: 0, count: n)
+            off = [[Int: Double]](repeating: [:], count: n)
+            rhs = [Double](repeating: 0, count: n)
         }
-        for c in constraints {
-            let w2 = c.weight * c.weight
-            for (idxA, coefA) in c.terms {
-                v[idxA] += w2 * coefA * c.rhs
-                for (idxB, coefB) in c.terms {
-                    M[idxA][idxB] += w2 * coefA * coefB
+
+        /// Add (`sign` = 1) or remove (`sign` = -1) one constraint's
+        /// contribution to AᵀWA and AᵀWb.
+        mutating func add(_ c: Constraint, sign: Double) {
+            let w2 = sign * c.weight * c.weight
+            for (a, coefA) in c.terms {
+                rhs[a] += w2 * coefA * c.rhs
+                for (b, coefB) in c.terms {
+                    let val = w2 * coefA * coefB
+                    if a == b {
+                        diag[a] += val
+                    } else {
+                        let next = (off[a][b] ?? 0) + val
+                        off[a][b] = abs(next) < 1e-12 ? nil : next
+                    }
                 }
             }
         }
 
-        var x = warmStart
-        let maxIter = max(50, n * 4)
-        let tol = 1e-6
-        for _ in 0..<maxIter {
-            var maxDelta = 0.0
-            for i in 0..<n {
-                let mii = M[i][i]
-                guard mii > 1e-12 else { continue }
-                var sigma = 0.0
-                for j in 0..<n where j != i {
-                    sigma += M[i][j] * x[j]
+        /// Gauss-Seidel from `warmStart`. The regularizer keeps the matrix
+        /// diagonally dominant ⇒ guaranteed convergence; warm-starting from
+        /// the previous solution means a new constraint usually settles in a
+        /// handful of sweeps.
+        func solve(warmStart: [Double]) -> [Double] {
+            let n = diag.count
+            var x = warmStart
+            let maxIter = max(50, n * 4)
+            let tol = 1e-6
+            for _ in 0..<maxIter {
+                var maxDelta = 0.0
+                for i in 0..<n {
+                    let mii = diag[i]
+                    guard mii > 1e-12 else { continue }
+                    var sigma = 0.0
+                    for (j, mij) in off[i] { sigma += mij * x[j] }
+                    let xi = (rhs[i] - sigma) / mii
+                    let delta = abs(xi - x[i])
+                    if delta > maxDelta { maxDelta = delta }
+                    x[i] = xi
                 }
-                let xi = (v[i] - sigma) / mii
-                let delta = abs(xi - x[i])
-                if delta > maxDelta { maxDelta = delta }
-                x[i] = xi
+                if maxDelta < tol { break }
             }
-            if maxDelta < tol { break }
+            return x
         }
-        return x
     }
 }

@@ -211,7 +211,9 @@ struct CanvasConfig {
     /// Double-click a node → activate (text edit / stack focus / lightbox).
     let onActivate: (UUID) -> Void
     /// Marquee box-select: rect in CONTENT coords; Bool = additive (Shift held).
-    let onMarquee: (CGRect, Bool) -> Void
+    /// Marquee drag: the complete selection to show (already merged with the
+    /// pre-drag selection for a Shift-marquee). Called only when it changes.
+    let onMarquee: (Set<UUID>) -> Void
     /// Native click-select: (node id, shift held).
     let onSelect: (UUID, Bool) -> Void
     /// Recolor a node from the radial picker (CanvasView maps the NSColor to the

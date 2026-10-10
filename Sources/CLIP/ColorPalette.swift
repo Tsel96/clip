@@ -17,10 +17,16 @@ enum NativePalette {
         let w = max(1, Int(Double(cg.width) * f)), h = max(1, Int(Double(cg.height) * f))
         var data = [UInt8](repeating: 0, count: w * h * 4)
         let space = CGColorSpaceCreateDeviceRGB()
-        guard let ctx = CGContext(data: &data, width: w, height: h, bitsPerComponent: 8,
-                                  bytesPerRow: w * 4, space: space,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return [] }
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        // Pointer scoped to withUnsafeMutableBytes — `&data` is only valid for
+        // the CGContext init call itself, not the later draw.
+        let drawn: Bool = data.withUnsafeMutableBytes { raw in
+            guard let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                      bytesPerRow: w * 4, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drawn else { return [] }
 
         // 4 bits per channel → 4096 buckets, summed then averaged.
         var sums: [Int: (r: Double, g: Double, b: Double, n: Int)] = [:]

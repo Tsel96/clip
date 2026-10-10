@@ -44,6 +44,12 @@ final class CanvasInputView: NSView {
     }
 
     private var mode: Mode = .idle
+    /// Selection when a Shift-marquee began: the box adds to THIS, so
+    /// shrinking the box drops cards again (unioning with the live selection
+    /// each tick made a Shift-marquee only ever grow).
+    private var marqueeBase: Set<UUID> = []
+    /// Last set the marquee selected — skip re-publishing an identical one.
+    private var lastMarqueeHits: Set<UUID>?
     private var startPt: NSPoint = .zero            // content coords
     private var resizeGrip: Grip?
     private var resizeNodeID: UUID?
@@ -51,6 +57,9 @@ final class CanvasInputView: NSView {
     private var moveStartPos: [UUID: CGPoint] = [:] // world coords
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
+    /// Frames of the cards NOT being moved, for snapping — they can't change
+    /// mid-drag, so they're computed once per drag instead of every tick.
+    private var moveSnapOthers: [CGRect]?
     private var connectSourceID: UUID?              // drag-to-connect origin node
     private var connectSourceSide: ConnSide?        // side the drag started from (pinned)
     private var labelDragID: UUID?                  // connector whose label is being dragged
@@ -329,6 +338,7 @@ final class CanvasInputView: NSView {
             let ids = live.contains(n.id) ? live.union([n.id]) : [n.id]
             moveStartPos = [:]
             for m in p.nodes where ids.contains(m.id) { moveStartPos[m.id] = m.position }
+            moveSnapOthers = nil
         } else {
             // Native connector click-select (before marquee): if the click lands
             // on a connector line, select it and stop.
@@ -370,10 +380,11 @@ final class CanvasInputView: NSView {
                let pn = p.nodes.first(where: { $0.id == pid }) {
                 let rect = CGRect(x: sp.x + dx, y: sp.y + dy,
                                   width: pn.width, height: pn.height ?? 120)
-                let others = p.nodes.filter { moveStartPos[$0.id] == nil }.map {
+                let others = moveSnapOthers ?? p.nodes.filter { moveStartPos[$0.id] == nil }.map {
                     CGRect(x: $0.position.x, y: $0.position.y,
                            width: $0.width, height: $0.height ?? 120)
                 }
+                moveSnapOthers = others
                 let result = AlignmentEngine.snap(draggingRect: rect, otherRects: others,
                                                   zoom: mag, snapToGrid: false)
                 // Equal-spacing pass — on the alignment-snapped rect, only on an
@@ -400,14 +411,22 @@ final class CanvasInputView: NSView {
                 // drag stays a "click" so mouseUp can deselect (Fix A).
                 if abs(dx) < 4 / mag && abs(dy) < 4 / mag { return }
                 mode = .marquee
+                marqueeBase = event.modifierFlags.contains(.shift) ? p.liveSelection() : []
+                lastMarqueeHits = nil
             }
             let rect = CGRect(x: min(startPt.x, pt.x), y: min(startPt.y, pt.y),
                               width: abs(dx), height: abs(dy))
             marqueeLayer.lineWidth = 1.5 / mag
             marqueeLayer.path = CGPath(rect: rect, transform: nil)
             marqueeLayer.isHidden = false
-            p.onMarquee(rect, event.modifierFlags.contains(.shift))
-            coordinator?.refreshChrome()
+            // Only publish when the set of boxed cards actually changes — not
+            // on every mouse-move tick.
+            let hits = marqueeHits(rect, p)
+            if hits != lastMarqueeHits {
+                lastMarqueeHits = hits
+                p.onMarquee(marqueeBase.union(hits))
+                coordinator?.refreshChrome()
+            }
         case .draw:
             drawPoints.append(pt)
             updateDrawPreview(p)
@@ -507,6 +526,7 @@ final class CanvasInputView: NSView {
         coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
         mode = .idle; resizeGrip = nil; resizeNodeID = nil
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
+        moveSnapOthers = nil
     }
 
     private func beginIfNeeded(_ p: CanvasConfig, primary: UUID?) {
@@ -526,6 +546,17 @@ final class CanvasInputView: NSView {
         drawLayer.lineWidth = p.drawWidth()   // content units → scales with zoom
         drawLayer.isHidden = false
         CATransaction.commit()
+    }
+
+    /// Cards the marquee box (content coords) touches.
+    private func marqueeHits(_ rect: CGRect, _ p: CanvasConfig) -> Set<UUID> {
+        let minX = p.worldBounds.minX, minY = p.worldBounds.minY
+        var hits = Set<UUID>()
+        for n in p.nodes where rect.intersects(CGRect(x: n.position.x - minX, y: n.position.y - minY,
+                                                       width: n.width, height: n.height ?? 120)) {
+            hits.insert(n.id)
+        }
+        return hits
     }
 
     private func applyResize(dx: CGFloat, dy: CGFloat, event: NSEvent, p: CanvasConfig) {

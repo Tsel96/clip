@@ -742,16 +742,23 @@ struct PixelSampler {
         let w = max(1, Int(Double(cg.width) * scale))
         let h = max(1, Int(Double(cg.height) * scale))
         var buf = [UInt8](repeating: 0, count: w * h * 4)
-        guard let ctx = CGContext(
-            data: &buf, width: w, height: h, bitsPerComponent: 8,
-            bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
-        ) else { return nil }
-        // Flip so buffer row 0 == top of image (matches SwiftUI's y-down).
-        ctx.translateBy(x: 0, y: CGFloat(h))
-        ctx.scaleBy(x: 1, y: -1)
-        ctx.interpolationQuality = .high
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        // The context must only touch `buf` inside withUnsafeMutableBytes —
+        // `data: &buf` hands CoreGraphics a pointer that's only valid for the
+        // duration of the init call, not for the later draw.
+        let drawn: Bool = buf.withUnsafeMutableBytes { raw in
+            guard let ctx = CGContext(
+                data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+            ) else { return false }
+            // Flip so buffer row 0 == top of image (matches SwiftUI's y-down).
+            ctx.translateBy(x: 0, y: CGFloat(h))
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.interpolationQuality = .high
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drawn else { return nil }
         return PixelSampler(w: w, h: h, px: buf)
     }
 
@@ -821,13 +828,19 @@ enum PaletteExtractor {
     static func quantize(_ cg: CGImage, count: Int) -> [Color] {
         let dim = 32
         var px = [UInt8](repeating: 0, count: dim * dim * 4)
-        guard let ctx = CGContext(
-            data: &px, width: dim, height: dim, bitsPerComponent: 8,
-            bytesPerRow: dim * 4, space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
-        ) else { return [] }
-        ctx.interpolationQuality = .medium
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: dim, height: dim))
+        // Keep the context's pointer scoped to withUnsafeMutableBytes (see
+        // PixelSampler.fromCGImage).
+        let drawn: Bool = px.withUnsafeMutableBytes { raw in
+            guard let ctx = CGContext(
+                data: raw.baseAddress, width: dim, height: dim, bitsPerComponent: 8,
+                bytesPerRow: dim * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+            ) else { return false }
+            ctx.interpolationQuality = .medium
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: dim, height: dim))
+            return true
+        }
+        guard drawn else { return [] }
 
         var buckets: [Int: (n: Int, r: Int, g: Int, b: Int)] = [:]
         for i in stride(from: 0, to: dim * dim * 4, by: 4) {

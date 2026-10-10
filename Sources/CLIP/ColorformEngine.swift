@@ -218,6 +218,15 @@ enum ColorformEngine {
                 idx += 1
                 if idx > n * 4 { break }   // bail out, shouldn't happen
             }
+            // Last resort so the indexing below can never run past the end:
+            // park any still-missing centres on a row well clear of the rest.
+            var spare = 0
+            while clusterCentres.count < n {
+                let top = clusterCentres.map(\.y).min() ?? 0
+                clusterCentres.append(CGPoint(x: CGFloat(spare) * minDist * 2,
+                                              y: top - minDist * 2))
+                spare += 1
+            }
         }
 
         // 3. Combine; bulb radius is max(content + 60, minBulbRadius) so

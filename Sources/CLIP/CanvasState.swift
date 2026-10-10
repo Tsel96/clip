@@ -13,6 +13,8 @@ final class CanvasState: ObservableObject {
     /// body runs on every pan/zoom tick) reuse derived values until the
     /// document actually changes.
     private(set) var pagesVersion = 0
+    /// Backing store for `stackGroups` (CanvasState+Stacks).
+    var stackIndexCache: (version: Int, page: UUID, groups: [UUID: [UUID]])?
     @Published var activePageID: UUID { didSet { if activePageID != oldValue { cachedWorldBounds = nil } } }
 
     /// iPhone → canvas share inbox: watches a user-chosen iCloud Drive
