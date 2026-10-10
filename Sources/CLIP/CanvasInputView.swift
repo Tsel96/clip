@@ -54,6 +54,9 @@ final class CanvasInputView: NSView {
     private var resizeGrip: Grip?
     private var resizeNodeID: UUID?
     private var resizeStartFrame: CGRect = .zero    // world coords
+    /// Latest live resize frame (world coords) — shown on screen every tick,
+    /// written to the model ONCE on mouse-up (see `applyResize`).
+    private var resizeLiveFrame: CGRect?
     private var moveStartPos: [UUID: CGPoint] = [:] // world coords
     private var moveDelta: CGPoint = .zero          // last drag delta (committed on mouse-up)
     private var primaryMoveID: UUID?
@@ -480,6 +483,9 @@ final class CanvasInputView: NSView {
             }
             coordinator?.endLiveReposition(moveStartPos, dx: moveDelta.x, dy: moveDelta.y)
         case .resize:
+            // Commit the final size to the model once, then close the undo step.
+            if let id = resizeNodeID, let frame = resizeLiveFrame { p.onResize(id, frame) }
+            resizeLiveFrame = nil
             if didBegin { p.onInteractionEnded() }
         case .draw:
             if drawPoints.count >= 2 {
@@ -524,6 +530,9 @@ final class CanvasInputView: NSView {
         marqueeLayer.isHidden = true; marqueeLayer.path = nil
         drawLayer.isHidden = true; drawLayer.path = nil; drawPoints = []
         coordinator?.guideController?.update([], worldMin: .zero, magnification: mag)
+        // A resize that ends without mouse-up (cancelled) never reached the
+        // model — put the card back to its real size.
+        if resizeLiveFrame != nil { resizeLiveFrame = nil; coordinator?.restoreFromModel() }
         mode = .idle; resizeGrip = nil; resizeNodeID = nil
         moveStartPos = [:]; moveDelta = .zero; primaryMoveID = nil; didBegin = false; clickedSelectedNoShift = nil
         moveSnapOthers = nil
@@ -578,7 +587,14 @@ final class CanvasInputView: NSView {
         w = max(minS.width, w); h = max(minS.height, h)
         let ox = g.left ? (start.maxX - w) : start.minX
         let oy = g.top  ? (start.maxY - h) : start.minY
-        p.onResize(id, CGRect(x: ox, y: oy, width: w, height: h))
+        // Text cards auto-size their height; only the width is user-set.
+        if case .text = n.kind { h = start.height }
+        // Visual only: resizing the item view directly avoids publishing the
+        // whole document (and re-running the SwiftUI canvas body plus a full
+        // diff) on every mouse-move tick. The model is written on mouse-up.
+        let frame = CGRect(x: ox, y: oy, width: w, height: h)
+        resizeLiveFrame = frame
+        coordinator?.liveResize(id, worldFrame: frame)
     }
 
     // Cursor management is handled entirely in `cursorUpdate(with:)` (hand /

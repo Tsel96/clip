@@ -16,22 +16,32 @@ final class MinimapThumbs: ObservableObject {
     private var thumbs: [UUID: NSImage] = [:]
     private var inFlight: Set<UUID> = []
 
+    /// Pure lookup — safe inside a `Canvas` draw closure (no side effects).
     func thumbnail(for node: CanvasNode) -> NSImage? {
         switch node.kind {
-        case .image(let data, _):
-            if let hit = thumbs[node.id] { return hit }
-            decode(id: node.id, data: data)
-            return nil
+        case .image, .tweet, .instagram, .youtube:
+            return thumbs[node.id]
         case .video(let fileURL, _):
             return VideoPosterStore.cachedPoster(for: fileURL)
-        case .tweet, .instagram, .youtube:
-            // Web embeds: poster fetched once via the same pipeline the
-            // Colorform palette extractor uses, then cached here.
-            if let hit = thumbs[node.id] { return hit }
-            fetchPoster(for: node)
-            return nil
         default:
             return nil
+        }
+    }
+
+    /// Start decoding / fetching thumbnails that aren't cached yet. Called
+    /// from the view's `.task`, never from drawing; results bump `version`.
+    func prefetch(_ nodes: [CanvasNode]) {
+        for node in nodes where thumbs[node.id] == nil {
+            switch node.kind {
+            case .image(let data, _):
+                decode(id: node.id, data: data)
+            case .tweet, .instagram, .youtube:
+                // Web embeds: poster fetched once via the same pipeline the
+                // Colorform palette extractor uses, then cached here.
+                fetchPoster(for: node)
+            default:
+                break
+            }
         }
     }
 
@@ -128,6 +138,11 @@ struct MinimapView: View {
             )
         }
         .help("Click to jump  ·  Drag to pan")
+        // Thumbnails are requested here (re-run whenever the document
+        // changes), so the draw closure above stays a pure read.
+        .task(id: state.pagesVersion) {
+            if !showsViewport { thumbs.prefetch(state.nodes) }
+        }
         .accessibilityElement()
         .accessibilityLabel("Minimap")
         .accessibilityHint("Shows the whole board. Use the zoom commands in the View menu to move around.")

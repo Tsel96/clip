@@ -792,7 +792,7 @@ private struct ColorLoupe: View {
                 .overlay(Circle().strokeBorder(.white.opacity(0.95), lineWidth: 2))
                 .shadow(color: .black.opacity(0.45), radius: 4, y: 2)
             Text(hex)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: Font.clipMinimumSize, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(.black.opacity(0.72), in: Capsule())

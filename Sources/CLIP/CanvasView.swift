@@ -977,7 +977,7 @@ struct SpacingIndicatorsOverlay: View {
                 let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
                 let resolved = ctx.resolve(
                     Text("\(Int(ind.distance.rounded()))")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: Font.clipMinimumSize, weight: .semibold))
                         .foregroundColor(Color.white)
                 )
                 let textSize = resolved.measure(in: CGSize(width: 200, height: 60))

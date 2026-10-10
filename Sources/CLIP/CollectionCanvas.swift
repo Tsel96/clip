@@ -538,6 +538,57 @@ struct CollectionCanvas: NSViewRepresentable {
         /// (it re-applies its cached layout every pass, which is why direct frame
         /// sets "did nothing"), but it does NOT touch the layer transform — so a
         /// translate rides on top of the layout and actually moves the card.
+        /// Live resize preview: put the new frame straight into the layout
+        /// cache + item view (and its connectors) without touching the model.
+        /// The SwiftUI-hosted fallback content is re-hosted at the new size so
+        /// it re-flows; native content follows via constraints. The model is
+        /// committed once on mouse-up, which runs the normal `apply` path.
+        func liveResize(_ id: UUID, worldFrame: CGRect) {
+            guard let cv = collection, let layout = layout,
+                  let idx = nodes.firstIndex(where: { $0.id == id }),
+                  idx < layout.itemFrames.count else { return }
+            let minX = config.worldBounds.minX, minY = config.worldBounds.minY
+            let frame = CGRect(x: worldFrame.minX - minX, y: worldFrame.minY - minY,
+                               width: max(1, worldFrame.width), height: max(1, worldFrame.height))
+            let oldSize = layout.itemFrames[idx].size
+            layout.itemFrames[idx] = frame
+            layout.invalidateLayout()
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            if let item = cv.item(at: IndexPath(item: idx, section: 0)) {
+                item.view.frame = frame
+                if oldSize != frame.size, let hosted = item as? HostingCollectionItem, !hosted.usesNativeContent {
+                    var preview = nodes[idx]
+                    preview.position = worldFrame.origin
+                    preview.width = worldFrame.width
+                    if case .text = preview.kind {} else { preview.height = worldFrame.height }
+                    hosted.host(config.content(preview))
+                }
+            }
+            CATransaction.commit()
+            refreshChrome()                 // selection ring / handles follow the new frame
+            if let cc = connectorController {
+                var frames: [UUID: CGRect] = [:]
+                for n in nodes {
+                    frames[n.id] = CGRect(x: n.position.x - minX, y: n.position.y - minY,
+                                          width: max(1, n.width), height: max(1, n.height ?? 120))
+                }
+                frames[id] = frame
+                cc.update(connectors: config.connectors, nodeFrames: frames,
+                          selected: config.selectedConnectorIDs,
+                          magnification: scroll?.magnification ?? 1)
+                lastConnectorKey = nil      // next refresh must redraw from the model
+            }
+        }
+
+        /// Drop any live preview (e.g. a resize that was cancelled) and re-lay
+        /// everything out from the model.
+        func restoreFromModel() {
+            lastAppliedKey = nil
+            lastConnectorKey = nil
+            layout?.itemFrames = []         // force the frames-changed path
+            apply(config)
+        }
+
         func liveReposition(_ startPos: [UUID: CGPoint], dx: CGFloat, dy: CGFloat) {
             guard let cv = collection else { return }
             let t = CATransform3DMakeTranslation(dx, dy, 0)

@@ -670,7 +670,6 @@ private func easeInOutCubic(_ t: Double) -> Double {
 final class RevealRenderer {
     private let texture: MTLTexture?
     private var target: MTLTexture?
-    private var buffer: [UInt8] = []
     private let style: RevealStyle
     private var width = 0
     private var height = 0
@@ -690,7 +689,6 @@ final class RevealRenderer {
         target = device.makeTexture(descriptor: d)
         self.width = width
         self.height = height
-        buffer = [UInt8](repeating: 0, count: width * height * 4)
     }
 
     /// Render one frame at `progress`; returns a premultiplied-RGBA CGImage.
@@ -722,12 +720,17 @@ final class RevealRenderer {
         cmd.commit()
         cmd.waitUntilCompleted()
 
+        // Read the GPU result straight into a fresh buffer that the CGImage
+        // then owns (one copy per frame). A shared, reused buffer would need a
+        // second copy, because Core Animation may still be reading the
+        // previous frame's image when the next frame renders.
         let bytesPerRow = width * 4
-        buffer.withUnsafeMutableBytes { raw in
+        var frame = Data(count: bytesPerRow * height)
+        frame.withUnsafeMutableBytes { raw in
             target.getBytes(raw.baseAddress!, bytesPerRow: bytesPerRow,
                             from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
         }
-        guard let provider = CGDataProvider(data: Data(buffer) as CFData) else { return nil }
+        guard let provider = CGDataProvider(data: frame as CFData) else { return nil }
         let bitmap = CGBitmapInfo(rawValue:
             CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
         return CGImage(width: width, height: height,

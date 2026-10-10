@@ -11,10 +11,16 @@ enum ClipFont {
 }
 
 extension Font {
-    /// SF Mono at `size`. `heavy` selects a bold cut for emphasis (the
-    /// references lean on uppercase + tracking more than a weight ramp).
+    /// Smallest text size the UI chrome renders. 9–10.5 pt SF Mono captions
+    /// were hard to read for low-vision users (macOS has no Dynamic Type for
+    /// custom sizes), so every `.clip` size is floored here in one place.
+    static let clipMinimumSize: CGFloat = 11
+
+    /// SF Mono at `size` (never below `clipMinimumSize`). `heavy` selects a
+    /// bold cut for emphasis (the references lean on uppercase + tracking
+    /// more than a weight ramp).
     static func clip(_ size: CGFloat, _ heavy: Bool = false) -> Font {
-        .system(size: size, weight: heavy ? .bold : .regular, design: .monospaced)
+        .system(size: max(size, clipMinimumSize), weight: heavy ? .bold : .regular, design: .monospaced)
     }
 }
 

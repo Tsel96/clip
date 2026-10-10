@@ -143,6 +143,8 @@ private struct ArchiveListRow: View {
         Button(action: onOpen) {
             HStack(spacing: 12) {
                 thumbnail
+                    // Lazy rows: only on-screen rows ask for their thumbnail.
+                    .task(id: node.id) { MinimapThumbs.shared.prefetch([node]) }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
