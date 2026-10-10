@@ -6,27 +6,31 @@ import ImageIO
 final class TidyUpEngineTests: XCTestCase {
 
     func testNearlyAlignedCardsSnapToACommonEdge() {
-        let rects = [
+        let rects: [CGRect] = [
             CGRect(x: 100, y: 100, width: 200, height: 150),
             CGRect(x: 102, y: 300, width: 200, height: 150),
             CGRect(x: 99, y: 500, width: 200, height: 150),
         ]
-        let (out, _) = TidyUpEngine.tidy(rects: rects, zoom: 1)
+        let out: [CGRect] = TidyUpEngine.tidy(rects: rects, zoom: 1).rects
         XCTAssertEqual(out.count, rects.count)
         // The solver is a weighted least-squares pull toward alignment (it
         // balances against staying put), so the edges converge, not snap.
-        let spreadBefore = rects.map(\.minX).max()! - rects.map(\.minX).min()!
-        let spreadAfter = out.map(\.minX).max()! - out.map(\.minX).min()!
-        XCTAssertLessThan(spreadAfter, spreadBefore / 2, "left edges should pull together: \(out.map(\.minX))")
+        let leftsBefore: [CGFloat] = rects.map { (r: CGRect) in r.minX }
+        let leftsAfter: [CGFloat] = out.map { (r: CGRect) in r.minX }
+        let spreadBefore = leftsBefore.max()! - leftsBefore.min()!
+        let spreadAfter = leftsAfter.max()! - leftsAfter.min()!
+        XCTAssertLessThan(spreadAfter, spreadBefore / 2, "left edges should pull together: \(leftsAfter)")
     }
 
     func testSizesAreNeverChanged() {
-        let rects = (0..<12).map { i in
-            CGRect(x: Double(i % 4) * 230 + Double(i % 3), y: Double(i / 4) * 180,
-                   width: 200 + Double(i), height: 150 - Double(i))
+        var rects: [CGRect] = []
+        for i in 0..<12 {
+            let x = CGFloat(i % 4) * 230 + CGFloat(i % 3)
+            let y = CGFloat(i / 4) * 180
+            rects.append(CGRect(x: x, y: y, width: 200 + CGFloat(i), height: 150 - CGFloat(i)))
         }
-        let (out, _) = TidyUpEngine.tidy(rects: rects, zoom: 1)
-        XCTAssertEqual(out.map(\.size), rects.map(\.size))
+        let out: [CGRect] = TidyUpEngine.tidy(rects: rects, zoom: 1).rects
+        XCTAssertEqual(out.map { (r: CGRect) in r.size }, rects.map { (r: CGRect) in r.size })
     }
 
     func testDegenerateInputs() {
@@ -42,12 +46,14 @@ final class TidyUpEngineTests: XCTestCase {
     /// Regression guard for the old O(C·n³) solver, which took seconds here.
     func testLargeSelectionFinishesQuickly() {
         var rng = SeededRandom(seed: 42)
-        let rects = (0..<150).map { _ in
-            CGRect(x: rng.next(in: 0...4000), y: rng.next(in: 0...4000),
-                   width: rng.next(in: 80...400), height: rng.next(in: 80...400))
+        var rects: [CGRect] = []
+        for _ in 0..<150 {
+            let x = rng.next(in: 0...4000), y = rng.next(in: 0...4000)
+            let w = rng.next(in: 80...400), h = rng.next(in: 80...400)
+            rects.append(CGRect(x: x, y: y, width: w, height: h))
         }
         let start = Date()
-        let (out, _) = TidyUpEngine.tidy(rects: rects, zoom: 1)
+        let out: [CGRect] = TidyUpEngine.tidy(rects: rects, zoom: 1).rects
         XCTAssertEqual(out.count, rects.count)
         XCTAssertLessThan(Date().timeIntervalSince(start), 5)
     }
