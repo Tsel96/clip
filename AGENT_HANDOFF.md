@@ -1,3 +1,7 @@
+> **Possibly stale (Oct 2026):** this handoff predates the hardening pass on
+> `claude/sleepy-fermi-3xh28d`. Check the current code before following it;
+> see `MEMORY.md` for the up-to-date overview.
+
 # CLIP — Agent Handoff: object HOVER + SELECTION states
 
 Native macOS canvas app **CLIP** (Swift / SwiftUI / AppKit, SwiftPM) at `/Users/sergei/clip`.

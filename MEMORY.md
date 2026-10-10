@@ -5,8 +5,8 @@ CLIP is a native macOS SwiftUI infinite-canvas moodboard (`Sources/CLIP/`,
 ~65 files, SwiftPM, macOS 13+, **Apple Silicon**, uses the macOS 26 Liquid
 Glass API so it needs the Xcode 26 / macOS 26 SDK to build).
 
-**Working branch:** `claude/code-audit-performance-o0u336` (PR #2 was the
-original perf pass; subsequent work continues on this branch).
+**Branches:** `main` publishes releases (installed copies auto-update);
+work happens on `claude/*` branches, which CI only builds + tests.
 **Build:** `swift build`; bundle via `Scripts/make-app.sh` (DMG=1 ZIP=1).
 This dev env is **Linux — cannot compile AppKit**; the macOS-26 GitHub
 Actions workflow (`.github/workflows/release.yml`) is the compile gate and
@@ -42,32 +42,26 @@ publishes releases.
   (`CanvasState.jumpToNode(_:onPage:)`); new Pages/Outline sidebar switcher
   (`OutlinePanel.swift`); shared helpers in `NodeSearch.swift`.
 
-## WIP — pushed but DOES NOT COMPILE (Web Clips, planned feature #2)
-New `.webclip(url)` Kind = a rendered card for any http(s) URL (replaces the
-old "unsupported URL" alert; arbitrary iPhone-shared links also land).
-- **Done:** Models (Kind case/factory/Codable encode+decode), NodeSearch
-  (summary→url, icon→globe), DraggableNode dispatch, CardLightboxLayer
-  (badge "WEB" + CardContentView), CanvasState (renderedHeight 320, autoTag
-  web/link, `addWebClip`, addPostFromURL fallback, ingestSharedURL
-  fallback), MinimapView fill (blue).
-- **TODO to compile (every remaining exhaustive `switch node.kind`):**
-  - `StackVisualView.swift` MemberCoverView (~line 222) — add `.webclip` arm
-  - `StackFocusEngine.swift` naturalSize (~line 73) — add `.webclip` to the
-    `.image,.video,.tweet,.instagram,.youtube,.drawing` raw group
-  - `ArchiveListView.swift` — 4 switches: title, kindLabel, kindSymbol,
-    kindColor — add `.webclip` arms
-  - NEW `WebClipCardView.swift` — clone `InstagramCardView` (shared
-    WKProcessPool, isLive gating, dismantleNSView teardown, desktop UA);
-    on `didFinish` call `takeSnapshot` → save to the snapshot store; resting
-    (not-live) state shows the cached snapshot or a `globe`+host placeholder.
-    Signature used by callers: `WebClipCardView(url:isLive:nodeID:)`.
-  - NEW `WebClipSnapshotStore.swift` — PNG cache at
-    `~/Library/Application Support/CLIP/webclips/<nodeID>.png`, off-main
-    writes; **NOT** in canvas.json. API: `image(for:)`, `save(_:for:)`,
-    `remove(for:)`.
-- Verify on macOS CI until green; ⚠️ until then the workflow build is RED
-  (no new release — the last green release stays "latest", download
-  unaffected).
+## Web Clips (planned feature #2) — shipped
+`.webclip(url)` cards for any http(s) link; `WebClipCardView` +
+`WebClipSnapshotStore` (PNG cache in Application Support/CLIP/webclips,
+removed with the card). Loads http(s) only (`WebClipURLPolicy`).
+
+## Hardening pass (Oct 2026, branch `claude/sleepy-fermi-3xh28d`)
+- **Save format:** images live in `Application Support/CLIP/images/<sha256>`
+  (`ImageBlobStore`); `canvas.json` stores `dataRef`. Inline `data` still
+  decodes (old saves, clipboard). Nodes/pages decode per element
+  (`LossyElement`) — a bad entry is skipped + the file backed up.
+- **Updater:** optional Ed25519 signature (`CLIPUpdatePublicKey`,
+  `Scripts/sign-update.swift`, secret `UPDATE_SIGNING_KEY`), https only,
+  size/time limits, rollback-safe swap.
+- **CI:** `swift test` runs `Tests/CLIPTests`; only main / `v*` tags /
+  manual runs publish.
+- **Perf:** pan/zoom ticks reuse memoized display nodes (`pagesVersion`);
+  boards > 150 cards cull far-off-screen items; Tidy Up uses a sparse
+  incremental solver off the main actor.
+- **A11y:** palette/segmented control/colour picker expose VoiceOver roles;
+  `Motion` tokens honour Reduce Motion.
 
 ## Not started (planned features #3, #4)
 - **Notes + Markdown export** — new `.note(markdown:)` Kind; block-level
@@ -104,14 +98,13 @@ Full design lives in the plan file:
 - Download button → install page → `releases/latest/download/CLIP.dmg`.
 
 ## Open follow-ups / decisions
+- **Set `UPDATE_SIGNING_KEY`** (repo secret) to turn on update signing.
 - **Repo is PRIVATE** → release-asset download URLs 404 for the public.
   User chose **"make repo public"** (Settings → Danger Zone → Change
   visibility) — once done, website download + in-app self-updater work
   with no code change. NOT yet done.
 - **Delete the Vercel token** `clip-deploy` at vercel.com/account/tokens
   (it was used from chat to deploy; still active).
-- `site/index.html` "Send links from iPhone" still has `SHORTCUT_URL_HERE`
-  placeholder — paste the real iCloud Shortcut link.
 - Hero product shot is a composed scene; swap a real screenshot into
   `site/assets/` when available.
 - In-app setup-guide URL points at `clip-umprum.vercel.app` (good).
