@@ -19,6 +19,8 @@
 #   MARKETING marketing version string  (default 1.0)
 #   BUILD     integer build number       (default 1) — the updater compares this
 #   FEED_URL  update manifest URL; omit/empty ⇒ this build never self-updates (dev)
+#   UPDATE_PUBLIC_KEY  base64 Ed25519 public key (Scripts/sign-update.swift); when set,
+#             the app only installs updates whose zip is signed by the matching key
 #   ZIP=1     also emit CLIP.zip next to the .app — used by the silent self-updater
 #             (it unzips via `ditto -x -k`); the manifest URL points here.
 #   DMG=1     also emit CLIP.dmg (drag-to-Applications) — the friendly artifact
@@ -33,6 +35,7 @@ ICON="$ROOT/AppIcon/AppIcon.icns"
 MARKETING="${MARKETING:-1.0}"
 BUILD="${BUILD:-1}"
 FEED_URL="${FEED_URL:-}"
+UPDATE_PUBLIC_KEY="${UPDATE_PUBLIC_KEY:-}"
 
 DEST_DIR="${1:-$ROOT}"
 APP="$DEST_DIR/CLIP.app"
@@ -116,6 +119,10 @@ PLIST
 if [ -n "$FEED_URL" ]; then
   "$PB" -c "Add :CLIPFeedURL string $FEED_URL" "$APP/Contents/Info.plist" 2>/dev/null \
     || "$PB" -c "Set :CLIPFeedURL $FEED_URL" "$APP/Contents/Info.plist"
+fi
+if [ -n "$UPDATE_PUBLIC_KEY" ]; then
+  "$PB" -c "Add :CLIPUpdatePublicKey string $UPDATE_PUBLIC_KEY" "$APP/Contents/Info.plist" 2>/dev/null \
+    || "$PB" -c "Set :CLIPUpdatePublicKey $UPDATE_PUBLIC_KEY" "$APP/Contents/Info.plist"
 fi
 
 # Native icon → point LaunchServices at the compiled Assets.car icon.

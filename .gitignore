@@ -16,3 +16,13 @@ CLIP.app/
 # Installed Claude skills (local tooling, not app code)
 .agents/
 skills-lock.json
+
+# Release artifacts (built by Scripts/release.sh into the repo root)
+*.dmg
+
+# Secrets — never commit
+.env
+.env.*
+
+# Claude agent worktrees (local scratch checkouts)
+.claude/worktrees/

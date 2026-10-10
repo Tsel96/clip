@@ -17,6 +17,8 @@
 #   REPO        GitHub "owner/name" (default: git origin)
 #   BRANCH      branch the appcast lives on (default: main)
 #   NOTES       release notes string
+#   UPDATE_SIGNING_KEY  base64 Ed25519 private key (Scripts/sign-update.swift);
+#               when set, the build embeds its public key and the zip is signed
 #
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,19 +42,42 @@ ZIP_URL="https://github.com/$REPO/releases/download/$TAG/$ZIP"
 echo "→ building release binary"
 swift build -c release
 
+# JSON-escape a string (backslash, quote, control chars) for the manifest.
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+UPDATE_PUBLIC_KEY=""
+if [ -n "${UPDATE_SIGNING_KEY:-}" ]; then
+  UPDATE_PUBLIC_KEY="$(swift Scripts/sign-update.swift pubkey)"
+else
+  echo "⚠ UPDATE_SIGNING_KEY not set — this update will NOT be signed"
+fi
+
 echo "→ packaging CLIP.app (feed baked in) + $ZIP (updater) + $DMG (humans)"
-FEED_URL="$RAW_FEED" MARKETING="$MARKETING" BUILD="$BUILD" ZIP=1 DMG=1 Scripts/make-app.sh "$ROOT" >/dev/null
+UPDATE_PUBLIC_KEY="$UPDATE_PUBLIC_KEY" FEED_URL="$RAW_FEED" MARKETING="$MARKETING" BUILD="$BUILD" ZIP=1 DMG=1 Scripts/make-app.sh "$ROOT" >/dev/null
 SHA=$(shasum -a 256 "$ROOT/$ZIP" | awk '{print $1}')   # updater verifies the ZIP
 echo "  zip sha256 $SHA"
+SIG=""
+if [ -n "${UPDATE_SIGNING_KEY:-}" ]; then
+  SIG="$(swift Scripts/sign-update.swift sign "$ROOT/$ZIP")"
+fi
 
 echo "→ writing appcast/latest.json"
 cat > "$ROOT/appcast/latest.json" <<JSON
 {
   "build": $BUILD,
-  "version": "$MARKETING",
   "url": "$ZIP_URL",
   "sha256": "$SHA",
-  "notes": "$NOTES"
+  "signature": "$SIG",
+  "version": "$(json_escape "$MARKETING")",
+  "notes": "$(json_escape "$NOTES")"
 }
 JSON
 
