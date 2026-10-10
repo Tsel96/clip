@@ -727,6 +727,9 @@ extension CanvasNode.Kind: Codable {
     private enum CodingKeys: String, CodingKey {
         case type, url, content, fontSize, stroke, data, filename, fileURL
         case title, color, icon, childIDs
+        /// Image stored as a separate blob (see `ImageBlobStore`) — what
+        /// `canvas.json` uses; `data` (inline base64) is everything else.
+        case dataRef
     }
 
     init(from decoder: Decoder) throws {
@@ -749,8 +752,14 @@ extension CanvasNode.Kind: Codable {
         case "drawing":
             self = .drawing(stroke: try c.decode(DrawingStroke.self, forKey: .stroke))
         case "image":
+            let data: Data
+            if let ref = try c.decodeIfPresent(String.self, forKey: .dataRef) {
+                data = try ImageBlobStore.load(ref: ref)
+            } else {
+                data = try c.decode(Data.self, forKey: .data)    // inline / pre-blob saves
+            }
             self = .image(
-                data: try c.decode(Data.self, forKey: .data),
+                data: data,
                 filename: try c.decode(String.self, forKey: .filename)
             )
         case "video":
@@ -806,7 +815,11 @@ extension CanvasNode.Kind: Codable {
             try c.encode(stroke, forKey: .stroke)
         case .image(let data, let filename):
             try c.encode("image", forKey: .type)
-            try c.encode(data, forKey: .data)
+            if let blobs = encoder.userInfo[ImageBlobStore.userInfoKey] as? ImageBlobWriter {
+                try c.encode(try blobs.store(data), forKey: .dataRef)
+            } else {
+                try c.encode(data, forKey: .data)
+            }
             try c.encode(filename, forKey: .filename)
         case .video(let fileURL, let filename):
             try c.encode("video", forKey: .type)

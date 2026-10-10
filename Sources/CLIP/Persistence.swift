@@ -101,8 +101,7 @@ enum CanvasStore {
     }
 
     /// Serial queue for background writes: keeps saves ordered while the
-    /// (potentially large — image bytes are embedded) JSON encode stays
-    /// off the main thread.
+    /// JSON encode + image-blob hashing stays off the main thread.
     private static let saveQueue = DispatchQueue(label: "clip.canvas.save", qos: .utility)
 
     /// Encode + write on the background save queue. Used by the debounced
@@ -141,9 +140,14 @@ enum CanvasStore {
         try FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: true
         )
+        // Image bytes go to content-addressed blobs (written before the JSON
+        // that references them); the JSON itself stays small.
+        let blobs = try ImageBlobWriter()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
+        encoder.userInfo[ImageBlobStore.userInfoKey] = blobs
         let data = try encoder.encode(snapshot)
         try data.write(to: url, options: .atomic)
+        blobs.removeUnreferenced()
     }
 }

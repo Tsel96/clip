@@ -485,9 +485,15 @@ final class CardVideoContentView: NSView {
     /// teardown fires — i.e. the node really went away, not just a reload.
     func teardown() {
         player?.pause()
+        host.playerLayer.player = nil       // drop the layer's strong ref too
         player = nil
         looper = nil
     }
+
+    /// Parked off-screen: stop decoding/playing until reclaimed.
+    func suspend() { player?.pause() }
+    /// Reclaimed: carry on from the same frame (no reload, no blink).
+    func resume() { player?.play() }
 
     deinit { player?.pause() }
 }
@@ -509,7 +515,7 @@ final class NativeVideoCache {
     /// any order all return the same instance.
     func view(for id: UUID, make: () -> CardVideoContentView) -> CardVideoContentView {
         teardowns[id]?.invalidate(); teardowns[id] = nil
-        if let v = views[id] { return v }
+        if let v = views[id] { v.resume(); return v }
         let v = make()
         views[id] = v
         return v
@@ -519,6 +525,9 @@ final class NativeVideoCache {
     /// down if nothing reclaims it (the node scrolled off / was filtered out).
     func park(_ id: UUID) {
         guard views[id] != nil, teardowns[id] == nil else { return }
+        // Paused while parked — a detached card shouldn't keep playing (or
+        // decoding) for the reuse window. `view(for:)` resumes it.
+        views[id]?.suspend()
         teardowns[id] = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
             guard let self else { return }
             self.views[id]?.teardown()

@@ -50,6 +50,8 @@ struct TweetVideoPlayer: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: PlayerHostView, coordinator: Coordinator) {
+        // The host view is going away either way — release its player ref.
+        nsView.playerLayer.player = nil
         // Cache mode: park the (muted, looping) player for a deferred teardown so a
         // select-remount reuses it instead of re-buffering (the tweet-video blink).
         if let id = coordinator.cacheNodeID, let player = coordinator.player, let url = coordinator.url {
@@ -196,6 +198,9 @@ final class PlayerCache {
     func park(_ id: UUID, player: AVQueuePlayer, looper: AVPlayerLooper?,
               url: URL, timeRange: CMTimeRange?) {
         teardowns[id]?.invalidate()
+        // Paused while parked; the reclaiming view calls play() again
+        // (makeNSView), resuming from the same frame without re-buffering.
+        player.pause()
         parked[id] = Parked(player: player, looper: looper, url: url, timeRange: timeRange)
         teardowns[id] = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
             guard let self else { return }

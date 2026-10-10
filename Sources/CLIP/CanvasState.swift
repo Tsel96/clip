@@ -8,7 +8,11 @@ final class CanvasState: ObservableObject {
 
     // MARK: - Pages  (per-page state lives inside each Page)
 
-    @Published var pages: [Page]
+    @Published var pages: [Page] { didSet { pagesVersion &+= 1 } }
+    /// Bumped on every `pages` mutation — lets per-frame readers (the canvas
+    /// body runs on every pan/zoom tick) reuse derived values until the
+    /// document actually changes.
+    private(set) var pagesVersion = 0
     @Published var activePageID: UUID { didSet { if activePageID != oldValue { cachedWorldBounds = nil } } }
 
     /// iPhone → canvas share inbox: watches a user-chosen iCloud Drive
@@ -1314,15 +1318,33 @@ final class CanvasState: ObservableObject {
     /// Nodes the canvas should render: a folder's children while it's unfolded,
     /// otherwise every node NOT tucked inside a folder. Drives the native canvas
     /// so folder children truly disappear from the main board until opened.
+    ///
+    /// Memoized on (document version, page, unfolded folder): the canvas body
+    /// re-evaluates on every pan/zoom tick, and a camera move changes none of
+    /// those, so ticks reuse the same array instead of re-filtering the board.
     var canvasDisplayNodes: [CanvasNode] {
+        if let c = displayNodesCache, c.version == pagesVersion,
+           c.page == activePageID, c.folder == focusedFolderID {
+            return c.nodes
+        }
+        let result: [CanvasNode]
         if let fid = focusedFolderID,
            case .folder(_, _, let childIDs)? = nodeByID[fid]?.kind {
             let set = Set(childIDs)
-            return nodes.filter { set.contains($0.id) }
+            result = nodes.filter { set.contains($0.id) }
+        } else {
+            let hidden = allFolderChildIDs
+            result = hidden.isEmpty ? nodes : nodes.filter { !hidden.contains($0.id) }
         }
-        let hidden = allFolderChildIDs
-        return hidden.isEmpty ? nodes : nodes.filter { !hidden.contains($0.id) }
+        displayNodesGeneration &+= 1
+        displayNodesCache = (pagesVersion, activePageID, focusedFolderID, result)
+        return result
     }
+
+    /// Changes exactly when `canvasDisplayNodes` returns a new array — the
+    /// native canvas skips its per-node diff when this is unchanged.
+    private(set) var displayNodesGeneration = 0
+    private var displayNodesCache: (version: Int, page: UUID, folder: UUID?, nodes: [CanvasNode])?
 
     /// Pre-unfold camera, restored on exit.
     private var folderFocusOriginCamera: Camera?
@@ -1619,6 +1641,7 @@ final class CanvasState: ObservableObject {
 
     /// Cache backing `stableWorldBounds` — reset on page switch.
     private var cachedWorldBounds: CGRect?
+    private var contentRectCache: (version: Int, page: UUID, rect: CGRect?)?
 
     /// The scrollable canvas extent. Unlike the raw content bounding box this is
     /// GROWS-ONLY: it never shrinks or shifts while the content still fits inside
@@ -1629,7 +1652,15 @@ final class CanvasState: ObservableObject {
     /// node is dragged/created outside the current margin.
     func stableWorldBounds() -> CGRect {
         let margin: CGFloat = 6000
-        guard let content = boundingRect(of: Set(nodes.map(\.id))),
+        // Content rect memoized per document version (this runs every frame).
+        let contentRect: CGRect?
+        if let c = contentRectCache, c.version == pagesVersion, c.page == activePageID {
+            contentRect = c.rect
+        } else {
+            contentRect = boundingRect(of: Set(nodes.map(\.id)))
+            contentRectCache = (pagesVersion, activePageID, contentRect)
+        }
+        guard let content = contentRect,
               content.width > 0, content.height > 0 else {
             return cachedWorldBounds ?? CGRect(x: -margin, y: -margin, width: 2 * margin, height: 2 * margin)
         }

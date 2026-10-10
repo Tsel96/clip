@@ -447,7 +447,9 @@ struct CanvasView: View {
                                     state.setSectionColor(id: id,
                                         to: RadialColorPicker.nearestSectionColor(to: nsColor))
                                 }
-                            }
+                            },
+                            // Read AFTER `nodes:` above, so it names that array.
+                            nodesVersion: state.displayNodesGeneration
                         ))
                         .onAppear {
                             syncOverlayCamera()

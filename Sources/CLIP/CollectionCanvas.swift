@@ -217,6 +217,10 @@ struct CanvasConfig {
     /// Recolor a node from the radial picker (CanvasView maps the NSColor to the
     /// node's color model, e.g. nearest SectionColor).
     let onRecolorNode: (UUID, NSColor) -> Void
+    /// Identity of `nodes` (`CanvasState.displayNodesGeneration`). When it and
+    /// the world bounds match the last apply, the node list is unchanged — a
+    /// pure camera tick — and the per-node diff is skipped. nil = always diff.
+    var nodesVersion: Int? = nil
 }
 
 /// The SwiftUI bridge: mounts the native canvas engine and feeds it a
@@ -263,13 +267,29 @@ struct CollectionCanvas: NSViewRepresentable {
         weak var overlayHost: NSHostingView<AnyView>?
         weak var layout: CanvasWorldLayout?
         private(set) var nodes: [CanvasNode] = []
+        /// What the last full `apply` was computed from (see the fast path).
+        private struct AppliedKey: Equatable {
+            let nodesVersion: Int?
+            let worldBounds: CGRect
+            let editingTextNodeID: UUID?
+        }
+        private var lastAppliedKey: AppliedKey?
+        /// Inputs of the last connector refresh (see `refreshConnectors`).
+        private struct ConnectorKey: Equatable {
+            let nodesVersion: Int?
+            let worldBounds: CGRect
+            let connectors: [Connector]
+            let selected: Set<UUID>
+            let magnification: CGFloat
+        }
+        private var lastConnectorKey: ConnectorKey?
         weak var inputView: CanvasInputView?
         var boundsObserver: NSObjectProtocol?
         var escMonitor: Any?
         var colorKeyMonitor: Any?
         var deleteMonitor: Any?
         var colorPicker: RadialColorPicker?
-        var connectorController: ConnectorOverlayController?
+        var connectorController: ConnectorOverlayController? { didSet { lastConnectorKey = nil } }
         var guideController: GuideOverlayController?
         // Inline connector-label editor (double-click a connector).
         var editingConnectorID: UUID?
@@ -317,6 +337,15 @@ struct CollectionCanvas: NSViewRepresentable {
         /// Recompute item frames (content coords) + content size from the nodes,
         /// then refresh. Cheap structural compare avoids needless reloads.
         func apply(_ p: CanvasConfig) {
+            // Pan/zoom ticks re-run the SwiftUI body (and so this) with the
+            // same nodes: skip the O(n) frame/diff work, just refresh chrome.
+            let applyKey = AppliedKey(nodesVersion: p.nodesVersion, worldBounds: p.worldBounds,
+                                      editingTextNodeID: p.editingTextNodeID)
+            if applyKey.nodesVersion != nil, applyKey == lastAppliedKey {
+                refreshChrome()
+                return
+            }
+            lastAppliedKey = applyKey
             let minX = p.worldBounds.minX, minY = p.worldBounds.minY
             let frames = p.nodes.map { n in
                 CGRect(x: n.position.x - minX, y: n.position.y - minY,
@@ -474,6 +503,15 @@ struct CollectionCanvas: NSViewRepresentable {
         /// observer → refreshChrome). No-op unless `useNativeConnectors`.
         func refreshConnectors() {
             guard let cc = connectorController else { return }
+            // A pure pan (same nodes, connectors, selection and zoom) changes no
+            // connector geometry — skip re-routing every connector each tick.
+            let key = ConnectorKey(nodesVersion: config.nodesVersion,
+                                   worldBounds: config.worldBounds,
+                                   connectors: config.connectors,
+                                   selected: config.selectedConnectorIDs,
+                                   magnification: scroll?.magnification ?? 1)
+            if key.nodesVersion != nil, key == lastConnectorKey { return }
+            lastConnectorKey = key
             let minX = config.worldBounds.minX, minY = config.worldBounds.minY
             var frames: [UUID: CGRect] = [:]
             for n in config.nodes {
@@ -713,12 +751,22 @@ final class CanvasWorldLayout: NSCollectionViewLayout {
         }
     }
 
+    /// Boards up to this many cards keep every item mounted (see below).
+    static let cullingThreshold = 150
+
     override func layoutAttributesForElements(in rect: NSRect) -> [NSCollectionViewLayoutAttributes] {
-        // No culling: keep every item mounted so cards never create/destroy as
-        // the visible rect changes through a zoom — that mount/unmount is the
-        // blink at the gesture boundaries. (Fine for canvas-scale item counts;
-        // revisit with recycling if a board grows to thousands of cards.)
-        cache
+        // Normal boards: no culling — keep every item mounted so cards never
+        // create/destroy as the visible rect changes through a zoom (that
+        // mount/unmount is the blink at the gesture boundaries).
+        guard cache.count > Self.cullingThreshold else { return cache }
+        // Big boards: mounting thousands of hosted cards (each with its own
+        // view tree, decoded image or player) costs far more than an edge
+        // blink. Keep everything within one extra screen in every direction
+        // mounted, so ordinary pans and zooms stay inside the warm zone and
+        // only cards far off-screen are released.
+        let pad = max(rect.width, rect.height)
+        let zone = rect.insetBy(dx: -pad, dy: -pad)
+        return cache.filter { $0.frame.intersects(zone) }
     }
 
     override func layoutAttributesForItem(at indexPath: IndexPath) -> NSCollectionViewLayoutAttributes? {
