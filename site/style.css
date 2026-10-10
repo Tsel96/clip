@@ -397,7 +397,7 @@ section { position: relative; }
 .step-body { display: flex; flex-direction: column; gap: 7px; }
 .step-body h2 { font-size: 15px; font-weight: 900; letter-spacing: .02em; }
 .step-body p { font-size: 13px; line-height: 1.65; color: var(--dim); }
-.step-body .sub { color: var(--faint); font-size: 12px; }
+.step-body .sub { color: var(--dim); font-size: 12px; }   /* --faint was ~2.7:1 */
 .step-body b { color: var(--ink); font-weight: 400; }
 .done { font-size: 13px; color: var(--dim); line-height: 1.6; text-align: center; margin-top: 4px; }
 

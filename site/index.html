@@ -12,7 +12,10 @@
 <link rel="stylesheet" href="index.css" />
 <meta property="og:title" content="CLIP BETA — nekonečné plátno pro macOS" />
 <meta property="og:description" content="Lokálně běžící open-source aplikace pro macOS. Apple Silicon (M1+)." />
-<meta property="og:image" content="assets/mark.png" />
+<meta property="og:image" content="https://clip-umprum.vercel.app/assets/mark.png" />
+<meta property="og:url" content="https://clip-umprum.vercel.app/" />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary" />
 <!-- mark JS-on synchronously so entrance elements start hidden (no flash) -->
 <script>document.documentElement.classList.add('js');</script>
 </head>
@@ -20,10 +23,12 @@
 
   <!-- Background video -->
   <div class="bg-media">
-    <video autoplay muted loop playsinline preload="auto">
+    <video id="heroVideo" autoplay muted loop playsinline preload="metadata"
+           poster="assets/hero-poster.jpg" aria-hidden="true">
       <source src="assets/hero.mp4" type="video/mp4" />
-      <source src="assets/hero.webm" type="video/webm" />
     </video>
+    <button class="video-toggle" id="videoToggle" type="button" aria-pressed="false"
+            aria-label="Pozastavit video na pozadí">❚❚</button>
   </div>
 
   <!-- Top-left brand -->
@@ -38,7 +43,7 @@
       <span class="ui-pill-icon">
         <img src="assets/qr-icon.svg" alt="" />
       </span>
-      <span class="ui-pill-label">Stahnout</span>
+      <span class="ui-pill-label">Stáhnout</span>
     </a>
   </div>
 
@@ -62,18 +67,19 @@
         <li>Při prvním spuštění klikněte na CLIP pravým tlačítkem → <b>Otevřít</b>.</li>
       </ol>
       <p class="modal-note m-reveal">Vyžaduje Mac s Apple&nbsp;Silicon (M1 a novější) · macOS&nbsp;13+</p>
-      <a class="modal-link m-reveal" href="install.html">Stahnout na svůj Mac</a>
+      <a class="modal-link m-reveal" href="install.html">Stáhnout na svůj Mac</a>
     </div>
-    <div class="modal-img-placeholder" aria-hidden="true"></div>
-    <div class="modal-img-placeholder" aria-hidden="true"></div>
   </aside>
 
   <!-- Bottom-left description -->
-  <p class="ui-description enter">
-    CLIP je první lokálně běžící open-source aplikace pro macOS,
-    která promění vaše uložené reely, tweety, piny a poznámky
-    na nekonečné plátno.
-  </p>
+  <main>
+    <h1 class="visually-hidden">CLIP — nekonečné plátno pro macOS</h1>
+    <p class="ui-description enter">
+      CLIP je první lokálně běžící open-source aplikace pro macOS,
+      která promění vaše uložené reely, tweety, piny a poznámky
+      na nekonečné plátno.
+    </p>
+  </main>
 
   <!-- Bottom-right GitHub link -->
   <a class="ui-git enter" href="https://github.com/Tsel96/clip">GIT repozitář</a>

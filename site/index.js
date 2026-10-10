@@ -21,7 +21,28 @@ const MODAL_OUT    = { duration: 0.3, ease: EASE_IN };
 let M = null;
 const html = document.documentElement;
 
+wireBackgroundVideo();
 init();
+
+/* Background video: a pause control (WCAG 2.2.2 — moving content must be
+   stoppable) and no autoplay at all when the user prefers reduced motion;
+   the poster frame shows instead. */
+function wireBackgroundVideo() {
+  const video = document.getElementById('heroVideo');
+  const btn = document.getElementById('videoToggle');
+  if (!video || !btn) return;
+  const setPaused = (paused) => {
+    if (paused) video.pause(); else video.play().catch(() => {});
+    btn.setAttribute('aria-pressed', String(paused));
+    btn.setAttribute('aria-label', paused ? 'Přehrát video na pozadí' : 'Pozastavit video na pozadí');
+    btn.textContent = paused ? '▶' : '❚❚';
+  };
+  if (REDUCE) {
+    video.removeAttribute('autoplay');
+    setPaused(true);
+  }
+  btn.addEventListener('click', () => setPaused(!video.paused));
+}
 
 async function init() {
   // Safety: never leave entrance UI hidden if Motion is slow to arrive
