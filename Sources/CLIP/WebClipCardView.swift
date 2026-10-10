@@ -34,7 +34,7 @@ struct WebClipCardView: View {
 
     var body: some View {
         ZStack {
-            if let url = URL(string: url) {
+            if let url = URL(string: url), WebClipURLPolicy.isWebURL(url) {
                 if isLive && !suppressLive {
                     WebClipWebView(
                         url: url,
@@ -202,6 +202,20 @@ struct WebClipWebView: NSViewRepresentable {
             self._cachedSnapshot = cachedSnapshot
         }
 
+        /// Only ever navigate the card to web pages: a tampered save or a
+        /// redirect must not point it at `file://` (local files would be
+        /// rendered and snapshotted to disk) or other app schemes.
+        func webView(_ webView: WKWebView,
+                     decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard let url = navigationAction.request.url else { return decisionHandler(.cancel) }
+            let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+            let allowed = isMainFrame
+                ? WebClipURLPolicy.isWebURL(url)
+                : url.scheme?.lowercased() != "file"
+            decisionHandler(allowed ? .allow : .cancel)
+        }
+
         func webView(_ webView: WKWebView,
                      didStartProvisionalNavigation navigation: WKNavigation!) {
             DispatchQueue.main.async {
@@ -249,5 +263,13 @@ struct WebClipWebView: NSViewRepresentable {
                 }
             }
         }
+    }
+}
+
+enum WebClipURLPolicy {
+    /// http(s) only — the sole schemes a web clip may load.
+    static func isWebURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
     }
 }

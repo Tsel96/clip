@@ -7,6 +7,20 @@ import os
 struct CanvasSnapshot: Codable, Equatable {
     var pages: [Page]
     var activePageID: UUID
+
+    init(pages: [Page], activePageID: UUID) {
+        self.pages = pages
+        self.activePageID = activePageID
+    }
+
+    private enum CodingKeys: String, CodingKey { case pages, activePageID }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pages = try c.decode([LossyElement<Page>].self, forKey: .pages).compactMap(\.value)
+        activePageID = try c.decodeIfPresent(UUID.self, forKey: .activePageID)
+            ?? pages.first?.id ?? UUID()
+    }
 }
 
 /// Atomic JSON read/write for `CanvasSnapshot`. Storage lives at
@@ -59,18 +73,31 @@ enum CanvasStore {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         do {
             let data = try Data(contentsOf: url)
-            return try JSONDecoder().decode(CanvasSnapshot.self, from: data)
+            LossyDecodeCounter.dropped = 0
+            let snapshot = try JSONDecoder().decode(CanvasSnapshot.self, from: data)
+            if LossyDecodeCounter.dropped > 0 {
+                // Partial load: keep the untouched original before the next
+                // autosave rewrites the file without the skipped entries.
+                let backup = backupCopy(of: url, tag: "partial")
+                Log.persistence.error("Canvas loaded with \(LossyDecodeCounter.dropped) unreadable entries skipped (original kept at \(backup, privacy: .public))")
+            }
+            return snapshot
         } catch {
             // Don't crash on a schema change between versions — start
             // fresh, but keep the old file around and leave a trace.
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyyMMdd-HHmmss"
-            let backup = url.appendingPathExtension(
-                "corrupt-\(fmt.string(from: Date()))")
-            try? FileManager.default.copyItem(at: url, to: backup)
-            Log.persistence.error("Canvas load failed, starting fresh (original kept at \(backup.lastPathComponent, privacy: .public)): \(String(describing: error), privacy: .public)")
+            let backup = backupCopy(of: url, tag: "corrupt")
+            Log.persistence.error("Canvas load failed, starting fresh (original kept at \(backup, privacy: .public)): \(String(describing: error), privacy: .public)")
             return nil
         }
+    }
+
+    /// Copy `url` to `<name>.<tag>-<timestamp>` and return the new file name.
+    private static func backupCopy(of url: URL, tag: String) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyyMMdd-HHmmss"
+        let backup = url.appendingPathExtension("\(tag)-\(fmt.string(from: Date()))")
+        try? FileManager.default.copyItem(at: url, to: backup)
+        return backup.lastPathComponent
     }
 
     /// Serial queue for background writes: keeps saves ordered while the

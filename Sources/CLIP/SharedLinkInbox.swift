@@ -98,8 +98,12 @@ final class SharedLinkInbox {
 
     /// Read the URL out of one shared-link file, hand it off, and delete the
     /// file so it's never ingested twice.
+    ///
+    /// The file is deleted ONLY after a URL was read and handed off: an
+    /// unreadable file (transient I/O error) is retried on the next sweep,
+    /// and a file with no link in it (e.g. an ordinary note, if the inbox
+    /// points at a general-purpose folder) is left untouched.
     private func ingest(fileURL: URL) {
-        defer { try? FileManager.default.removeItem(at: fileURL) }
         guard let raw = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
         // The Shortcut writes just the URL; be tolerant of trailing newline
         // or a leading line of text.
@@ -108,7 +112,8 @@ final class SharedLinkInbox {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .first(where: { $0.lowercased().hasPrefix("http") })
             ?? raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard urlString.lowercased().hasPrefix("http") else { return }
-        onURL?(urlString)
+        guard urlString.lowercased().hasPrefix("http"), let onURL else { return }
+        onURL(urlString)
+        try? FileManager.default.removeItem(at: fileURL)
     }
 }

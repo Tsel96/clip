@@ -69,16 +69,26 @@ extension CanvasState {
         // ghost layer takes over. Single undoable wraps stage 1 + 2 via
         // the snapshot captured before stage 1.
         let totalDuration = Double(max(0, movers.count - 1)) * stagger + springResponse
+        let pageID = activePageID
         DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration) { [weak self] in
             guard let self else { return }
-            for c in candidates {
-                self.mutateNode(c.id) { node in
-                    node.groupID = newGroupID
+            if self.activePageID == pageID {
+                for c in candidates {
+                    self.mutateNode(c.id) { node in
+                        node.groupID = newGroupID
+                    }
+                }
+            } else if let pi = self.pages.firstIndex(where: { $0.id == pageID }) {
+                // User switched pages mid-animation — stamp the group on the
+                // page the stack was built on, not the one now showing.
+                let ids = Set(candidates.map(\.id))
+                for j in self.pages[pi].nodes.indices where ids.contains(self.pages[pi].nodes[j].id) {
+                    self.pages[pi].nodes[j].groupID = newGroupID
                 }
             }
             // Threshold haptic — the deck has just *formed*.
             Haptics.threshold()
-            self.commitUndoable(from: before)
+            self.commitUndoable(from: before, pageID: pageID)
         }
         // Selection should immediately track the visible representative
         // (the head) — the stack-classifier and Smart Selection both
@@ -165,10 +175,11 @@ extension CanvasState {
 
         // Stage 3 — finalize: commit undo + threshold haptic on settle.
         let totalDuration = Double(max(0, plans.count - 1)) * stagger + springResponse
+        let pageID = activePageID
         DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration) { [weak self] in
             guard let self else { return }
             Haptics.threshold()
-            self.commitUndoable(from: before)
+            self.commitUndoable(from: before, pageID: pageID)
         }
 
         // Selection updates immediately so the chrome reflects the new

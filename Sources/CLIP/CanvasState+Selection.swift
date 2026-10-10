@@ -223,6 +223,13 @@ extension CanvasState {
             }
         }
 
+        // Drop cached web-clip snapshots (they live outside canvas.json, so
+        // nothing else cleans them up). Just a cache: if the delete is undone,
+        // the card re-renders live and re-snapshots.
+        // (A no-op for ids that never had a snapshot.)
+        let removedIDs = allIDs
+        Task { for cid in removedIDs { await WebClipSnapshotStore.shared.remove(for: cid) } }
+
         for cid in allIDs {
             measuredHeights.removeValue(forKey: cid)
             selectedNodeIDs.remove(cid)

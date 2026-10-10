@@ -355,11 +355,32 @@ final class CardImageContentView: NSView {
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         imageLayer.contentsGravity = .resizeAspectFill
         imageLayer.masksToBounds = true
-        if let img = NSImage(data: data),
-           let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            imageLayer.contents = cg
-        }
         layer?.addSublayer(imageLayer)
+        // Decode off the main thread (mounting a board of photos used to
+        // decode every one synchronously here), then hand the bitmap over.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let cg = Self.decode(data) else { return }
+            await MainActor.run { self?.imageLayer.contents = cg }
+        }
+    }
+
+    /// Same NSImage decode the card always used (so orientation/colour
+    /// handling is unchanged), just run off the main thread. The result is
+    /// redrawn into a bitmap so the pixels are decoded HERE — a lazily-backed
+    /// CGImage would otherwise be decoded by Core Animation on the main thread
+    /// at first display.
+    private static func decode(_ data: Data) -> CGImage? {
+        guard let cg = NSImage(data: data)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return nil }
+        // Keep the image's own colour space (P3 photos stay P3).
+        let native = cg.colorSpace.flatMap { $0.supportsOutput ? $0 : nil }
+        guard let space = native ?? CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: cg.width, height: cg.height,
+                                  bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return cg }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        return ctx.makeImage() ?? cg
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 

@@ -104,8 +104,7 @@ enum CanvasDrop {
                                           "gif", "webp", "tiff", "tif", "bmp"]
             let videoExts: Set<String> = ["mp4", "mov", "m4v", "qt"]
             if imageExts.contains(ext) {
-                guard let data = try? Data(contentsOf: url) else { return }
-                state.addImage(data: data, filename: url.lastPathComponent, at: world)
+                state.addImage(fileURL: url, at: world)
             } else if videoExts.contains(ext) {
                 state.addVideo(fileURL: url, at: world)
             } else {

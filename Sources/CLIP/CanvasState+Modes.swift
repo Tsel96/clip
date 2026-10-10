@@ -85,9 +85,9 @@ extension CanvasState {
             return
         }
         let clusters = ColorformEngine.cluster(dominantColors)
-        let sizes = Dictionary(uniqueKeysWithValues: nodes.map {
+        let sizes = Dictionary(nodes.map {
             ($0.id, CGSize(width: $0.width, height: renderedHeight(of: $0)))
-        })
+        }, uniquingKeysWith: { first, _ in first })
         let result = ColorformEngine.layout(clusters: clusters, nodeSizes: sizes)
         let framedCamera = cameraFraming(bulbs: result.bulbs)
         withAnimation(.spring(response: 0.6, dampingFraction: 0.82)) {

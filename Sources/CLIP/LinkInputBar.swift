@@ -153,8 +153,8 @@ struct LinkInputBar: View {
         let isMovie = UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) ?? false
         if isMovie {
             state.addVideo(fileURL: url)
-        } else if let data = try? Data(contentsOf: url) {
-            state.addImage(data: data, filename: url.lastPathComponent)
+        } else {
+            state.addImage(fileURL: url)
         }
     }
 

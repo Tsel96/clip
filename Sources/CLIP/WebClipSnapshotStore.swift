@@ -46,7 +46,7 @@ actor WebClipSnapshotStore {
                     .representation(using: .png, properties: [:]) else {
                 return
             }
-            try? png.write(to: url)
+            try? png.write(to: url, options: .atomic)   // never leave a truncated PNG
         }.value
     }
 

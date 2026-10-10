@@ -215,16 +215,38 @@ final class SmartSelectionController: ObservableObject {
             )
         }
         let zoom = state.cameraStore.camera.zoom
-        let (snapped, _) = TidyUpEngine.tidy(rects: rects, zoom: zoom)
+        guard !tidyInFlight else { return }
+        tidyInFlight = true
+        let pageID = state.activePageID
 
-        let before = state.snapshotForUndo()
-        for (i, node) in payload.enumerated() {
-            state.updatePosition(of: node.id, to: snapped[i].origin)
+        // The solver is super-linear in the number of cards (a dense solve per
+        // alignment constraint), so a big selection can take seconds — run it
+        // off the main actor so the UI never freezes, then apply on main.
+        Task { [weak self] in
+            let snapped = await Task.detached(priority: .userInitiated) {
+                TidyUpEngine.tidy(rects: rects, zoom: zoom).0
+            }.value
+            guard let self else { return }
+            self.tidyInFlight = false
+            // Drop the result if the board moved on meanwhile (page switch,
+            // or any of these cards dragged / deleted while we computed).
+            guard self.state.activePageID == pageID,
+                  snapped.count == payload.count,
+                  payload.allSatisfy({ self.state.nodeByID[$0.id]?.position == $0.position })
+            else { return }
+
+            let before = self.state.snapshotForUndo()
+            for (i, node) in payload.enumerated() {
+                self.state.updatePosition(of: node.id, to: snapped[i].origin)
+            }
+            self.state.commitUndoable(from: before)
+            // Tap haptic — cards just snapped into alignment.
+            Haptics.tap()
         }
-        state.commitUndoable(from: before)
-        // Tap haptic — cards just snapped into alignment.
-        Haptics.tap()
     }
+
+    /// True while a Tidy Up solve is running in the background.
+    private var tidyInFlight = false
 
     // MARK: - Gutter drag
 

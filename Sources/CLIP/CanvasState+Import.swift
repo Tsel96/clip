@@ -139,6 +139,21 @@ extension CanvasState {
         }
     }
 
+    /// Add an image file from disk, checking its size BEFORE reading it so
+    /// a multi-GB drop never gets loaded into memory just to be rejected.
+    func addImage(fileURL url: URL, at worldPoint: CGPoint? = nil) {
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard Int64(size) <= Self.maxImageBytes else {
+            alert = AlertContent(
+                title: "Image too large",
+                message: "Images can be up to \(byteString(Self.maxImageBytes))."
+            )
+            return
+        }
+        guard let data = try? Data(contentsOf: url) else { return }
+        addImage(data: data, filename: url.lastPathComponent, at: worldPoint)
+    }
+
     /// Add an image from local disk.
     ///   • Rejects files larger than `maxImageBytes` (4 MB).
     ///   • Rejects images whose intrinsic pixel dimensions exceed

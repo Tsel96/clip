@@ -152,19 +152,26 @@ final class CLIPCanvasView: NSView {
 
         // Escape deselects (keyboard path, always available — no race).
         coordinator.escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in
-            if event.keyCode == 53 {            // Escape
-                coordinator?.config.onBackgroundClick()
-                return nil
-            }
-            return event
+            guard event.keyCode == 53,          // Escape
+                  let coordinator else { return event }
+            // Esc in a sidebar/search/lightbox field belongs to that field.
+            // Editing a card's own text on the canvas still ends via Esc.
+            if coordinator.config.editingTextNodeID == nil,
+               coordinator.shouldIgnoreCanvasKey(event) { return event }
+            coordinator.config.onBackgroundClick()
+            return nil
         }
         // "C" with a single item selected → Spatial flower color picker at the
         // cursor (works on any node, like Spatial — not just sections).
         coordinator.colorKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator] event in
+            // Typing in a text field: deliver single-key tool shortcuts
+            // (V/T/D/C/N/O) as text so they never switch tools mid-word.
+            if let coordinator, coordinator.forwardToFocusedTextInput(event) { return nil }
             // Plain 'c' only — never with ⌘/⌥/⌃ (so ⌘C copy etc. still work).
             guard let coordinator, event.keyCode == 8,
                   event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
                   coordinator.config.editingTextNodeID == nil,          // not typing
+                  !coordinator.shouldIgnoreCanvasKey(event),           // search, rename, lightbox fields
                   coordinator.colorPicker == nil else { return event }
             let sel = coordinator.config.liveSelection()
             if sel.count == 1, let id = sel.first { coordinator.presentColorPicker(for: id) }
@@ -204,4 +211,33 @@ final class CLIPCanvasView: NSView {
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+}
+
+extension CollectionCanvas.Coordinator {
+    /// True when a key event isn't the canvas's to handle: it was typed into a
+    /// text field / field editor (search, page rename, lightbox fields), or it
+    /// belongs to a different window or sheet. Local monitors see every key in
+    /// the app, so canvas shortcuts must check this before consuming one.
+    func shouldIgnoreCanvasKey(_ event: NSEvent) -> Bool {
+        let canvasWindow = scroll?.window
+        if let w = event.window, let canvasWindow, w !== canvasWindow { return true }
+        return (event.window ?? canvasWindow)?.firstResponder is NSText
+    }
+
+    /// Plain letters that double as menu tool shortcuts (Tools menu).
+    private static let toolShortcutLetters: Set<String> = ["v", "t", "d", "c", "n", "o"]
+
+    /// If a text field in the canvas window has focus and `event` is a bare
+    /// tool-shortcut letter, hand it straight to the field so the menu
+    /// shortcut can't swallow it. Returns true when the event was delivered.
+    func forwardToFocusedTextInput(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+              let chars = event.charactersIgnoringModifiers?.lowercased(),
+              Self.toolShortcutLetters.contains(chars),
+              let window = scroll?.window, event.window === window,
+              let text = window.firstResponder as? NSText
+        else { return false }
+        text.keyDown(with: event)
+        return true
+    }
 }

@@ -621,11 +621,38 @@ struct Page: Identifiable, Equatable, Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
-        nodes = try c.decode([CanvasNode].self, forKey: .nodes)
-        connectors = try c.decode([Connector].self, forKey: .connectors)
-        camera = try c.decode(Camera.self, forKey: .camera)
+        // Per-element decoding: one unreadable card (e.g. a Kind added by a
+        // newer build, or a damaged entry) is skipped instead of failing the
+        // whole document and booting a blank canvas.
+        nodes = try c.decode([LossyElement<CanvasNode>].self, forKey: .nodes).compactMap(\.value)
+        connectors = try c.decode([LossyElement<Connector>].self, forKey: .connectors).compactMap(\.value)
+        camera = (try? c.decode(Camera.self, forKey: .camera)) ?? Camera()
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
     }
+}
+
+/// Decodes one array element, swallowing (and counting) failures so a single
+/// bad entry can't take the rest of the array down with it.
+struct LossyElement<T: Decodable>: Decodable {
+    let value: T?
+
+    /// Elements skipped since launch — `CanvasStore.load` backs the file up
+    /// when this is non-zero so the dropped data stays recoverable.
+    static var droppedCount: Int { LossyDecodeCounter.dropped }
+
+    init(from decoder: Decoder) throws {
+        do {
+            value = try T(from: decoder)
+        } catch {
+            value = nil
+            LossyDecodeCounter.dropped += 1
+            Log.persistence.error("Skipped unreadable \(String(describing: T.self), privacy: .public): \(String(describing: error), privacy: .public)")
+        }
+    }
+}
+
+enum LossyDecodeCounter {
+    static var dropped = 0
 }
 
 // MARK: - Tweet API decoding (unchanged)

@@ -68,13 +68,14 @@ extension CanvasState {
     @discardableResult
     func duplicateNode(_ id: UUID) -> UUID? {
         guard let original = nodeByID[id] else { return nil }
+        let (kind, children) = Self.cloneFolderContents(of: original.kind) { self.nodeByID[$0] }
         let copy = CanvasNode(
             position: original.position,
             width: original.width,
             height: original.height,
-            kind: original.kind
+            kind: kind
         )
-        withUndoable { nodes.append(copy) }
+        withUndoable { nodes.append(contentsOf: children + [copy]) }
         return copy.id
     }
 
@@ -96,7 +97,13 @@ extension CanvasState {
     /// included only if BOTH endpoints are inside the selected set.
     func copySelection() {
         guard !selectedNodeIDs.isEmpty else { return }
-        let selectedNodes = nodes.filter { selectedNodeIDs.contains($0.id) }
+        // A folder's cards are separate hidden nodes — carry them along so
+        // the pasted folder gets its own copies instead of dangling ids.
+        var payloadIDs = selectedNodeIDs
+        for id in selectedNodeIDs {
+            if case .folder(_, _, let childIDs)? = nodeByID[id]?.kind { payloadIDs.formUnion(childIDs) }
+        }
+        let selectedNodes = nodes.filter { payloadIDs.contains($0.id) }
         let internalConnectors = connectors.filter {
             selectedNodeIDs.contains($0.sourceID) && selectedNodeIDs.contains($0.targetID)
         }
@@ -140,7 +147,7 @@ extension CanvasState {
                 position: CGPoint(x: n.position.x + offset, y: n.position.y + offset),
                 width: n.width,
                 height: n.height,
-                kind: n.kind
+                kind: Self.remapFolderChildren(n.kind, idMap: idMap)
             )
         }
         let newConnectors: [Connector] = payload.connectors.compactMap { c in
@@ -151,8 +158,37 @@ extension CanvasState {
             nodes.append(contentsOf: newNodes)
             connectors.append(contentsOf: newConnectors)
         }
-        selectedNodeIDs = Set(newNodes.map(\.id))
+        // Select only the top-level pasted cards, not hidden folder contents.
+        let pastedChildren = Set(newNodes.flatMap { n -> [UUID] in
+            if case .folder(_, _, let childIDs) = n.kind { return childIDs }
+            return []
+        })
+        selectedNodeIDs = Set(newNodes.map(\.id)).subtracting(pastedChildren)
         selectedConnectorIDs = []
+    }
+
+    /// Point a pasted folder at the pasted copies of its cards (dropping any
+    /// that weren't in the payload). Non-folders pass through unchanged.
+    private static func remapFolderChildren(_ kind: CanvasNode.Kind, idMap: [UUID: UUID]) -> CanvasNode.Kind {
+        guard case .folder(let title, let icon, let childIDs) = kind else { return kind }
+        return .folder(title: title, icon: icon, childIDs: childIDs.compactMap { idMap[$0] })
+    }
+
+    /// Folder contents are separate hidden nodes referenced by `childIDs`, so
+    /// copying a folder must copy them too — otherwise the copy points at the
+    /// original cards (which then vanish from the board). Returns the copy's
+    /// kind with remapped `childIDs` plus the cloned cards to append.
+    /// Non-folders pass through unchanged with no extra nodes.
+    static func cloneFolderContents(of kind: CanvasNode.Kind,
+                                    lookup: (UUID) -> CanvasNode?) -> (CanvasNode.Kind, [CanvasNode]) {
+        guard case .folder(let title, let icon, let childIDs) = kind else { return (kind, []) }
+        let clones: [CanvasNode] = childIDs.compactMap { lookup($0) }.map { c in
+            CanvasNode(position: c.position, width: c.width, height: c.height, kind: c.kind,
+                       addedAt: c.addedAt, origin: c.origin, name: c.name, note: c.note,
+                       linkURL: c.linkURL, tags: c.tags, imagePrompt: c.imagePrompt,
+                       trimStart: c.trimStart, trimEnd: c.trimEnd, folderColor: c.folderColor)
+        }
+        return (.folder(title: title, icon: icon, childIDs: clones.map(\.id)), clones)
     }
 
     /// Move the given node ids to the END of the array (front in z-order
@@ -209,13 +245,15 @@ extension CanvasState {
                     freshGroupForOriginal[originalGroup] = fresh
                     return fresh
                 }()
+                let (kind, children) = Self.cloneFolderContents(of: original.kind) { self.nodeByID[$0] }
                 let copy = CanvasNode(
                     position: original.position,
                     width: original.width,
                     height: original.height,
-                    kind: original.kind,
+                    kind: kind,
                     groupID: newGroupID
                 )
+                nodes.append(contentsOf: children)
                 nodes.append(copy)
                 copies.insert(copy.id)
             }

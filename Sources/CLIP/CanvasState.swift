@@ -161,9 +161,7 @@ final class CanvasState: ObservableObject {
         // Hydrate the live camera + index from the just-loaded active page.
         let activeIdx = self.pages.firstIndex(where: { $0.id == self.activePageID }) ?? 0
         self.camera = self.pages[activeIdx].camera
-        self.nodeByID = Dictionary(
-            uniqueKeysWithValues: self.pages[activeIdx].nodes.map { ($0.id, $0) }
-        )
+        self.nodeByID = Self.index(self.pages[activeIdx].nodes)
         // Restore user prefs (last view mode).
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: Self.k_lastViewMode),
@@ -284,10 +282,26 @@ final class CanvasState: ObservableObject {
     /// `~/Library/Application Support`. Silent, no Save dialog — the
     /// canvas is restored on the next launch.
     private func setupAutoSave() {
-        autoSaveCancellable = Publishers
-            .CombineLatest3($pages, $activePageID, cameraStore.$camera)
+        // Every save re-encodes the whole document (image bytes included), so:
+        //   • content edits save 0.5 s after things go quiet, AND at least
+        //     every 5 s during a long continuous drag/resize — a crash
+        //     mid-gesture can't lose more than a few seconds of work;
+        //   • camera-only changes (pan / zoom) wait for 2 s of quiet — the
+        //     view position is cheap to lose and was triggering a full
+        //     rewrite after every small pan.
+        let content = Publishers.CombineLatest($pages, $activePageID)
             .dropFirst()                              // skip the initial value
+            .map { _ in () }
+            .share()
+        let contentQuiet = content
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
+        let contentPeriodic = content
+            .throttle(for: .seconds(5), scheduler: DispatchQueue.main, latest: true)
+        let cameraQuiet = cameraStore.$camera
+            .dropFirst()
+            .map { _ in () }
+            .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
+        autoSaveCancellable = Publishers.Merge3(contentQuiet, contentPeriodic, cameraQuiet)
             .sink { [weak self] _ in
                 Task { @MainActor in self?.saveToDisk() }
             }
@@ -376,7 +390,7 @@ final class CanvasState: ObservableObject {
         set {
             guard pages.indices.contains(activePageIndex) else { return }
             pages[activePageIndex].nodes = newValue
-            nodeByID = Dictionary(uniqueKeysWithValues: newValue.map { ($0.id, $0) })
+            nodeByID = Self.index(newValue)
             // Keep Archive's per-day cache fresh whenever the doc
             // mutates while the user is viewing the calendar.
             if canvasMode == .archive {
@@ -420,7 +434,9 @@ final class CanvasState: ObservableObject {
     /// One-shot backup of the most recently deleted page so ⌘Z can bring
     /// it back. Cleared as soon as any other undoable mutation lands —
     /// page restoration is only offered while it is the latest action.
-    private var deletedPageBackup: (page: Page, index: Int)? = nil
+    /// The page's undo history rides along so a restored page keeps it, and
+    /// is released with the backup instead of lingering in `undoStacks`.
+    private var deletedPageBackup: (page: Page, index: Int, history: UndoStack?)? = nil
 
     /// First step of page deletion: validate, then ask. The actual removal
     /// happens in `confirmDeletePage()` once the user confirms.
@@ -443,7 +459,7 @@ final class CanvasState: ObservableObject {
         pageAwaitingDeletion = nil
         guard pages.count > 1,
               let idx = pages.firstIndex(where: { $0.id == page.id }) else { return }
-        deletedPageBackup = (pages[idx], idx)
+        deletedPageBackup = (pages[idx], idx, undoStacks.removeValue(forKey: page.id))
         let wasActive = (page.id == activePageID)
         pages.remove(at: idx)
         if wasActive {
@@ -460,6 +476,7 @@ final class CanvasState: ObservableObject {
         guard let backup = deletedPageBackup else { return false }
         deletedPageBackup = nil
         pages.insert(backup.page, at: min(backup.index, pages.count))
+        if let history = backup.history { undoStacks[backup.page.id] = history }
         switchTo(pageID: backup.page.id)
         return true
     }
@@ -472,6 +489,11 @@ final class CanvasState: ObservableObject {
     func switchTo(pageID: UUID) {
         guard pages.contains(where: { $0.id == pageID }) else { return }
         if canvasMode == .colorform { exitColorform() }
+        // Folder / stack focus belongs to the outgoing page — leaving it set
+        // would silently disable stack and folder interaction on the new one.
+        // (Exit before the camera flush below so the pre-focus camera is saved.)
+        exitFolderFocus()
+        exitStackFocus()
         // Persist outgoing page's live camera (if the page still exists —
         // `deletePage` calls switchTo after removing the page, so we look
         // it up explicitly by id rather than via `activePageIndex`).
@@ -482,9 +504,7 @@ final class CanvasState: ObservableObject {
         // Hydrate the live camera + node index from the incoming page.
         if let inIdx = pages.firstIndex(where: { $0.id == pageID }) {
             camera = pages[inIdx].camera
-            nodeByID = Dictionary(
-                uniqueKeysWithValues: pages[inIdx].nodes.map { ($0.id, $0) }
-            )
+            nodeByID = Self.index(pages[inIdx].nodes)
         }
         selectedNodeIDs = []
         selectedConnectorIDs = []
@@ -534,11 +554,23 @@ final class CanvasState: ObservableObject {
 
     /// Commit an explicit snapshot — used by drag-style gestures so that
     /// 60 tick-by-tick position updates collapse into one undo entry.
-    func commitUndoable(from before: PageSnapshot) {
-        let after = currentSnapshot
+    ///
+    /// Pass `pageID` (captured when `before` was taken) for commits that land
+    /// asynchronously — e.g. after a stack animation — so a page switch in the
+    /// meantime can't file page A's snapshot on page B's undo stack.
+    func commitUndoable(from before: PageSnapshot, pageID: UUID? = nil) {
+        let target = pageID ?? activePageID
+        let after: PageSnapshot
+        if target == activePageID {
+            after = currentSnapshot
+        } else if let page = pages.first(where: { $0.id == target }) {
+            after = PageSnapshot(nodes: page.nodes, connectors: page.connectors)
+        } else {
+            return                                  // page was deleted meanwhile
+        }
         guard before != after else { return }
         deletedPageBackup = nil
-        undoStacks[activePageID, default: UndoStack()].push(before)
+        undoStacks[target, default: UndoStack()].push(before)
     }
 
     func undo() {
@@ -570,7 +602,16 @@ final class CanvasState: ObservableObject {
         pages[activePageIndex].connectors = s.connectors
         // Keep the lookup index in sync with the restored snapshot —
         // direct-write bypasses our `nodes` setter.
-        nodeByID = Dictionary(uniqueKeysWithValues: s.nodes.map { ($0.id, $0) })
+        nodeByID = Self.index(s.nodes)
+        // Undo/redo can remove the folder or stack that's currently unfolded.
+        if let f = focusedFolderID, nodeByID[f] == nil { exitFolderFocus() }
+        if let st = focusedStackID, nodeByID[st] == nil { exitStackFocus() }
+    }
+
+    /// id → node lookup. Tolerates duplicate ids (a damaged or hand-edited
+    /// save) by keeping the first — `uniqueKeysWithValues` would trap.
+    static func index(_ nodes: [CanvasNode]) -> [UUID: CanvasNode] {
+        Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     // MARK: - Document-global state

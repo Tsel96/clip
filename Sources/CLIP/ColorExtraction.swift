@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import AVFoundation
+import ImageIO
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
@@ -76,8 +77,7 @@ enum ColorExtraction {
     static func extract(for node: CanvasNode) async -> RGB {
         switch node.kind {
         case .image(let data, _):
-            if let img = NSImage(data: data),
-               let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil),
+            if let cg = thumbnail(from: data),
                let rgb = dominantColor(from: cg) {
                 return rgb
             }
@@ -237,9 +237,22 @@ enum ColorExtraction {
 
     private static func cgImage(at url: URL) async -> CGImage? {
         let req = URLRequest(url: url, timeoutInterval: requestTimeout)
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
-              let img = NSImage(data: data) else { return nil }
-        return img.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        guard let (data, _) = try? await URLSession.shared.data(for: req) else { return nil }
+        return thumbnail(from: data)
+    }
+
+    /// Small decode for colour sampling. `dominantColor` only looks at a
+    /// 64×64 grid, so never decode the full image (a 48 MP photo is ~190 MB
+    /// of RGBA) — ImageIO decodes straight to the thumbnail size.
+    static func thumbnail(from data: Data, maxPixelSize: Int = 128) -> CGImage? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary)
     }
 
     private static func instagramOGImageURL(_ url: String) async -> URL? {
@@ -307,9 +320,14 @@ enum ColorExtraction {
 
         for i in 0..<(side * side) {
             let off = i * 4
-            let r = Double(pixels[off + 0]) / 255
-            let g = Double(pixels[off + 1]) / 255
-            let b = Double(pixels[off + 2]) / 255
+            // Transparent pixels are (0,0,0,0) in the cleared context — they'd
+            // read as black and drag a logo-on-transparent toward "Slate".
+            // Skip them; un-premultiply the rest to get their true colour.
+            let a = Double(pixels[off + 3]) / 255
+            guard a >= 0.5 else { continue }
+            let r = min(1, Double(pixels[off + 0]) / 255 / a)
+            let g = min(1, Double(pixels[off + 1]) / 255 / a)
+            let b = min(1, Double(pixels[off + 2]) / 255 / a)
             let (h, s, v) = RGB(r: r, g: g, b: b).hsv
 
             // Skip background-ish pixels for the hue histogram:

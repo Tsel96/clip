@@ -230,11 +230,23 @@ extension CanvasState {
     func refreshDominantColors() async {
         let snapshot = nodes
         var results: [UUID: RGB] = [:]
+        // Sliding window: at most `maxInFlight` extractions at once. Each one
+        // may hit the network (tweets / Instagram) and decode an image, so an
+        // unbounded fan-out on a big board means rate-limited fetches and a
+        // large transient memory spike.
+        let maxInFlight = 6
         await withTaskGroup(of: (UUID, RGB).self) { group in
-            for node in snapshot {
+            var pending = snapshot.makeIterator()
+            for _ in 0..<maxInFlight {
+                guard let node = pending.next() else { break }
                 group.addTask { (node.id, await ColorExtraction.extract(for: node)) }
             }
-            for await pair in group { results[pair.0] = pair.1 }
+            for await pair in group {
+                results[pair.0] = pair.1
+                if let node = pending.next() {
+                    group.addTask { (node.id, await ColorExtraction.extract(for: node)) }
+                }
+            }
         }
         // Only adopt results if the user is still in Colorform on the same page.
         guard canvasMode == .colorform else { return }

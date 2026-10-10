@@ -539,7 +539,7 @@ final class CanvasInputView: NSView {
         // Media keeps aspect by default; Shift OR ⌘ frees it (Figma-style).
         let freeAspect = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         let locks = locksAspect(n) != freeAspect
-        if locks, start.height > 0 {
+        if locks, start.width > 0, start.height > 0 {
             let aspect = start.width / start.height
             if abs(w - start.width) >= abs(h - start.height) { h = w / aspect } else { w = h * aspect }
         }
