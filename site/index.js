@@ -1,6 +1,6 @@
 /* ==========================================================
    CLIP homepage — Motion-driven interactions (vanilla ESM)
-   Library: https://motion.dev  (no build step, loaded from CDN)
+   Library: https://motion.dev  (vendored in vendor/, no build step)
    Principles: animations.dev / Emil Kowalski
      · enter/exit → ease-out · keep it fast (<300ms hovers)
      · origin-aware modal · blur bridges states · springs for feel
@@ -48,9 +48,9 @@ async function init() {
   // Safety: never leave entrance UI hidden if Motion is slow to arrive
   const reveal = setTimeout(() => html.classList.remove('js'), 700);
   try {
-    M = await import('https://cdn.jsdelivr.net/npm/motion@12.40.0/+esm');
+    M = await import('./vendor/motion-12.40.0.mjs');   // vendored: no CDN, no SRI gap
   } catch (err) {
-    // CDN blocked → reveal everything, keep the modal usable without motion
+    // Module failed to load → reveal everything, keep the modal usable without motion
     clearTimeout(reveal);
     html.classList.remove('js');
     wireModalFallback();
