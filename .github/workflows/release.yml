@@ -44,6 +44,9 @@ jobs:
       - name: Build release binary
         run: swift build -c release
 
+      - name: Run tests
+        run: swift test
+
       - name: Derive update public key
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}

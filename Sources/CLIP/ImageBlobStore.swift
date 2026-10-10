@@ -17,9 +17,16 @@ import CryptoKit
 enum ImageBlobStore {
     static let userInfoKey = CodingUserInfoKey(rawValue: "clip.imageBlobWriter")!
 
+    /// Tests point this at a temp folder so they never touch real user data.
+    static var rootOverride: URL?
+
+    /// Folder holding `canvas.json`, its backups and `images/`.
+    static var root: URL {
+        rootOverride ?? CanvasStore.fileURL.deletingLastPathComponent()
+    }
+
     static var directory: URL {
-        CanvasStore.fileURL.deletingLastPathComponent()
-            .appendingPathComponent("images", isDirectory: true)
+        root.appendingPathComponent("images", isDirectory: true)
     }
 
     enum BlobError: Error { case badReference(String) }
@@ -77,7 +84,7 @@ final class ImageBlobWriter {
     /// from before the blob store embed their images and reference none;
     /// they're skipped by size so a huge legacy file isn't re-read per save.)
     private func refsInBackups() -> Set<String> {
-        let dir = CanvasStore.fileURL.deletingLastPathComponent()
+        let dir = ImageBlobStore.root
         let prefix = CanvasStore.fileURL.lastPathComponent + "."
         guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return [] }
         var refs = Set<String>()
