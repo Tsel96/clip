@@ -92,6 +92,10 @@ final class CanvasTopSegmentedControlView: NSView {
 
     override var isFlipped: Bool { true }   // Y=0 at top, matching Figma coords
 
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .radioGroup }
+    override func accessibilityLabel() -> String? { "View" }
+
     private func commonInit() {
         wantsLayer = true
         layer?.masksToBounds = false
@@ -109,10 +113,12 @@ final class CanvasTopSegmentedControlView: NSView {
         // --- labels + hit zones ---
         for (i, title) in Self.titles.enumerated() {
             let label = Self.makeLabel(title)
+            label.setAccessibilityElement(false)     // the hit zone speaks for it
             addSubview(label)
             labels.append(label)
 
             let zone = SegmentHitZone()
+            zone.title = title.capitalized
             zone.onTap = { [weak self] in self?.handleTap(i) }
             addSubview(zone)
             hitZones.append(zone)
@@ -190,6 +196,7 @@ final class CanvasTopSegmentedControlView: NSView {
 
     /// Active label = black α0.90 + embossed shadow; inactive = white α0.40.
     private func applySelectionStyling(animated: Bool) {
+        for (i, zone) in hitZones.enumerated() { zone.isSelectedSegment = (i == selectedIndex) }
         for (i, label) in labels.enumerated() {
             label.attributedStringValue = Self.attributedTitle(
                 Self.titles[i], active: i == selectedIndex)
@@ -410,6 +417,16 @@ private final class SegmentIndicatorView: NSView {
 /// the indicator/labels never swallow it; fires `onTap` on mouse-up-in-bounds.
 private final class SegmentHitZone: NSView {
     var onTap: (() -> Void)?
+
+    // Accessibility: each segment is a radio button in the "View" group, so
+    // VoiceOver can read and switch Canvas / Colorform / Archive.
+    var title = "" { didSet { toolTip = title } }
+    var isSelectedSegment = false
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .radioButton }
+    override func accessibilityLabel() -> String? { title }
+    override func accessibilityValue() -> Any? { NSNumber(value: isSelectedSegment) }
+    override func accessibilityPerformPress() -> Bool { onTap?(); return true }
 
     override init(frame frameRect: NSRect) { super.init(frame: frameRect) }
     required init?(coder: NSCoder) { super.init(coder: coder) }

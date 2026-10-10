@@ -75,7 +75,7 @@ extension CanvasState {
         preColorformCamera = camera
         // Snap the mode + spinner immediately so the UI feels responsive
         // while we go off to extract colors.
-        withAnimation(.smooth(duration: 0.35)) {
+        withAnimation(Motion.adaptive(.smooth(duration: 0.35))) {
             canvasMode = .colorform
             isComputingColorform = true
         }
@@ -90,7 +90,7 @@ extension CanvasState {
         }, uniquingKeysWith: { first, _ in first })
         let result = ColorformEngine.layout(clusters: clusters, nodeSizes: sizes)
         let framedCamera = cameraFraming(bulbs: result.bulbs)
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.82)) {
+        withAnimation(Motion.adaptive(.spring(response: 0.6, dampingFraction: 0.82))) {
             colorformPositions = result.positions
             colorBulbs = result.bulbs
             if let cam = framedCamera { camera = cam }
@@ -104,7 +104,7 @@ extension CanvasState {
     func exitColorform() {
         guard canvasMode == .colorform else { return }
         let restored = preColorformCamera
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.82)) {
+        withAnimation(Motion.adaptive(.spring(response: 0.6, dampingFraction: 0.82))) {
             canvasMode = .canvas
             colorformPositions = [:]
             colorBulbs = []

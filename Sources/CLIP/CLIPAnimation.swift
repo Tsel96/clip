@@ -32,7 +32,10 @@ enum CLIPSpring {
         /// CASpringAnimation maps response/damping → stiffness/damping via the
         /// standard mass-spring relations (mass = 1).
         var stiffness: CGFloat { let w = (2 * .pi) / max(0.001, response); return w * w }
-        var caDamping: CGFloat { 2 * damping * ((2 * .pi) / max(0.001, response)) }
+        var caDamping: CGFloat { 2 * effectiveDamping * ((2 * .pi) / max(0.001, response)) }
+        /// Reduce Motion: critically damped — the same move, but no bounce or
+        /// overshoot anywhere in the native UI.
+        private var effectiveDamping: CGFloat { Motion.reduceMotion ? max(1, damping) : damping }
     }
 
     /// Spring a CALayer keyPath from its CURRENT presentation value to `to`.

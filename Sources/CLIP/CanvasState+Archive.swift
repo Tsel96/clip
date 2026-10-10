@@ -174,7 +174,7 @@ extension CanvasState {
     func refreshArchiveDays() {
         guard canvasMode == .archive else { return }
         let days = ArchiveEngine.daysWithContent(from: nodes)
-        withAnimation(.smooth(duration: 0.3)) { setArchiveDays(days) }
+        withAnimation(Motion.adaptive(.smooth(duration: 0.3))) { setArchiveDays(days) }
     }
 
     /// Restore the pre-Archive camera and clear transient state.

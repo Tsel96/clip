@@ -92,6 +92,7 @@ final class CanvasToolPaletteView: NSView {
         mainPill.onFolderTap  = { [weak self] in self?.onFolderTap?() }
         mainPill.onStickerTap = { [weak self] in self?.onStickerTap?() }
         addPill.onTap         = { [weak self] in self?.onAddTap?() }
+        addPill.accessibilityName = "Add Link or File"
 
         // Folder bar starts hidden + slightly shrunk (springs in on morph).
         addSubview(folderBar)
@@ -390,6 +391,15 @@ private func layoutCandyShadows(_ layers: [CALayer], capsule: CGRect,
 /// mouse-up, making the prop a reliable tool button.
 private final class PropButton: NSView {
     var onTap: (() -> Void)?
+
+    // MARK: Accessibility — a custom NSView is invisible to VoiceOver unless
+    // it says what it is. Exposed as a pressable button with a name (which
+    // doubles as the hover tooltip).
+    var accessibilityName = "" { didSet { toolTip = accessibilityName } }
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { accessibilityName }
+    override func accessibilityPerformPress() -> Bool { onTap?(); return onTap != nil }
     private let imageView = NSImageView()        // rest / base art
     private let hoverImageView = NSImageView()   // hover art, crossfaded over base
     private let selectedImageView = NSImageView() // marker selected art (lifted + glow)
@@ -547,6 +557,15 @@ private final class PropButton: NSView {
 /// reliably, unlike NSView.frameCenterRotation). No selected state.
 private final class StickerProp: NSView {
     var onTap: (() -> Void)?
+
+    // MARK: Accessibility — a custom NSView is invisible to VoiceOver unless
+    // it says what it is. Exposed as a pressable button with a name (which
+    // doubles as the hover tooltip).
+    var accessibilityName = "" { didSet { toolTip = accessibilityName } }
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { accessibilityName }
+    override func accessibilityPerformPress() -> Bool { onTap?(); return onTap != nil }
 
     private let paper    = CALayer()   // back sheet (carries the baked shadow)
     private let fold     = CALayer()   // front sheet with the folded corner
@@ -754,6 +773,7 @@ private final class MainPillView: NSView {
         // --- Tool buttons ---
         for (i, icon) in Self.buttonIcons.enumerated() {
             let btn = ToolPaletteButton(iconName: icon)
+            btn.accessibilityName = ToolPaletteButton.displayName(for: icon)
             btn.iconRestOpacity = Self.buttonOpacities[i]
             let mode = Self.buttonModes[i]
             btn.onTap = { [weak self] in
@@ -775,6 +795,7 @@ private final class MainPillView: NSView {
             selected: loadBundleImage(named: "marker-selected"),
             lift:     10)
         markerView.onTap = { [weak self] in self?.onToolTap?(.draw) }
+        markerView.accessibilityName = "Draw"
         addSubview(markerView)
 
         // Sticky button: paper + corner-fold sheets physically fan apart on hover
@@ -783,6 +804,7 @@ private final class MainPillView: NSView {
             paper: loadBundleImage(named: "sticky-paper"),
             fold:  loadBundleImage(named: "sticky-corner-fold"))
         stickersView.onTap = { [weak self] in self?.onStickerTap?() }
+        stickersView.accessibilityName = "Sticky Note"
         addSubview(stickersView)
     }
 
@@ -890,6 +912,15 @@ private final class MainPillView: NSView {
 private final class AddPillView: NSView {
 
     var onTap: (() -> Void)?
+
+    // MARK: Accessibility — a custom NSView is invisible to VoiceOver unless
+    // it says what it is. Exposed as a pressable button with a name (which
+    // doubles as the hover tooltip).
+    var accessibilityName = "" { didSet { toolTip = accessibilityName } }
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { accessibilityName }
+    override func accessibilityPerformPress() -> Bool { onTap?(); return onTap != nil }
 
     private let outerLayer = CALayer()
     private let innerLayer = CAGradientLayer()
@@ -1117,7 +1148,30 @@ private final class AddPillView: NSView {
 /// system (CASpringAnimation, `.control` preset) — no ad-hoc curves.
 final class ToolPaletteButton: NSView {
 
+    /// Human name for an icon asset (VoiceOver label + tooltip).
+    static func displayName(for iconName: String) -> String {
+        switch iconName {
+        case "tool_select":  return "Select"
+        case "tool_hand":    return "Hand"
+        case "tool_text":    return "Text"
+        case "tool_connect": return "Connect"
+        case "Download":     return "Download"
+        case "Color":        return "Color"
+        case "Eject":        return "Eject"
+        default:             return iconName.replacingOccurrences(of: "tool_", with: "").capitalized
+        }
+    }
+
     var onTap: (() -> Void)?
+
+    // MARK: Accessibility — a custom NSView is invisible to VoiceOver unless
+    // it says what it is. Exposed as a pressable button with a name (which
+    // doubles as the hover tooltip).
+    var accessibilityName = "" { didSet { toolTip = accessibilityName } }
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { accessibilityName }
+    override func accessibilityPerformPress() -> Bool { onTap?(); return onTap != nil }
 
     /// Designed rest opacity for the icon when this tool is NOT selected (Figma:
     /// leading tools 1.0, trailing tools 0.70). It applies to the icon ONLY —
@@ -1468,6 +1522,9 @@ private final class FolderActionBarView: NSView {
         download.onTap = { [weak self] in self?.onDownload?() }
         colorBtn.onTap = { [weak self] in self?.onColor?() }
         eject.onTap    = { [weak self] in self?.onEject?() }
+        download.accessibilityName = "Download"
+        colorBtn.accessibilityName = "Color"
+        eject.accessibilityName    = "Eject"
         [download, colorBtn, eject].forEach(addSubview)
     }
 

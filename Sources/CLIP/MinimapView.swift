@@ -128,6 +128,9 @@ struct MinimapView: View {
             )
         }
         .help("Click to jump  ·  Drag to pan")
+        .accessibilityElement()
+        .accessibilityLabel("Minimap")
+        .accessibilityHint("Shows the whole board. Use the zoom commands in the View menu to move around.")
     }
 
     // MARK: - Drawing

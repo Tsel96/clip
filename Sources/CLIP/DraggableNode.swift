@@ -311,7 +311,7 @@ struct DraggableNode: View {
         // window never replays the pop.
         .onAppear {
             guard appearProgress < 1 else { return }
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) {
+            withAnimation(Motion.adaptive(.spring(response: 0.5, dampingFraction: 0.72))) {
                 appearProgress = 1
             }
         }
@@ -770,7 +770,7 @@ struct DraggableNode: View {
                 // straightens without releasing.
                 dragTiltDecayWork?.cancel()
                 let decay = DispatchWorkItem {
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                    withAnimation(Motion.adaptive(.spring(response: 0.45, dampingFraction: 0.82))) {
                         dragTilt = 0
                     }
                 }
@@ -816,7 +816,7 @@ struct DraggableNode: View {
                 // termination) so the user feels the "thud" at the
                 // moment they let go, matching the visual commit.
                 Haptics.tap()
-                withAnimation(.spring(response: 0.42, dampingFraction: 0.76)) {
+                withAnimation(Motion.adaptive(.spring(response: 0.42, dampingFraction: 0.76))) {
                     applyTranslation(finalDelta)
                     dragInProgress = false
                     dragTilt = 0

@@ -28,6 +28,8 @@ struct DrawingNodeView: View {
                         .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Delete drawing")
+                .help("Delete drawing")
                 .controlSize(.mini)
                 .tint(.red)
                 .offset(x: 6, y: -6)

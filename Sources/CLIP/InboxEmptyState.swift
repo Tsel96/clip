@@ -136,6 +136,8 @@ struct InboxSetupGuide: View {
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.hover)
+            .accessibilityLabel("Close")
+            .help("Close")
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 18)

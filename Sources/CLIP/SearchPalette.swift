@@ -52,6 +52,8 @@ struct SearchPalette: View {
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.hover)
+                    .accessibilityLabel("Clear search")
+                    .help("Clear search")
                 }
             }
             .padding(.horizontal, 14)

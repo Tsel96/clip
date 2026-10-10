@@ -894,7 +894,7 @@ final class CanvasState: ObservableObject {
     /// A new toast cancels the previous one's dismissal timer.
     func showToast(_ text: String, systemImage: String) {
         toastDismissWork?.cancel()
-        withAnimation(.spring(response: 0.40, dampingFraction: 0.82)) {
+        withAnimation(Motion.adaptive(.spring(response: 0.40, dampingFraction: 0.82))) {
             toast = ToastContent(text: text, systemImage: systemImage)
         }
         let work = DispatchWorkItem { [weak self] in

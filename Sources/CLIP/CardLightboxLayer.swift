@@ -393,7 +393,7 @@ private struct DetailsInspector: View {
                     tilt = CGSize(width: p.x - geo.size.width / 2,
                                   height: p.y - geo.size.height / 2)
                 case .ended:
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { tilt = .zero }
+                    withAnimation(Motion.adaptive(.spring(response: 0.4, dampingFraction: 0.7))) { tilt = .zero }
                 }
             }
         }
@@ -600,8 +600,14 @@ private struct DetailsInspector: View {
                 ForEach(node.tags, id: \.self) { tag in
                     HStack(spacing: 4) {
                         Text("#\(tag)").font(.clip(10.5))
-                        Button { state.removeTag(node.id, tag) } label: { Image(systemName: "xmark") }
+                        Button { state.removeTag(node.id, tag) } label: {
+                            Image(systemName: "xmark")
+                                .frame(width: 16, height: 16)          // bigger hit target than the 8pt glyph
+                                .contentShape(Rectangle())
+                        }
                             .buttonStyle(.hover).font(.system(size: 8, weight: .bold))
+                            .accessibilityLabel("Remove tag \(tag)")
+                            .help("Remove tag")
                     }
                     .foregroundStyle(.white.opacity(0.85))
                     .padding(.horizontal, 9).padding(.vertical, 5)

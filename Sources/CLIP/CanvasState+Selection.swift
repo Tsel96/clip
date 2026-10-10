@@ -277,7 +277,7 @@ extension CanvasState {
             if c.sourceID == id { acc.insert(c.targetID) }
             if c.targetID == id { acc.insert(c.sourceID) }
         }
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+        withAnimation(Motion.adaptive(.spring(response: 0.35, dampingFraction: 0.7))) {
             activeDragID = id
             activeDragConnectedIDs = connected
         }

@@ -411,10 +411,57 @@ final class RadialColorPicker: NSView {
         onDismiss()
     }
 
+    /// Keyboard: ← → ↑ ↓ step through the petals (live preview, like hover),
+    /// Return / Space picks the highlighted one, Esc dismisses.
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { dismiss() } else { super.keyDown(with: event) }
+        switch event.keyCode {
+        case 53:                                  // Esc
+            dismiss()
+        case 123, 126:                            // ← ↑
+            stepHighlight(by: -1)
+        case 124, 125:                            // → ↓
+            stepHighlight(by: 1)
+        case 36, 76, 49:                          // Return, keypad Enter, Space
+            if let i = hovered { pick(petals[i].color) }
+        default:
+            super.keyDown(with: event)
+        }
     }
     override var acceptsFirstResponder: Bool { true }
+
+    private func stepHighlight(by delta: Int) {
+        guard !petals.isEmpty else { return }
+        let next = hovered.map { ($0 + delta + petals.count) % petals.count } ?? 0
+        hovered = next
+        applyHover(next)
+        updateHoverRing(for: next, animated: false)
+        if !picked { onHoverPreview(petals[next].color) }
+        NSAccessibility.post(element: self, notification: .valueChanged)
+    }
+
+    // MARK: Accessibility — announced as a colour picker whose value is the
+    // highlighted colour's name; arrows/Return work as above.
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .colorWell }
+    override func accessibilityLabel() -> String? { "Color picker" }
+    override func accessibilityValue() -> Any? {
+        hovered.map { Self.colorName(petals[$0].color) }
+    }
+    override func accessibilityHelp() -> String? {
+        "Use the arrow keys to choose a colour, Return to apply, Escape to cancel."
+    }
+
+    /// A rough spoken name for a petal colour (hue family + lightness).
+    static func colorName(_ color: NSColor) -> String {
+        let c = color.usingColorSpace(.sRGB) ?? color
+        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
+        if sat < 0.12 { return b > 0.9 ? "White" : "Gray" }
+        let names = ["Red", "Orange", "Yellow", "Lime", "Green", "Teal",
+                     "Cyan", "Blue", "Indigo", "Purple", "Magenta", "Pink"]
+        let family = names[Int((h * 12).rounded()) % 12]
+        return sat < 0.35 ? "Pale \(family.lowercased())" : family
+    }
 
     // MARK: Section-color mapping
 
